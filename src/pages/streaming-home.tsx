@@ -419,19 +419,19 @@ function Hero({ activeTab, onPlay, onSubscribeClick, isSubscribed }: { activeTab
   return (
     <div
       className="relative w-full overflow-hidden bg-[#030306] isolate
-        min-h-[280px] h-[min(58vh,420px)]
-        sm:min-h-[520px] sm:h-[min(78vh,900px)] sm:max-h-[900px]"
+        min-h-[320px] h-[56vw] max-h-[420px]
+        sm:min-h-[560px] sm:h-[min(72vh,820px)] sm:max-h-[820px]"
       onMouseEnter={() => setIsPaused(true)}
       onMouseLeave={() => setIsPaused(false)}
       onTouchStart={() => setIsPaused(true)}
       onTouchEnd={() => setTimeout(() => setIsPaused(false), 2500)}
     >
-      {/* Poster fallback — slight theme brightness so banners aren't buried */}
+      {/* Full-bleed media — edge to edge, no side gaps */}
       <div className={`absolute inset-0 transition-opacity duration-500 ${fading || videoReady ? "opacity-0" : "opacity-100"}`}>
         <img
           src={getImageUrl(item.backdrop || item.poster) || ""}
           alt={item.title}
-          className="w-full h-full object-cover object-center sm:object-contain sm:object-center [filter:brightness(1.08)_contrast(1.04)_saturate(1.06)]"
+          className="absolute inset-0 w-full h-full object-cover object-[center_30%] sm:object-center [filter:brightness(1.08)_contrast(1.04)_saturate(1.05)]"
           onError={(e) => {
             const target = e.target as HTMLImageElement;
             target.onerror = null;
@@ -440,11 +440,10 @@ function Hero({ activeTab, onPlay, onSubscribeClick, isSubscribed }: { activeTab
         />
       </div>
 
-      {/* Video layer */}
       <div className={`absolute inset-0 transition-opacity duration-700 ${fading ? "opacity-0" : videoReady ? "opacity-100" : "opacity-0"}`}>
         <video
           ref={videoRef}
-          className="w-full h-full object-cover object-center sm:object-contain [filter:brightness(1.06)_contrast(1.03)_saturate(1.05)]"
+          className="absolute inset-0 w-full h-full object-cover object-[center_30%] sm:object-center [filter:brightness(1.06)_contrast(1.03)_saturate(1.04)]"
           playsInline
           muted={muted}
           autoPlay
@@ -452,10 +451,10 @@ function Hero({ activeTab, onPlay, onSubscribeClick, isSubscribed }: { activeTab
         />
       </div>
 
-      {/* Soft vignettes — don't crush / crop the artwork */}
-      <div className="absolute inset-y-0 left-0 z-[1] pointer-events-none w-[75%] sm:w-[55%] bg-gradient-to-r from-[#030306]/90 via-[#030306]/45 to-transparent" />
-      <div className="absolute inset-x-0 bottom-0 z-[1] h-[28%] sm:h-[32%] pointer-events-none bg-gradient-to-t from-[#030306] via-[#030306]/55 to-transparent" />
-      <div className="absolute top-0 left-0 right-0 z-[1] h-16 sm:h-28 pointer-events-none bg-gradient-to-b from-[#030306]/80 to-transparent" />
+      {/* Left text readable + soft blend into page — keep image full width */}
+      <div className="absolute inset-y-0 left-0 z-[1] pointer-events-none w-[70%] sm:w-[50%] bg-gradient-to-r from-[#030306]/88 via-[#030306]/40 to-transparent" />
+      <div className="absolute inset-x-0 bottom-0 z-[1] h-[34%] sm:h-[38%] pointer-events-none bg-gradient-to-t from-[#030306] via-[#030306]/50 to-transparent" />
+      <div className="absolute top-0 left-0 right-0 z-[1] h-16 sm:h-28 pointer-events-none bg-gradient-to-b from-[#030306]/75 to-transparent" />
 
       {/* Mute */}
       {bannerVideo.src && (
