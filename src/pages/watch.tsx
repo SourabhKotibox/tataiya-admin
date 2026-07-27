@@ -530,31 +530,36 @@ function VideoPlayer({
     return () => window.removeEventListener('force-play-fullscreen', handleForcePlay);
   }, []);
 
-  // Load source with HLS support
+  // Load source with HLS support — start ASAP (don't block on offline lookup)
   useEffect(() => {
     const v = videoRef.current;
     if (!v) return;
 
+    let cancelled = false;
     setLoading(true);
     if (hlsRef.current) {
       hlsRef.current.destroy();
       hlsRef.current = null;
     }
 
-    const loadSource = async () => {
-      const offlineUrl = await getOfflineVideoUrl(contentId || "");
-      const activeSrc = offlineUrl || getImageUrl(currentSrc);
-
+    const attachAndPlay = (activeSrc: string, fromOffline: boolean) => {
+      if (cancelled || !v) return;
       if (!activeSrc) {
         setLoading(false);
         return;
       }
 
-      const isM3u8 = activeSrc.includes(".m3u8") && !offlineUrl;
-      const onManifestParsed = () => {
+      const isM3u8 = activeSrc.includes(".m3u8") && !fromOffline;
+
+      const onReady = () => {
+        if (cancelled) return;
         setLoading(false);
         if (pendingSeekRef.current !== null) {
-          v.currentTime = pendingSeekRef.current;
+          try {
+            v.currentTime = pendingSeekRef.current;
+          } catch {
+            /* ignore */
+          }
           pendingSeekRef.current = null;
           resumeAppliedRef.current = true;
         }
@@ -564,16 +569,39 @@ function VideoPlayer({
       };
 
       if (isM3u8 && Hls.isSupported()) {
+        if (hlsRef.current) {
+          hlsRef.current.destroy();
+          hlsRef.current = null;
+        }
         const hls = new Hls({
           enableWorker: true,
-          startLevel: currentQuality === "auto" ? -1 : undefined,
+          lowLatencyMode: false,
+          // Start on a lower rung so first frame appears quickly, then ABR climbs
+          startLevel: 0,
+          abrEwmaDefaultEstimate: 500000,
+          maxBufferLength: 20,
+          maxMaxBufferLength: 40,
+          maxBufferSize: 30 * 1000 * 1000,
+          maxBufferHole: 0.5,
+          startFragPrefetch: true,
+          testBandwidth: true,
         });
         hlsRef.current = hls;
         hls.loadSource(activeSrc);
         hls.attachMedia(v);
         hls.on(Hls.Events.MANIFEST_PARSED, () => {
-          if (currentQuality === "auto") hls.currentLevel = -1;
-          onManifestParsed();
+          if (currentQuality === "auto") {
+            // Keep startLevel 0 briefly, then free ABR
+            window.setTimeout(() => {
+              if (hlsRef.current === hls) hls.currentLevel = -1;
+            }, 2500);
+          }
+          onReady();
+        });
+        // Unblock UI as soon as first fragment can play
+        hls.on(Hls.Events.FRAG_BUFFERED, () => {
+          if (v.paused && (playing || autoPlay)) v.play().catch(() => {});
+          setLoading(false);
         });
         hls.on(Hls.Events.ERROR, (_e, data) => {
           if (data.fatal) {
@@ -583,35 +611,59 @@ function VideoPlayer({
         });
       } else if (isM3u8 && v.canPlayType("application/vnd.apple.mpegurl")) {
         v.src = activeSrc;
-        v.addEventListener("loadedmetadata", onManifestParsed, { once: true });
+        v.addEventListener("loadedmetadata", onReady, { once: true });
+        v.addEventListener("canplay", () => setLoading(false), { once: true });
       } else {
         v.src = activeSrc;
+        v.preload = "auto";
         v.load();
         const onCanPlay = () => {
-          setLoading(false);
-          if (pendingSeekRef.current !== null) {
-            v.currentTime = pendingSeekRef.current;
-            pendingSeekRef.current = null;
-            resumeAppliedRef.current = true;
-          }
-          v.playbackRate = speed;
-          const shouldPlay = playing || autoPlay;
-          if (shouldPlay) v.play().catch(() => {});
+          onReady();
           v.removeEventListener("canplay", onCanPlay);
         };
         v.addEventListener("canplay", onCanPlay);
+        v.addEventListener("loadeddata", () => setLoading(false), { once: true });
       }
     };
 
-    loadSource();
+    // Start network stream immediately
+    const networkSrc = getImageUrl(currentSrc);
+    attachAndPlay(networkSrc, false);
+
+    // If an offline copy exists, swap in without blocking first paint
+    if (contentId) {
+      getOfflineVideoUrl(contentId).then((offlineUrl) => {
+        if (cancelled || !offlineUrl || !videoRef.current) return;
+        const v2 = videoRef.current;
+        const t = v2.currentTime || pendingSeekRef.current || 0;
+        const wasPlaying = !v2.paused || autoPlay;
+        if (hlsRef.current) {
+          hlsRef.current.destroy();
+          hlsRef.current = null;
+        }
+        pendingSeekRef.current = t > 1 ? t : null;
+        v2.src = offlineUrl;
+        v2.load();
+        const resume = () => {
+          if (pendingSeekRef.current != null) {
+            try { v2.currentTime = pendingSeekRef.current; } catch { /* ignore */ }
+            pendingSeekRef.current = null;
+          }
+          setLoading(false);
+          if (wasPlaying) v2.play().catch(() => {});
+        };
+        v2.addEventListener("canplay", resume, { once: true });
+      }).catch(() => {});
+    }
 
     return () => {
-      const v = videoRef.current;
-      if (v) {
+      cancelled = true;
+      const el = videoRef.current;
+      if (el) {
         try {
-          v.pause();
-          v.removeAttribute("src");
-          v.load();
+          el.pause();
+          el.removeAttribute("src");
+          el.load();
         } catch {
           /* ignore */
         }
@@ -949,7 +1001,7 @@ function VideoPlayer({
         ref={videoRef}
         poster={thumbnail}
         className="absolute inset-0 w-full h-full object-contain"
-        preload="metadata"
+        preload="auto"
         playsInline
         style={{ outline: "none" }}
         crossOrigin="anonymous"
@@ -1093,22 +1145,26 @@ function VideoPlayer({
         </div>
       </div>
 
-      {/* Bottom controls — compact mobile row; sliders live in Settings */}
+      {/* Bottom controls — seek pinned above buttons at true bottom */}
       <div
-        className={`absolute bottom-0 left-0 right-0 z-30 transition-opacity duration-300 bg-gradient-to-t from-black/95 via-black/55 to-transparent pb-2.5 pt-8 ${
+        className={`absolute bottom-0 left-0 right-0 z-30 transition-opacity duration-300 ${
           ctrlShow ? "opacity-100" : "opacity-0 pointer-events-none"
         }`}
         data-player-control
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Seek + time */}
-        <div className="px-3 sm:px-4">
-          <div className="relative h-5 flex items-center group/seek cursor-pointer">
-            <div className="absolute inset-x-0 h-[3px] bg-white/20 rounded-full" />
-            <div className="absolute h-[3px] bg-white/35 rounded-full" style={{ width: `${bufPct}%` }} />
+        <div className="bg-gradient-to-t from-black via-black/85 to-transparent px-3 sm:px-4 pt-8 pb-2 space-y-1">
+        {/* Seek: time | bar | duration — not floating mid-player */}
+        <div className="flex items-center gap-2">
+          <span className="text-white/90 text-[10px] tabular-nums font-semibold shrink-0 min-w-[32px]">
+            {fmtTime(currentTime)}
+          </span>
+          <div className="relative flex-1 h-4 flex items-center cursor-pointer">
+            <div className="absolute inset-x-0 h-[3px] bg-white/25 rounded-full" />
+            <div className="absolute h-[3px] bg-white/40 rounded-full" style={{ width: `${bufPct}%` }} />
             <div className="absolute h-[3px] bg-amber-400 rounded-full" style={{ width: `${seekPct}%` }} />
             <div
-              className="absolute w-3.5 h-3.5 bg-amber-400 border border-white/50 rounded-full shadow-lg -translate-x-1/2 pointer-events-none"
+              className="absolute w-3 h-3 bg-amber-400 border border-white/60 rounded-full shadow -translate-x-1/2 pointer-events-none"
               style={{ left: `${seekPct}%` }}
             />
             <input
@@ -1118,18 +1174,13 @@ function VideoPlayer({
               aria-label="Seek"
             />
           </div>
-          <div className="flex items-center justify-between mt-1 mb-1">
-            <span className="text-white/85 text-[10px] sm:text-[11px] tabular-nums font-medium">
-              {fmtTime(currentTime)}
-            </span>
-            <span className="text-white/55 text-[10px] sm:text-[11px] tabular-nums">
-              {fmtTime(duration)}
-            </span>
-          </div>
+          <span className="text-white/55 text-[10px] tabular-nums font-medium shrink-0 min-w-[32px] text-right">
+            {fmtTime(duration)}
+          </span>
         </div>
 
         {/* Single clean action row */}
-        <div className="px-2 sm:px-3 flex items-center justify-between gap-1">
+        <div className="flex items-center justify-between gap-1">
           <div className="flex items-center gap-0.5 sm:gap-1.5">
             <button
               type="button"
@@ -1410,6 +1461,7 @@ function VideoPlayer({
               <Lock className="w-5 h-5 sm:w-4 sm:h-4" />
             </button>
           </div>
+        </div>
         </div>
       </div>
 

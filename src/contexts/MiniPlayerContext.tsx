@@ -10,7 +10,7 @@ import {
 } from "react";
 import { useLocation } from "wouter";
 import Hls from "hls.js";
-import { Play, Pause, X, Maximize2 } from "lucide-react";
+import { Play, Pause, Maximize2 } from "lucide-react";
 import { getImageUrl } from "@/lib/api-client";
 
 export type MiniPlayerSession = {
@@ -32,16 +32,27 @@ type MiniPlayerContextValue = {
 
 const MiniPlayerContext = createContext<MiniPlayerContextValue | null>(null);
 
-const PIP_W = 168;
-const PIP_H = 94;
+const PIP_W_MOBILE = 156;
+const PIP_H_MOBILE = 88;
+const PIP_W_DESKTOP = 200;
+const PIP_H_DESKTOP = 112;
+
+function pipSize() {
+  if (typeof window === "undefined") return { w: PIP_W_MOBILE, h: PIP_H_MOBILE };
+  const mobile = window.innerWidth < 640;
+  return mobile
+    ? { w: Math.min(PIP_W_MOBILE, window.innerWidth * 0.42), h: PIP_H_MOBILE }
+    : { w: PIP_W_DESKTOP, h: PIP_H_DESKTOP };
+}
 
 function defaultPipPos() {
   if (typeof window === "undefined") return { x: 16, y: 120 };
+  const { w, h } = pipSize();
   const margin = 12;
-  const safeBottom = 72;
+  const safeBottom = 64;
   return {
-    x: Math.max(margin, window.innerWidth - PIP_W - margin),
-    y: Math.max(margin, window.innerHeight - PIP_H - safeBottom - margin),
+    x: Math.max(margin, window.innerWidth - w - margin),
+    y: Math.max(margin, window.innerHeight - h - safeBottom - margin),
   };
 }
 
@@ -50,6 +61,7 @@ export function MiniPlayerProvider({ children }: { children: ReactNode }) {
   const [playing, setPlaying] = useState(false);
   const [controlsOn, setControlsOn] = useState(true);
   const [pos, setPos] = useState(defaultPipPos);
+  const [size, setSize] = useState(pipSize);
   const videoRef = useRef<HTMLVideoElement>(null);
   const hlsRef = useRef<Hls | null>(null);
   const reloadingRef = useRef(false);
@@ -94,6 +106,7 @@ export function MiniPlayerProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const startMini = useCallback((next: MiniPlayerSession) => {
+    setSize(pipSize());
     setPos(defaultPipPos());
     setControlsOn(true);
     setSession({ ...next, playing: true });
@@ -116,7 +129,6 @@ export function MiniPlayerProvider({ children }: { children: ReactNode }) {
     return () => clearTimeout(hideCtrlTimer.current);
   }, [session?.contentId, bumpControls]);
 
-  // Load / play when session src changes
   useEffect(() => {
     const v = videoRef.current;
     if (!v || !session?.src) return;
@@ -147,7 +159,12 @@ export function MiniPlayerProvider({ children }: { children: ReactNode }) {
     };
 
     if (src.includes(".m3u8") && Hls.isSupported()) {
-      const hls = new Hls({ enableWorker: true });
+      const hls = new Hls({
+        enableWorker: true,
+        startLevel: 0,
+        maxBufferLength: 20,
+        startFragPrefetch: true,
+      });
       hlsRef.current = hls;
       hls.loadSource(src);
       hls.attachMedia(v);
@@ -224,10 +241,10 @@ export function MiniPlayerProvider({ children }: { children: ReactNode }) {
     setLocation(`/watch/${id}/${ep}`);
   };
 
-  const clampPos = (x: number, y: number) => {
+  const clampPos = (x: number, y: number, w = size.w, h = size.h) => {
     const margin = 8;
-    const maxX = Math.max(margin, window.innerWidth - PIP_W - margin);
-    const maxY = Math.max(margin, window.innerHeight - PIP_H - margin);
+    const maxX = Math.max(margin, window.innerWidth - w - margin);
+    const maxY = Math.max(margin, window.innerHeight - h - margin);
     return {
       x: Math.min(maxX, Math.max(margin, x)),
       y: Math.min(maxY, Math.max(margin, y)),
@@ -263,9 +280,7 @@ export function MiniPlayerProvider({ children }: { children: ReactNode }) {
     const d = dragRef.current;
     dragRef.current = null;
     if (!d) return;
-    if (!d.moved) {
-      expand();
-    }
+    if (!d.moved) bumpControls();
   };
 
   const onWatchPage = location.startsWith("/watch/");
@@ -275,9 +290,12 @@ export function MiniPlayerProvider({ children }: { children: ReactNode }) {
     if (onWatchPage && session) stopMini();
   }, [onWatchPage, session, stopMini]);
 
-  // Keep in view on rotate / resize
   useEffect(() => {
-    const onResize = () => setPos((p) => clampPos(p.x, p.y));
+    const onResize = () => {
+      const next = pipSize();
+      setSize(next);
+      setPos((p) => clampPos(p.x, p.y, next.w, next.h));
+    };
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, []);
@@ -285,9 +303,14 @@ export function MiniPlayerProvider({ children }: { children: ReactNode }) {
   const videoEl = (
     <video
       ref={videoRef}
-      className={showMiniUi ? "w-full h-full object-cover pointer-events-none" : "fixed w-px h-px opacity-0 pointer-events-none -z-10"}
+      className={
+        showMiniUi
+          ? "w-full h-full object-cover pointer-events-none"
+          : "fixed w-px h-px opacity-0 pointer-events-none -z-10"
+      }
       playsInline
       muted={false}
+      preload="auto"
       onTimeUpdate={() => {
         const t = videoRef.current?.currentTime;
         if (typeof t === "number") updateMiniTime(t);
@@ -313,65 +336,42 @@ export function MiniPlayerProvider({ children }: { children: ReactNode }) {
           style={{
             left: pos.x,
             top: pos.y,
-            width: PIP_W,
-            height: PIP_H,
+            width: size.w,
+            height: size.h,
           }}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
           onPointerCancel={onPointerUp}
         >
-          <div className="relative w-full h-full rounded-xl overflow-hidden bg-black border border-amber-400/40 shadow-[0_10px_28px_rgba(0,0,0,0.7)]">
+          <div className="relative w-full h-full rounded-lg overflow-hidden bg-black border border-amber-400/35 shadow-[0_8px_24px_rgba(0,0,0,0.65)]">
             {videoEl}
 
-            {/* Always-on thin title strip when controls hidden */}
-            {!controlsOn && (
-              <div className="absolute inset-x-0 bottom-0 px-1.5 py-1 bg-gradient-to-t from-black/80 to-transparent pointer-events-none">
-                <p className="text-[9px] font-bold text-white truncate">{session!.title}</p>
-              </div>
-            )}
-
-            {/* Controls overlay — show ≥5s after tap/drag start */}
+            {/* Only play/pause + enlarge — medium size */}
             {controlsOn && (
-              <div className="absolute inset-0 bg-black/35 flex flex-col justify-between p-1.5">
-                <div className="flex items-start justify-between gap-1">
-                  <span className="text-[8px] font-black uppercase tracking-wider text-amber-400 bg-black/55 px-1 py-0.5 rounded">
-                    Live
-                  </span>
-                  <button
-                    type="button"
-                    data-pip-btn
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      stopMini();
-                    }}
-                    className="w-6 h-6 rounded-full bg-black/70 text-white flex items-center justify-center"
-                    aria-label="Close"
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
-                </div>
-                <div className="flex items-center justify-center gap-2">
-                  <button
-                    type="button"
-                    data-pip-btn
-                    onClick={togglePlay}
-                    className="w-8 h-8 rounded-full bg-amber-400 text-black flex items-center justify-center shadow"
-                    aria-label={playing ? "Pause" : "Play"}
-                  >
-                    {playing ? <Pause className="w-3.5 h-3.5 fill-black" /> : <Play className="w-3.5 h-3.5 fill-black ml-0.5" />}
-                  </button>
-                  <button
-                    type="button"
-                    data-pip-btn
-                    onClick={expand}
-                    className="w-7 h-7 rounded-full bg-white/15 text-white flex items-center justify-center"
-                    aria-label="Open full player"
-                  >
-                    <Maximize2 className="w-3 h-3" />
-                  </button>
-                </div>
-                <p className="text-[8px] font-semibold text-white/90 truncate px-0.5">{session!.title}</p>
+              <div className="absolute inset-0 bg-black/40 flex items-center justify-center gap-2.5">
+                <button
+                  type="button"
+                  data-pip-btn
+                  onClick={togglePlay}
+                  className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-amber-400 text-black flex items-center justify-center shadow active:scale-95"
+                  aria-label={playing ? "Pause" : "Play"}
+                >
+                  {playing ? (
+                    <Pause className="w-3.5 h-3.5 fill-black" />
+                  ) : (
+                    <Play className="w-3.5 h-3.5 fill-black ml-px" />
+                  )}
+                </button>
+                <button
+                  type="button"
+                  data-pip-btn
+                  onClick={expand}
+                  className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-white/20 text-white flex items-center justify-center active:scale-95"
+                  aria-label="Open full player"
+                >
+                  <Maximize2 className="w-3.5 h-3.5" />
+                </button>
               </div>
             )}
           </div>
