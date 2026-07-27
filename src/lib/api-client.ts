@@ -1513,6 +1513,7 @@ export const uploadMediaFiles = async (
           const xhr = new XMLHttpRequest();
           xhr.open('PUT', data.uploadUrl);
           xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+          xhr.timeout = 0; // no client timeout — 1–2GB can take a while
           xhr.upload.addEventListener('progress', (event) => {
             if (!event.lengthComputable) return;
             const percent = Math.round((event.loaded / event.total) * 100);
@@ -1520,9 +1521,20 @@ export const uploadMediaFiles = async (
           });
           xhr.addEventListener('load', () => {
             if (xhr.status >= 200 && xhr.status < 300) resolve();
-            else reject(new Error(`S3 upload failed (${xhr.status})`));
+            else
+              reject(
+                new Error(
+                  `S3 upload failed (${xhr.status}): ${String(xhr.responseText || '').slice(0, 160) || 'check bucket CORS for PUT from https://tataiya.in'}`
+                )
+              );
           });
-          xhr.addEventListener('error', () => reject(new Error('S3 network error')));
+          xhr.addEventListener('error', () =>
+            reject(
+              new Error(
+                'S3 network/CORS error. Ensure bucket CORS allows PUT from https://tataiya.in with Content-Type header.'
+              )
+            )
+          );
           xhr.addEventListener('abort', () => reject(new Error('S3 upload aborted')));
           xhr.send(file);
         });
