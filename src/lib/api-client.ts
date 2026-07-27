@@ -35,13 +35,26 @@ export const getImageUrl = (filePath) => {
   if (filePath === "/logo.png" || filePath === "/favicon.png" || filePath.startsWith("/assets/"))
     return filePath;
 
+  // Local uploads
   if (filePath.startsWith("/uploads/") || filePath.startsWith("uploads/")) {
     const cleanPath = filePath.startsWith("/") ? filePath.slice(1) : filePath;
-    return `${baseUrl}/${cleanPath}`;
+    // baseUrl may be https://tataiya.in/api — strip trailing /api for static files
+    const origin = String(baseUrl || "").replace(/\/api\/?$/, "") || "https://tataiya.in";
+    return `${origin}/${cleanPath}`;
   }
 
   const cleanPath = filePath.startsWith("/") ? filePath.slice(1) : filePath;
-  return `${baseUrl}/uploads/${cleanPath}`;
+
+  // S3 object keys look like "media/folder/file.png" (no uploads/ prefix)
+  if (!cleanPath.startsWith("uploads/")) {
+    const s3Base =
+      import.meta.env.VITE_S3_PUBLIC_BASE ||
+      "https://tatiyatv.s3.eu-north-1.amazonaws.com";
+    return `${String(s3Base).replace(/\/$/, "")}/${cleanPath}`;
+  }
+
+  const origin = String(baseUrl || "").replace(/\/api\/?$/, "") || "https://tataiya.in";
+  return `${origin}/uploads/${cleanPath}`;
 };
 
 export const setBaseUrl = (url) => {
