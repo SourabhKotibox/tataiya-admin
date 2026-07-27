@@ -15,6 +15,7 @@ import {
   useGetWebHome, useGetWebBrowse, loginClient, registerClient, useGetPages,
   useGetGenres, useGetPublicNotifications, useGetWebSubscriptionPlans,
   useGetWatchHistory, useGetSections, useGetWebAllContent, getAppProfile,
+  useGetWishlist, useToggleWishlist,
 } from "@/lib/api-client";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { WebsiteReviews } from "@/components/WebsiteReviews";
@@ -671,124 +672,319 @@ function MoviesTab({ onPlay }: { onPlay: (item: ContentItem) => void }) {
   );
 }
 
+/* ─── NEW & HOT helpers ─── */
+function parseContentDate(item: any): Date | null {
+  // Never use `year` alone — `new Date(2025)` / `new Date("2025")` becomes Jan 1
+  const candidates = [item.createdAt, item.addedAt, item.releaseDate, item.updatedAt];
+  for (const raw of candidates) {
+    if (!raw) continue;
+    const d = new Date(raw);
+    if (!Number.isNaN(d.getTime()) && d.getFullYear() >= 2000) return d;
+  }
+  return null;
+}
+
+function formatFreshLabel(item: any): string {
+  const d = parseContentDate(item);
+  if (d) {
+    const days = Math.floor((Date.now() - d.getTime()) / 86400000);
+    if (days <= 0) return "Added today";
+    if (days === 1) return "Added yesterday";
+    if (days < 7) return `Added ${days} days ago`;
+    if (days < 30) return `Added ${Math.floor(days / 7)} week${days >= 14 ? "s" : ""} ago`;
+    return d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+  }
+  if (item.year) return String(item.year);
+  return "New on Tataiya";
+}
+
+function contentBadgeLabel(item: any): string {
+  if (item.badge) return String(item.badge);
+  if (item.trending) return "TRENDING";
+  if (item.isNewContent) return "NEW";
+  return "HOT";
+}
+
 /* ─── NEW & HOT TAB ─── */
 function NewHotTab({ onPlay, showToast }: { onPlay: (item: ContentItem) => void; showToast?: (msg: string) => void }) {
+  const [, setLocation] = useLocation();
   const { data: homeData, isLoading } = useGetWebHome();
-  const [reminders, setReminders] = useState<Record<string, boolean>>(() => {
-    try {
-      const stored = localStorage.getItem("streamvault_reminders");
-      return stored ? JSON.parse(stored) : {};
-    } catch {
-      return {};
-    }
-  });
+  const [filter, setFilter] = useState<"all" | "new" | "trending" | "hot">("all");
+  const { data: wishlistData } = useGetWishlist({ limit: 200 });
+  const toggleWishlistMutation = useToggleWishlist();
+  const wishlistItems: any[] = wishlistData?.items || [];
+  const wishlistIds = useMemo(
+    () => new Set(wishlistItems.map((w: any) => String(w.id || w.contentId || ""))),
+    [wishlistItems]
+  );
 
-  const toggleReminder = (id: string, title: string) => {
-    const active = !reminders[id];
-    setReminders((prev) => {
-      const next = { ...prev, [id]: active };
-      try {
-        localStorage.setItem("streamvault_reminders", JSON.stringify(next));
-      } catch (e) {}
-      return next;
-    });
-    if (showToast) {
-      showToast(active ? `Reminder set for "${title}"` : `Reminder cancelled for "${title}"`);
+  const allItems = useMemo(() => {
+    if (!homeData) return [];
+    const newReleases = homeData.newReleases || [];
+    const trendingNow = homeData.trendingNow || [];
+    const fallbackMovies = homeData.movies || homeData.allContent || homeData.sections?.flatMap((sec: any) => sec.content || []) || [];
+    return [...newReleases, ...trendingNow, ...fallbackMovies]
+      .filter((v, i, a) => a.findIndex((t) => (t.id || t._id) === (v.id || v._id)) === i)
+      .sort((a, b) => {
+        const dateA = parseContentDate(a)?.getTime() || 0;
+        const dateB = parseContentDate(b)?.getTime() || 0;
+        return dateB - dateA;
+      })
+      .slice(0, 30);
+  }, [homeData]);
+
+  const filtered = useMemo(() => {
+    if (filter === "all") return allItems;
+    if (filter === "new") {
+      return allItems.filter((i: any) => i.isNewContent || i.badge === "NEW" || /new/i.test(String(i.badge || "")));
     }
+    if (filter === "trending") {
+      return allItems.filter((i: any) => i.trending || i.badge === "TRENDING" || /trend/i.test(String(i.badge || "")));
+    }
+    return allItems.filter((i: any) => i.badge === "HOT" || (!i.trending && !i.isNewContent));
+  }, [allItems, filter]);
+
+  const featured = filtered[0];
+  const rest = filtered.slice(1);
+
+  const handleWatchlist = (e: React.MouseEvent, item: any) => {
+    e.stopPropagation();
+    const token = localStorage.getItem("appAccessToken") || localStorage.getItem("accessToken");
+    if (!token) {
+      showToast?.("Sign in to save movies to your list");
+      setLocation("/login");
+      return;
+    }
+    const id = String(item.id || item._id || "");
+    toggleWishlistMutation.mutate(
+      { contentId: id, contentType: "movie" },
+      {
+        onSuccess: () => {
+          const wasIn = wishlistIds.has(id);
+          showToast?.(wasIn ? `Removed "${item.title}" from My List` : `Saved "${item.title}" to My List`);
+        },
+        onError: () => showToast?.("Could not update My List"),
+      }
+    );
   };
 
-  if (isLoading || !homeData) return <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-amber-400" /></div>;
+  if (isLoading || !homeData) {
+    return (
+      <div className="flex justify-center py-20">
+        <Loader2 className="w-8 h-8 animate-spin text-amber-400" />
+      </div>
+    );
+  }
 
-  const newReleases = homeData.newReleases || [];
-  const trendingNow = homeData.trendingNow || [];
-  const fallbackMovies = homeData.movies || homeData.allContent || homeData.sections?.flatMap((sec: any) => sec.content || []) || [];
-  const allItems = [...newReleases, ...trendingNow, ...fallbackMovies]
-    .filter((v, i, a) => a.findIndex(t => (t.id || t._id) === (v.id || v._id)) === i)
-    .sort((a, b) => {
-      const dateA = new Date(a.releaseDate || a.year || a.createdAt || 0).getTime();
-      const dateB = new Date(b.releaseDate || b.year || b.createdAt || 0).getTime();
-      return dateB - dateA;
-    })
-    .slice(0, 24);
+  const filters = [
+    { key: "all" as const, label: "All", icon: <Flame className="w-3.5 h-3.5" /> },
+    { key: "new" as const, label: "Just In", icon: <Sparkles className="w-3.5 h-3.5" /> },
+    { key: "trending" as const, label: "Trending", icon: <TrendingUp className="w-3.5 h-3.5" /> },
+    { key: "hot" as const, label: "Popular", icon: <Star className="w-3.5 h-3.5" /> },
+  ];
 
   return (
-    <div className="pt-6 max-w-4xl mx-auto px-4 pb-20">
-      <div className="mb-10 text-center sm:text-left">
-        <h2 className="text-white font-bold text-2xl sm:text-3xl tracking-tight">New & Hot</h2>
-        <p className="text-white text-xs sm:text-sm mt-1.5 font-medium">Follow the latest titles and trending releases.</p>
-      </div>
+    <div className="relative pb-24">
+      {/* Atmosphere */}
+      <div
+        className="pointer-events-none absolute inset-x-0 top-0 h-[420px] opacity-90"
+        style={{
+          background:
+            "radial-gradient(ellipse 80% 60% at 50% -10%, rgba(255,184,0,0.18), transparent 55%), linear-gradient(180deg, #12100a 0%, #030306 70%)",
+        }}
+      />
 
-      {allItems.length === 0 ? (
-        <div className="text-center py-16 text-white/60 text-sm">No new releases yet. Check back soon.</div>
-      ) : (
-      <div className="relative border-l border-zinc-800 ml-4 sm:ml-10 pl-6 sm:pl-10 space-y-12">
-        {allItems.map((item: any) => {
-          const id = item.id || item._id || "";
-          const hasReminder = !!reminders[id];
-          const releaseDate = item.releaseDate || item.year || item.createdAt || new Date().toISOString();
-          const parsedDate = new Date(releaseDate);
-          const month = parsedDate.toLocaleString("default", { month: "short" }).toUpperCase();
-          const day = parsedDate.getDate();
-
-          return (
-            <div key={id} className="relative group/timeline">
-              <div className="absolute -left-[31px] sm:-left-[47px] top-4 w-4 h-4 rounded-full bg-zinc-950 border-2 border-zinc-700 flex items-center justify-center group-hover/timeline:border-amber-400 transition-colors">
-                <div className="w-1.5 h-1.5 rounded-full bg-zinc-700 group-hover/timeline:bg-amber-400 transition-colors" />
-              </div>
-
-              {month && (
-                <div className="absolute -left-[95px] sm:-left-[125px] top-1 text-center w-16">
-                  <p className="text-white text-[10px] font-bold tracking-widest">{month}</p>
-                  <p className="text-white text-xl sm:text-2xl font-bold leading-none mt-0.5">{day}</p>
-                </div>
-              )}
-
-              <div 
-                onClick={() => onPlay(item)}
-                className="rounded-2xl overflow-hidden bg-zinc-900/40 border border-zinc-800/60 flex flex-col md:flex-row gap-5 p-4 sm:p-5 hover:border-amber-500/30 transition-colors cursor-pointer group-hover/timeline:bg-zinc-900/70 shadow-[0_0_0_0_rgba(255,184,0,0)] hover:shadow-[0_12px_40px_-16px_rgba(255,184,0,0.35)]"
+      <div className="relative max-w-6xl mx-auto px-4 sm:px-8 lg:px-12 pt-8 sm:pt-10">
+        <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 mb-8">
+          <div>
+            <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-amber-400/10 border border-amber-400/25 text-amber-400 text-[10px] font-bold uppercase tracking-[0.18em] mb-3">
+              <Flame className="w-3 h-3" /> Fresh on Tataiya
+            </div>
+            <h2 className="text-white font-black text-3xl sm:text-4xl tracking-tight">New & Hot</h2>
+            <p className="text-white/55 text-sm mt-2 max-w-md">
+              Latest drops, trending titles, and what everyone is watching now.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {filters.map((f) => (
+              <button
+                key={f.key}
+                type="button"
+                onClick={() => setFilter(f.key)}
+                className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-bold transition-all ${
+                  filter === f.key
+                    ? "bg-amber-400 text-black shadow-[0_8px_24px_rgba(255,184,0,0.35)]"
+                    : "bg-white/5 text-white/70 border border-white/10 hover:bg-white/10 hover:text-white"
+                }`}
               >
-                <div className="relative md:w-64 w-full flex-shrink-0 rounded-xl overflow-hidden bg-black aspect-[16/9]">
-                  <img src={getImageUrl(item.backdrop || item.poster)} alt={item.title} className="w-full h-full object-cover" />
-                </div>
+                {f.icon}
+                {f.label}
+              </button>
+            ))}
+          </div>
+        </div>
 
-                <div className="flex-1 flex flex-col justify-between min-w-0">
-                  <div>
-                    <div className="flex items-center justify-between gap-4 flex-wrap">
-                      <h3 className="text-white text-base sm:text-lg font-bold truncate">{item.title}</h3>
+        {filtered.length === 0 ? (
+          <div className="text-center py-20 rounded-3xl border border-white/10 bg-white/[0.03]">
+            <Flame className="w-10 h-10 text-amber-400/50 mx-auto mb-3" />
+            <p className="text-white/70 text-sm font-medium">Nothing in this lane yet.</p>
+            <p className="text-white/40 text-xs mt-1">Try another filter or check back soon.</p>
+          </div>
+        ) : (
+          <div className="space-y-8">
+            {/* Featured spotlight */}
+            {featured && (
+              <article
+                onClick={() => onPlay(featured)}
+                className="group relative overflow-hidden rounded-3xl border border-amber-400/20 bg-[#0c0c10] cursor-pointer shadow-[0_24px_80px_-40px_rgba(255,184,0,0.45)]"
+              >
+                <div className="grid md:grid-cols-[1.15fr_1fr] min-h-[280px]">
+                  <div className="relative aspect-[16/10] md:aspect-auto md:min-h-[320px]">
+                    <img
+                      src={getImageUrl(featured.backdrop || featured.poster)}
+                      alt={featured.title}
+                      className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-[#0c0c10]/20 to-[#0c0c10] hidden md:block" />
+                    <div className="absolute inset-0 bg-gradient-to-t from-[#0c0c10] via-transparent to-black/20 md:hidden" />
+                    <span className="absolute left-4 top-4 px-2.5 py-1 rounded-md bg-amber-400 text-black text-[10px] font-black uppercase tracking-wider">
+                      {contentBadgeLabel(featured)}
+                    </span>
+                  </div>
+                  <div className="relative flex flex-col justify-center p-5 sm:p-8 gap-4">
+                    <p className="text-amber-400/90 text-[11px] font-bold uppercase tracking-[0.16em]">
+                      {formatFreshLabel(featured)}
+                    </p>
+                    <h3 className="text-white text-2xl sm:text-3xl font-black leading-tight tracking-tight">
+                      {featured.title}
+                    </h3>
+                    {featured.description && (
+                      <p className="text-white/55 text-sm leading-relaxed line-clamp-3">{featured.description}</p>
+                    )}
+                    <div className="flex flex-wrap gap-2">
+                      {(featured.genres || []).slice(0, 3).map((g: string) => (
+                        <span key={g} className="text-[10px] font-bold px-2.5 py-1 rounded-full border border-white/10 text-white/70 uppercase tracking-wider">
+                          {g}
+                        </span>
+                      ))}
+                      {featured.ageRating && (
+                        <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-white/5 text-white/50 uppercase">
+                          {featured.ageRating}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap gap-2.5 pt-1">
                       <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          toggleReminder(id, item.title);
-                        }}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all ${
-                          hasReminder
-                            ? "bg-emerald-600/15 border-emerald-600/30 text-emerald-400"
-                            : "bg-zinc-900 border-zinc-800 hover:border-zinc-700 text-white"
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); onPlay(featured); }}
+                        className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-amber-400 text-black text-sm font-bold hover:bg-amber-300 transition-colors"
+                      >
+                        <Play className="w-4 h-4 fill-black" /> Watch Now
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => handleWatchlist(e, featured)}
+                        className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border text-sm font-bold transition-colors ${
+                          wishlistIds.has(String(featured.id || featured._id || ""))
+                            ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-400"
+                            : "border-white/15 bg-white/5 text-white hover:bg-white/10"
                         }`}
                       >
-                        {hasReminder ? <Check className="w-3.5 h-3.5" /> : <Bell className="w-3.5 h-3.5" />}
-                        {hasReminder ? "Reminder Set" : "Remind Me"}
+                        {wishlistIds.has(String(featured.id || featured._id || "")) ? (
+                          <><Check className="w-4 h-4" /> In My List</>
+                        ) : (
+                          <><Plus className="w-4 h-4" /> My List</>
+                        )}
                       </button>
                     </div>
-                    {item.description && (
-                      <p className="text-white text-xs sm:text-[13px] leading-relaxed mt-2.5 line-clamp-3">{item.description}</p>
-                    )}
-                  </div>
-
-                  <div className="flex items-center gap-2 mt-4 flex-wrap">
-                    <span className="text-white/80 text-[10px] font-bold tracking-wider uppercase">{item.badge || 'NEW'}</span>
-                    <span className="text-white text-[10px]">·</span>
-                    {(item.genres || []).slice(0, 2).map((g: string) => (
-                      <span key={g} className="text-[10px] font-bold px-2.5 py-0.5 bg-zinc-900 border border-zinc-800 text-white/80 rounded-full uppercase tracking-wider">{g}</span>
-                    ))}
                   </div>
                 </div>
+              </article>
+            )}
+
+            {/* Grid */}
+            {rest.length > 0 && (
+              <div>
+                <div className="flex items-center justify-between mb-4">
+                  <h4 className="text-white font-bold text-lg tracking-tight">More to watch</h4>
+                  <span className="text-white/40 text-xs font-medium">{filtered.length} titles</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
+                  {rest.map((item: any) => {
+                    const id = String(item.id || item._id || "");
+                    const inList = wishlistIds.has(id);
+                    return (
+                      <article
+                        key={id}
+                        onClick={() => onPlay(item)}
+                        className="group rounded-2xl overflow-hidden bg-[#0e0e14] border border-white/8 hover:border-amber-400/30 transition-all cursor-pointer hover:shadow-[0_16px_48px_-24px_rgba(255,184,0,0.4)]"
+                      >
+                        <div className="relative aspect-[16/9] bg-black overflow-hidden">
+                          <img
+                            src={getImageUrl(item.backdrop || item.poster)}
+                            alt={item.title}
+                            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                          />
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/10" />
+                          <span className="absolute left-3 top-3 px-2 py-0.5 rounded bg-black/70 border border-white/10 text-[9px] font-black uppercase tracking-wider text-amber-400">
+                            {contentBadgeLabel(item)}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); onPlay(item); }}
+                            className="absolute right-3 bottom-3 w-10 h-10 rounded-full bg-amber-400 text-black flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-lg"
+                            aria-label="Watch"
+                          >
+                            <Play className="w-4 h-4 fill-black ml-0.5" />
+                          </button>
+                        </div>
+                        <div className="p-4 space-y-2.5">
+                          <div className="flex items-start justify-between gap-2">
+                            <h3 className="text-white font-bold text-[15px] leading-snug line-clamp-2">{item.title}</h3>
+                          </div>
+                          <p className="text-amber-400/80 text-[11px] font-semibold">{formatFreshLabel(item)}</p>
+                          {item.description && (
+                            <p className="text-white/45 text-xs leading-relaxed line-clamp-2">{item.description}</p>
+                          )}
+                          <div className="flex items-center gap-2 flex-wrap pt-0.5">
+                            {(item.genres || []).slice(0, 2).map((g: string) => (
+                              <span key={g} className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-white/5 text-white/55 uppercase tracking-wider">
+                                {g}
+                              </span>
+                            ))}
+                          </div>
+                          <div className="flex gap-2 pt-1">
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); onPlay(item); }}
+                              className="flex-1 inline-flex items-center justify-center gap-1.5 py-2 rounded-lg bg-amber-400 text-black text-xs font-bold hover:bg-amber-300 transition-colors"
+                            >
+                              <Play className="w-3.5 h-3.5 fill-black" /> Watch
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => handleWatchlist(e, item)}
+                              className={`inline-flex items-center justify-center gap-1 px-3 py-2 rounded-lg border text-xs font-bold transition-colors ${
+                                inList
+                                  ? "border-emerald-500/40 text-emerald-400 bg-emerald-500/10"
+                                  : "border-white/12 text-white/80 hover:bg-white/5"
+                              }`}
+                              aria-label={inList ? "In My List" : "Add to My List"}
+                            >
+                              {inList ? <Check className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
+                              <span className="hidden xs:inline">{inList ? "Saved" : "My List"}</span>
+                            </button>
+                          </div>
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          );
-        })}
+            )}
+          </div>
+        )}
       </div>
-      )}
     </div>
   );
 }
