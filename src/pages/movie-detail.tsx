@@ -253,7 +253,7 @@ export default function MovieDetailPage() {
 
         {/* Action buttons */}
         <div className="flex items-center gap-3 flex-wrap">
-          {/* Watch Now — scrolls back to player and plays fullscreen */}
+          {/* Watch Now */}
           <button
             onClick={() => {
               if (isLocked) {
@@ -264,10 +264,9 @@ export default function MovieDetailPage() {
                 setLocation(`/watch/${id}`);
               }
             }}
-            className="flex items-center gap-2.5 px-8 py-3.5 font-black rounded-xl text-sm tracking-wide transition-all active:scale-95 shadow-lg text-foreground"
-            style={{ background: "linear-gradient(135deg, #e50914 0%, #b9090b 100%)", boxShadow: "0 8px 24px rgba(229,9,20,0.3)" }}
+            className="flex items-center gap-2.5 px-8 py-3.5 font-black rounded-xl text-sm tracking-wide transition-all active:scale-95 shadow-lg bg-amber-400 hover:bg-amber-300 text-black shadow-amber-900/40"
           >
-            {isLocked ? <Crown className="w-4 h-4 text-amber-500 fill-amber-500" /> : <Play className="w-4 h-4 fill-white" />}
+            {isLocked ? <Crown className="w-4 h-4 fill-black" /> : <Play className="w-4 h-4 fill-black" />}
             {isLocked ? "Unlock Now" : "Watch Now"}
           </button>
 
@@ -303,10 +302,15 @@ export default function MovieDetailPage() {
             {inWatchlist ? "In Watchlist" : "Watchlist"}
           </button>
 
-          {/* Download button for movie */}
+          {/* Download — only when movie allows downloads */}
+          {(item.downloadAllowed !== false || isDownloaded) && (
           <button
             onClick={async () => {
               if (!user) { setLocation("/login"); return; }
+              if (item.downloadAllowed === false && !isDownloaded) {
+                toast({ title: "Download unavailable", description: "Downloading is disabled for this movie." });
+                return;
+              }
               if (isDownloaded) {
                 removeDownloadMutation.mutate(
                   { id: downloadRecord.id, contentId: id! },
@@ -363,6 +367,7 @@ export default function MovieDetailPage() {
             )}
             {dlProgress !== null ? "Downloading..." : isDownloaded ? "Downloaded" : "Download"}
           </button>
+          )}
 
           {/* Like button */}
           <button

@@ -1501,7 +1501,8 @@ export default function WatchPage() {
                   </span>
                 </button>
 
-                {/* Download Button */}
+                {/* Download — hide when movie disables downloads */}
+                {(showData?.downloadAllowed !== false || isDownloaded) && (
                 <button
                   onClick={() => handleDownloadToggle()}
                   disabled={requestDownloadMutation.isPending || removeDownloadMutation.isPending}
@@ -1518,6 +1519,7 @@ export default function WatchPage() {
                     {isDownloaded ? "Downloaded" : "Download"}
                   </span>
                 </button>
+                )}
               </div>
 
               {/* Cast & Crew Section */}
@@ -1555,7 +1557,7 @@ export default function WatchPage() {
           {related && related.length > 0 && (
             <div className="px-4 sm:px-6 lg:px-10 mt-12 border-t border-zinc-900 pt-10">
               <div className="flex items-center gap-3 mb-5">
-                <div className="w-1 h-6 rounded-full flex-shrink-0" style={{ background: "#e50914" }} />
+                <div className="w-1 h-6 rounded-full flex-shrink-0 bg-amber-400" />
                 <h2 className="text-foreground font-black text-lg sm:text-xl tracking-tight">More Like This</h2>
                 <div className="flex-1" />
                 {detail.tags.length > 0 && (
