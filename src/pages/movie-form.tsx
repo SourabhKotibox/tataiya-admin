@@ -297,12 +297,15 @@ export default function MovieForm() {
     applyVideoAutoFill(media);
 
     const mediaId = media.id || media._id || media.mediaFileId;
+    const hasPath = !!(media.filePath || media.url || media.hlsMasterPlaylistUrl);
+    if (hasPath) {
+      toast({
+        title: "Video ready on form",
+        description: "Click Update Movie anytime. HLS qualities will fill in when processing finishes.",
+      });
+    }
     if (mediaId && (media.hlsStatus === "processing" || media.hlsStatus === "pending" || !media.duration)) {
       setProcessingMediaId(String(mediaId));
-      toast({
-        title: "Video processing",
-        description: "Duration, cover frame & HLS qualities will auto-fill when ready.",
-      });
     } else if (!media.duration) {
       const videoSrc = media.url || media.filePath;
       if (videoSrc) {
@@ -310,11 +313,6 @@ export default function MovieForm() {
         video.src = getImageUrl(videoSrc);
         video.onloadedmetadata = () => setDuration((prev) => prev || secsToDuration(Math.round(video.duration)));
       }
-    } else {
-      toast({
-        title: "Details auto-filled",
-        description: "Title, duration, age rating & SEO filled from the video.",
-      });
     }
   };
 
@@ -623,7 +621,7 @@ export default function MovieForm() {
       if (!payload.hlsUrl) {
         toast({
           title: "Movie video required",
-          description: "Select a video from Media Library (or wait for upload + HLS to finish).",
+          description: "Upload finished? Wait 1–2 seconds for auto-attach, or open Media Library and select the video.",
           variant: "destructive",
         });
         setIsSaving(false);
@@ -1252,8 +1250,13 @@ export default function MovieForm() {
           <div className="p-6 space-y-6">
             <SectionHeading title="Video Source" />
             {processingMediaId && (
-              <div className="rounded-lg border border-primary/30 bg-primary/5 px-4 py-3 text-sm text-foreground">
-                Transcoding in progress — duration, cover frame, and HLS qualities will auto-fill when ready.
+              <div className="rounded-lg border border-amber-400/40 bg-amber-400/10 px-4 py-3 text-sm text-foreground">
+                Video is attached — you can save the movie now. Transcoding continues in the background; HLS qualities will auto-fill when ready.
+              </div>
+            )}
+            {(videoFilePath || videoUrl) && !processingMediaId && (
+              <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-foreground">
+                Video source ready — click Update Movie to publish changes.
               </div>
             )}
             <div className="rounded-xl border border-border bg-muted/10 p-5">

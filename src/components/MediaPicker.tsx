@@ -52,7 +52,8 @@ export default function MediaPicker({ open, onClose, onSelect, source, accept = 
     limit: 100,
     search: searchQuery || undefined,
     fileType: effectiveFileType,
-    pollHls: true,
+    pollHls: open,
+    enabled: open,
   });
 
   const allMedia = allMediaData?.data || [];
@@ -85,17 +86,7 @@ export default function MediaPicker({ open, onClose, onSelect, source, accept = 
       uploadedFile?.fileType?.startsWith?.("video/") ||
       /\.(mp4|webm|mov|mkv|avi|m4v)$/i.test(uploadedFile?.name || "");
 
-    if (isVideoUpload && (uploadedFile?.hlsStatus === "processing" || uploadedFile?.hlsStatus === "pending")) {
-      toast({
-        title: "Uploaded — HLS generating in background",
-        description: "You can use the video now. Qualities appear when processing finishes.",
-      });
-    } else {
-      toast({ title: "File uploaded successfully!" });
-    }
-
-    await refetchMedia();
-    onSelect({
+    const selected = {
       ...uploadedFile,
       id: uploadedFile.id || uploadedFile.mediaFileId || uploadedFile._id,
       mediaFileId: uploadedFile.mediaFileId || uploadedFile.id || uploadedFile._id,
@@ -109,7 +100,21 @@ export default function MediaPicker({ open, onClose, onSelect, source, accept = 
         typeof uploadedFile.url === "string" && uploadedFile.url.startsWith("http")
           ? uploadedFile.url
           : uploadedFile.filePath || uploadedFile.url,
-    });
+    };
+
+    // Attach to the form immediately — never wait on media list / HLS
+    onSelect(selected);
+
+    if (isVideoUpload && (uploadedFile?.hlsStatus === "processing" || uploadedFile?.hlsStatus === "pending")) {
+      toast({
+        title: "Video attached — you can save now",
+        description: "HLS keeps generating in the background and will auto-fill when ready.",
+      });
+    } else {
+      toast({ title: "File attached — you can save now" });
+    }
+
+    refetchMedia().catch(() => {});
   };
 
   const handleConfirm = async () => {

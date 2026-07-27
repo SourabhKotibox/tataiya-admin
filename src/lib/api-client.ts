@@ -1886,19 +1886,20 @@ export const useGetAllMediaFiles = (options?: {
   fileType?: string;
   search?: string;
   pollHls?: boolean;
+  enabled?: boolean;
 }) => {
   return useQuery({
     queryKey: ['all-media-files', options],
     queryFn: () => getAllMediaFiles(options),
-    enabled: true,
+    enabled: options?.enabled !== false,
     refetchInterval: (query) => {
-      if (!options?.pollHls) return false;
+      if (!options?.pollHls || options?.enabled === false) return false;
       const files = (query.state.data as any)?.data || [];
       const processing = Array.isArray(files) && files.some((f: any) => {
         const isVid = (f.fileType || '').startsWith('video') || /\.(mp4|webm|mov|mkv|avi|m4v)$/i.test(f.name || '');
         return isVid && f.hlsStatus === 'processing';
       });
-      return processing ? 4000 : false;
+      return processing ? 5000 : false;
     },
   });
 };
