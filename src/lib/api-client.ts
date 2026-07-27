@@ -1,9 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
-// Production default includes /api because live nginx strips one /api prefix.
-// Request /api/api/auth/login → backend receives /api/auth/login (works today).
+// Production: site origin only. API paths already start with /api/...
 // Local: set VITE_API_URL=http://localhost:3000 in .env.local
-let baseUrl = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? "https://tataiya.in/api" : "http://localhost:3000");
+let baseUrl = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? "https://tataiya.in" : "http://localhost:3000");
 let getAuthToken = () => localStorage.getItem("appAccessToken");
 
 export const getActiveProfileId = (): string | null => {

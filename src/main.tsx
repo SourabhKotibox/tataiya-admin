@@ -9,7 +9,7 @@ import {
 
 setBaseUrl(
   import.meta.env.VITE_API_URL ||
-    (import.meta.env.PROD ? "https://tataiya.in/api" : "http://localhost:3000")
+    (import.meta.env.PROD ? "https://tataiya.in" : "http://localhost:3000")
 );
 
 setAuthTokenGetter(() =>
