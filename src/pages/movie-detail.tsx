@@ -85,8 +85,6 @@ export default function MovieDetailPage() {
   const related = detailData?.related || [];
   const similarContent = detailData?.related || [];
 
-  const { data: profileData } = useGetAppProfile();
-
   const isLiked = profileData?.likeRecords?.some((l: any) => l.contentId === id) || false;
   const toggleLikeMutation = useToggleLike();
 
