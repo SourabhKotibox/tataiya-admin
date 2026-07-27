@@ -1,10 +1,10 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useParams, useLocation } from "wouter";
 import {
-  ChevronLeft, ChevronRight, Heart, Star, Share2, Lock,
+  ChevronLeft, ChevronRight, Heart, Star, Share2, Lock, Unlock,
   Play, Pause, Volume2, VolumeX, Volume1, Maximize, Minimize,
   SkipForward, Home, Loader2, X, CreditCard, Crown,
-  Settings, Check, RotateCcw, RotateCw, SkipBack, Plus, Download
+  Settings, Check, RotateCcw, RotateCw, SkipBack, Plus, Download, Sun
 } from "lucide-react";
 import { PublicHeader, PublicFooter } from "./streaming-home";
 import { WebsiteReviews } from "@/components/WebsiteReviews";
@@ -104,6 +104,21 @@ function VideoPlayer({
   const [isFullscreen,   setIsFullscreen]   = useState(false);
   const [loading,        setLoading]        = useState(true);
   const [skipAnim,       setSkipAnim]       = useState<"left"|"right"|null>(null);
+  const [uiLocked, setUiLocked] = useState(false);
+  const [brightness, setBrightness] = useState(1); // 0.2–1 screen overlay
+  const [gestureHud, setGestureHud] = useState<{ type: "volume" | "brightness"; value: number } | null>(null);
+
+  const lastTapRef = useRef(0);
+  const tapTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  const touchHandledRef = useRef(false);
+  const gestureRef = useRef<{
+    active: boolean;
+    mode: "volume" | "brightness" | null;
+    startY: number;
+    startX: number;
+    startVal: number;
+  }>({ active: false, mode: null, startY: 0, startX: 0, startVal: 0 });
+  const gestureHudTimer = useRef<ReturnType<typeof setTimeout>>();
 
   // Quality & Speed Settings state
   const [currentSrc,     setCurrentSrc]     = useState(() => videoSrc ? getImageUrl(videoSrc) : "");
@@ -152,15 +167,22 @@ function VideoPlayer({
 
   const scheduleHide = useCallback(() => {
     clearTimeout(hideTimerRef.current);
-    if (playing) {
+    if (playing && !uiLocked) {
       hideTimerRef.current = setTimeout(() => setControlsVisible(false), 3000);
     }
-  }, [playing]);
+  }, [playing, uiLocked]);
 
   const revealControls = useCallback(() => {
+    if (uiLocked) return;
     setControlsVisible(true);
     scheduleHide();
-  }, [scheduleHide]);
+  }, [scheduleHide, uiLocked]);
+
+  const showGestureHud = useCallback((type: "volume" | "brightness", value: number) => {
+    setGestureHud({ type, value });
+    clearTimeout(gestureHudTimer.current);
+    gestureHudTimer.current = setTimeout(() => setGestureHud(null), 900);
+  }, []);
 
   // Sync parent videoSrc
   useEffect(() => {
@@ -169,6 +191,7 @@ function VideoPlayer({
     setSpeed(1.0);
     setSettingsOpen(false);
     setCurrentMenu("main");
+    setUiLocked(false);
   }, [videoSrc]);
 
   /* play / pause */
@@ -177,8 +200,93 @@ function VideoPlayer({
     if (!v) return;
     if (v.paused) { await v.play().catch(() => {}); }
     else          { v.pause(); }
-    revealControls();
-  }, [revealControls]);
+    if (!uiLocked) revealControls();
+  }, [revealControls, uiLocked]);
+
+  /** Single tap = show/hide controls · Double tap = play/pause */
+  const handleScreenTap = useCallback((e?: React.SyntheticEvent) => {
+    e?.stopPropagation?.();
+    if (uiLocked) {
+      // When locked, single tap briefly shows unlock affordance only
+      setControlsVisible(true);
+      clearTimeout(hideTimerRef.current);
+      hideTimerRef.current = setTimeout(() => setControlsVisible(false), 1800);
+      return;
+    }
+    const now = Date.now();
+    if (now - lastTapRef.current < 280) {
+      clearTimeout(tapTimerRef.current);
+      lastTapRef.current = 0;
+      void togglePlay();
+      return;
+    }
+    lastTapRef.current = now;
+    tapTimerRef.current = setTimeout(() => {
+      setControlsVisible((v) => {
+        const next = !v;
+        if (next) scheduleHide();
+        return next;
+      });
+    }, 280);
+  }, [uiLocked, togglePlay, scheduleHide]);
+
+  const toggleLock = useCallback(() => {
+    setUiLocked((locked) => {
+      const next = !locked;
+      if (next) {
+        setControlsVisible(false);
+        setSettingsOpen(false);
+        clearTimeout(hideTimerRef.current);
+      } else {
+        setControlsVisible(true);
+        scheduleHide();
+      }
+      return next;
+    });
+  }, [scheduleHide]);
+
+  const onGestureStart = useCallback((clientX: number, clientY: number, width: number) => {
+    gestureRef.current = {
+      active: true,
+      mode: null, // decide after movement
+      startY: clientY,
+      startX: clientX,
+      startVal: clientX < width / 2 ? brightness : (muted ? 0 : volume),
+    };
+  }, [brightness, muted, volume]);
+
+  const onGestureMove = useCallback((clientX: number, clientY: number, width: number) => {
+    const g = gestureRef.current;
+    if (!g.active) return;
+    const dy = g.startY - clientY;
+    const dx = Math.abs(clientX - g.startX);
+    if (!g.mode) {
+      if (Math.abs(dy) < 12 || Math.abs(dy) < dx) return; // need clear vertical swipe
+      g.mode = g.startX < width / 2 ? "brightness" : "volume";
+      g.startVal = g.mode === "brightness" ? brightness : (muted ? 0 : volume);
+    }
+    const delta = dy / 220; // swipe sensitivity
+    if (g.mode === "brightness") {
+      const next = Math.max(0.2, Math.min(1, g.startVal + delta));
+      setBrightness(next);
+      showGestureHud("brightness", next);
+    } else {
+      const v = videoRef.current;
+      const next = Math.max(0, Math.min(1, g.startVal + delta));
+      if (v) {
+        v.volume = next;
+        v.muted = next === 0;
+      }
+      setVolume(next);
+      setMuted(next === 0);
+      showGestureHud("volume", next);
+    }
+  }, [brightness, muted, volume, showGestureHud]);
+
+  const onGestureEnd = useCallback(() => {
+    gestureRef.current.active = false;
+    gestureRef.current.mode = null;
+  }, []);
 
   /* seek */
   const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -549,7 +657,8 @@ function VideoPlayer({
   const displayVol = muted ? 0 : volume;
   const VolumeIcon = displayVol === 0 ? VolumeX : displayVol < 0.5 ? Volume1 : Volume2;
   const FsIcon     = isFullscreen ? Minimize : Maximize;
-  const ctrlShow   = controlsVisible || !playing;
+  const ctrlShow   = !uiLocked && (controlsVisible || !playing);
+  const lockChromeShow = uiLocked && controlsVisible;
 
   const fmtTime = (sec: number) => {
     if (!isFinite(sec)) return "00:00";
@@ -565,15 +674,40 @@ function VideoPlayer({
   return (
     <div
       ref={containerRef}
-      className="relative bg-black overflow-hidden w-full h-full select-none"
-      onMouseMove={revealControls}
+      className="relative bg-black overflow-hidden w-full h-full select-none touch-none"
+      onMouseMove={() => { if (!uiLocked) revealControls(); }}
       onMouseLeave={() => {
-        if (playing) {
+        if (playing && !uiLocked) {
           clearTimeout(hideTimerRef.current);
           setControlsVisible(false);
         }
       }}
-      onTouchStart={revealControls}
+      onClick={(e) => {
+        if (touchHandledRef.current) {
+          touchHandledRef.current = false;
+          return;
+        }
+        handleScreenTap(e);
+      }}
+      onTouchStart={(e) => {
+        const t = e.touches[0];
+        const rect = containerRef.current?.getBoundingClientRect();
+        if (!t || !rect) return;
+        onGestureStart(t.clientX - rect.left, t.clientY - rect.top, rect.width);
+      }}
+      onTouchMove={(e) => {
+        const t = e.touches[0];
+        const rect = containerRef.current?.getBoundingClientRect();
+        if (!t || !rect || !gestureRef.current.active) return;
+        if (gestureRef.current.mode) e.preventDefault();
+        onGestureMove(t.clientX - rect.left, t.clientY - rect.top, rect.width);
+      }}
+      onTouchEnd={(e) => {
+        const moved = gestureRef.current.mode !== null;
+        onGestureEnd();
+        touchHandledRef.current = true;
+        if (!moved) handleScreenTap(e);
+      }}
     >
       {/* Real video element */}
       <video
@@ -582,7 +716,6 @@ function VideoPlayer({
         className="absolute inset-0 w-full h-full object-contain"
         preload="metadata"
         playsInline
-        onClick={togglePlay}
         style={{ outline: "none" }}
         crossOrigin="anonymous"
         onLoadedMetadata={() => {
@@ -615,13 +748,38 @@ function VideoPlayer({
         })}
       </video>
 
+      {/* Brightness overlay (web can't set system brightness — dim video layer) */}
+      <div
+        className="absolute inset-0 pointer-events-none z-[5] bg-black transition-opacity duration-75"
+        style={{ opacity: Math.max(0, 1 - brightness) }}
+      />
+
       {/* Gradient */}
-      <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-black/25 pointer-events-none z-10" />
+      <div className={`absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-black/25 pointer-events-none z-10 transition-opacity ${ctrlShow || lockChromeShow ? "opacity-100" : "opacity-0"}`} />
 
       {/* Buffering spinner */}
       {loading && (
         <div className="absolute inset-0 flex items-center justify-center z-20 pointer-events-none">
           <Loader2 className="w-10 h-10 text-amber-400 animate-spin" />
+        </div>
+      )}
+
+      {/* Volume / brightness gesture HUD */}
+      {gestureHud && (
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-40 pointer-events-none">
+          <div className="flex flex-col items-center gap-2 px-5 py-4 rounded-2xl bg-black/75 border border-white/15 backdrop-blur-md min-w-[88px]">
+            {gestureHud.type === "volume" ? (
+              gestureHud.value === 0 ? <VolumeX className="w-6 h-6 text-amber-400" /> : <Volume2 className="w-6 h-6 text-amber-400" />
+            ) : (
+              <Sun className="w-6 h-6 text-amber-400" />
+            )}
+            <div className="w-16 h-1.5 rounded-full bg-white/20 overflow-hidden">
+              <div className="h-full bg-amber-400 rounded-full transition-all" style={{ width: `${Math.round(gestureHud.value * 100)}%` }} />
+            </div>
+            <span className="text-[10px] font-bold text-white/90 tabular-nums">
+              {gestureHud.type === "volume" ? "Volume" : "Brightness"} {Math.round(gestureHud.value * 100)}%
+            </span>
+          </div>
         </div>
       )}
 
@@ -642,13 +800,26 @@ function VideoPlayer({
         </div>
       )}
 
+      {/* Locked: unlock chip only */}
+      {uiLocked && (
+        <div className={`absolute top-3 right-3 z-30 transition-opacity duration-300 ${lockChromeShow ? "opacity-100" : "opacity-0"}`}>
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); toggleLock(); }}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-full bg-black/70 border border-white/20 text-white text-xs font-bold backdrop-blur-md"
+          >
+            <Unlock className="w-3.5 h-3.5 text-amber-400" /> Unlock
+          </button>
+        </div>
+      )}
+
       {/* Center play/pause controls overlay */}
       <div
         className={`absolute inset-0 flex items-center justify-center z-20 transition-opacity duration-300 pointer-events-none ${
           ctrlShow ? "opacity-100" : "opacity-0"
         }`}
       >
-        <div className="flex items-center gap-6 pointer-events-auto">
+        <div className="flex items-center gap-6 pointer-events-auto" onClick={(e) => e.stopPropagation()}>
           {/* Skip back */}
           <button
             onClick={(e) => { e.stopPropagation(); skip(-10); }}
@@ -685,6 +856,7 @@ function VideoPlayer({
         className={`absolute bottom-0 left-0 right-0 z-20 transition-opacity duration-300 bg-gradient-to-t from-black/90 to-transparent pb-3 pt-6 ${
           ctrlShow ? "opacity-100" : "opacity-0 pointer-events-none"
         }`}
+        onClick={(e) => e.stopPropagation()}
       >
         {/* Seek bar */}
         <div className="px-3 sm:px-4">
@@ -909,6 +1081,14 @@ function VideoPlayer({
             {/* Fullscreen */}
             <button onClick={toggleFullscreen} className="text-foreground hover:text-amber-400 transition-colors p-2 sm:p-1 touch-manipulation" aria-label="Fullscreen">
               <FsIcon className="w-4 h-4 sm:w-[15px] sm:h-[15px]" />
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); toggleLock(); }}
+              className="text-foreground hover:text-amber-400 transition-colors p-2 sm:p-1 touch-manipulation"
+              aria-label="Lock controls"
+              title="Lock screen controls"
+            >
+              <Lock className="w-4 h-4 sm:w-[15px] sm:h-[15px]" />
             </button>
           </div>
         </div>
