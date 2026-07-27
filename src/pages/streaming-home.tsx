@@ -396,23 +396,17 @@ function Hero({ activeTab, onPlay, onSubscribeClick, isSubscribed }: { activeTab
     return () => v.removeEventListener("timeupdate", onTime);
   }, [bannerVideo.clipSeconds, current, heroContent.length, go]);
 
-  // Auto-advance when trailer ends, or timed fallback if no video
+  // Auto-advance carousel (always timed so banners cycle even during long trailers)
   useEffect(() => {
-    if (heroContent.length === 0 || isPaused) return;
-    if (bannerVideo.src) {
-      const v = videoRef.current;
-      if (!v) return;
-      const onEnded = () => go((current + 1) % heroContent.length);
-      v.addEventListener("ended", onEnded);
-      return () => v.removeEventListener("ended", onEnded);
-    }
-    const timer = setInterval(() => go((current + 1) % heroContent.length), 7000);
+    if (heroContent.length <= 1 || isPaused) return;
+    const ms = bannerVideo.src ? 10000 : 6000;
+    const timer = setInterval(() => go((current + 1) % heroContent.length), ms);
     return () => clearInterval(timer);
   }, [current, heroContent.length, isPaused, bannerVideo.src, go]);
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center w-full bg-[#030306] h-[52vw] min-h-[220px] max-h-[420px] sm:h-[min(70vh,820px)] sm:min-h-[360px] sm:max-h-none">
+      <div className="flex items-center justify-center w-full bg-[#030306] aspect-[16/10] max-h-[280px] sm:aspect-auto sm:h-[min(70vh,820px)] sm:min-h-[380px] sm:max-h-none">
         <Loader2 className="w-8 h-8 animate-spin text-amber-400" />
       </div>
     );
@@ -420,19 +414,22 @@ function Hero({ activeTab, onPlay, onSubscribeClick, isSubscribed }: { activeTab
   if (!heroContent.length) return null;
 
   const isPremium = item.isPremium || item.planRequired && item.planRequired !== "free" || item.badge === "TOP" || item.badge === "EXCLUSIVE";
+  const genres = [...new Set<string>(item.genres || [])];
 
   return (
     <div
-      className="relative w-full overflow-hidden bg-[#030306] isolate h-[56vw] min-h-[240px] max-h-[420px] sm:h-[min(72vh,820px)] sm:min-h-[380px] sm:max-h-none"
+      className="relative w-full overflow-hidden bg-[#030306] isolate aspect-[16/10] max-h-[300px] sm:aspect-auto sm:h-[min(72vh,820px)] sm:min-h-[400px] sm:max-h-none"
       onMouseEnter={() => setIsPaused(true)}
       onMouseLeave={() => setIsPaused(false)}
+      onTouchStart={() => setIsPaused(true)}
+      onTouchEnd={() => setTimeout(() => setIsPaused(false), 2500)}
     >
       {/* Poster fallback */}
       <div className={`absolute inset-0 transition-opacity duration-500 ${fading || videoReady ? "opacity-0" : "opacity-100"}`}>
         <img
           src={getImageUrl(item.backdrop || item.poster) || ""}
           alt={item.title}
-          className="w-full h-full object-cover object-[center_20%] sm:object-center"
+          className="w-full h-full object-cover object-[center_25%] sm:object-center"
           onError={(e) => {
             const target = e.target as HTMLImageElement;
             target.onerror = null;
@@ -445,7 +442,7 @@ function Hero({ activeTab, onPlay, onSubscribeClick, isSubscribed }: { activeTab
       <div className={`absolute inset-0 transition-opacity duration-700 ${fading ? "opacity-0" : videoReady ? "opacity-100" : "opacity-0"}`}>
         <video
           ref={videoRef}
-          className="w-full h-full object-cover object-[center_20%] sm:object-center"
+          className="w-full h-full object-cover object-[center_25%] sm:object-center"
           playsInline
           muted={muted}
           autoPlay
@@ -453,94 +450,117 @@ function Hero({ activeTab, onPlay, onSubscribeClick, isSubscribed }: { activeTab
         />
       </div>
 
-      {/* Gradients — keep hero text readable over banners */}
-      <div className="absolute inset-0 z-[1] pointer-events-none bg-gradient-to-r from-[#030306] via-[#030306]/75 to-transparent sm:via-[#030306]/70 sm:to-[#030306]/15" />
-      <div className="absolute inset-0 z-[1] pointer-events-none bg-gradient-to-t from-[#030306] via-[#030306]/60 to-transparent" />
-      <div className="absolute top-0 left-0 right-0 z-[1] h-20 sm:h-32 pointer-events-none bg-gradient-to-b from-[#030306]/95 to-transparent" />
+      {/* Gradients */}
+      <div className="absolute inset-0 z-[1] pointer-events-none bg-gradient-to-t from-[#030306] via-[#030306]/55 to-transparent" />
+      <div className="absolute inset-0 z-[1] pointer-events-none hidden sm:block bg-gradient-to-r from-[#030306] via-[#030306]/55 to-transparent" />
+      <div className="absolute top-0 left-0 right-0 z-[1] h-16 sm:h-28 pointer-events-none bg-gradient-to-b from-[#030306]/90 to-transparent" />
 
-      {/* Mute toggle */}
+      {/* Mute */}
       {bannerVideo.src && (
         <button
           onClick={() => setMuted((m) => !m)}
-          className="absolute top-16 right-3 sm:top-28 sm:right-5 z-20 w-9 h-9 sm:w-11 sm:h-11 rounded-full bg-black/60 border border-white/20 text-white flex items-center justify-center hover:bg-amber-400 hover:text-black hover:border-amber-400 transition-all shadow-lg"
+          className="absolute top-[4.25rem] right-2.5 sm:top-28 sm:right-5 z-20 w-8 h-8 sm:w-11 sm:h-11 rounded-full bg-black/55 border border-white/20 text-white flex items-center justify-center active:bg-amber-400 active:text-black"
           aria-label={muted ? "Unmute" : "Mute"}
         >
           {muted ? <VolumeX className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> : <Volume2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />}
         </button>
       )}
 
-      {/* Content — clear of fixed header */}
-      <div className="absolute inset-x-0 bottom-0 z-10 pt-16 pb-10 sm:pt-28 sm:pb-20 px-4 sm:px-10 lg:px-14">
-        <div className={`max-w-2xl transition-all duration-500 ${fading ? "opacity-0 translate-y-4" : "opacity-100 translate-y-0"}`}>
-          <div className="flex items-center gap-1.5 sm:gap-2 mb-2 sm:mb-3 flex-wrap">
+      {/* Content — mobile: title + CTA only */}
+      <div className="absolute inset-x-0 bottom-0 z-10 px-3 pb-8 pt-10 sm:px-10 sm:pb-20 sm:pt-28 lg:px-14">
+        <div className={`max-w-2xl transition-all duration-500 ${fading ? "opacity-0 translate-y-3" : "opacity-100 translate-y-0"}`}>
+          {/* Desktop badges only — keep mobile clean */}
+          <div className="hidden sm:flex items-center gap-2 mb-3 flex-wrap">
             {isPremium && !isSubscribed ? <PremiumBadge /> : null}
-            <span className="flex items-center gap-1.5 text-[10px] sm:text-xs font-bold px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-full bg-amber-400/15 text-amber-300 border border-amber-400/30">
+            <span className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-full bg-amber-400/15 text-amber-300 border border-amber-400/30">
               <Film className="w-3 h-3" />
               {bannerVideo.isTrailer ? "Trailer" : bannerVideo.src ? "Preview" : "Movie"}
             </span>
-            {[...new Set<string>(item.genres || [])].slice(0, 2).map((g) => (
-              <span key={g} className="text-white text-[10px] sm:text-xs bg-zinc-900/80 border border-zinc-700/80 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-full font-semibold">{g}</span>
+            {genres.slice(0, 2).map((g) => (
+              <span key={g} className="text-white text-xs bg-zinc-900/80 border border-zinc-700/80 px-3 py-1.5 rounded-full font-semibold">{g}</span>
             ))}
           </div>
 
-          <h1 className="text-[1.65rem] xs:text-3xl sm:text-5xl lg:text-6xl font-black text-white leading-[1.05] mb-2 sm:mb-4 tracking-tight drop-shadow-[0_4px_24px_rgba(0,0,0,0.85)]">
+          <h1 className="text-xl sm:text-5xl lg:text-6xl font-black text-white leading-tight mb-1.5 sm:mb-4 tracking-tight drop-shadow-[0_4px_20px_rgba(0,0,0,0.9)] line-clamp-1 sm:line-clamp-none">
             {item.title}
           </h1>
 
-          <div className="flex items-center gap-2 sm:gap-3 mb-2 sm:mb-4 flex-wrap">
+          <div className="hidden sm:flex items-center gap-3 mb-4 flex-wrap">
             <ImdbBadge rating={item.imdbRating} />
             <AgeBadge rating={item.ageRating} />
-            {item.duration && <span className="text-white/85 text-[11px] sm:text-xs font-semibold">{item.duration}</span>}
-            {item.year && <span className="text-white/85 text-[11px] sm:text-xs font-semibold">{item.year}</span>}
-            {item.language && <span className="hidden xs:inline text-white/85 text-[11px] sm:text-xs font-semibold">{item.language}</span>}
+            {item.duration && <span className="text-white/85 text-xs font-semibold">{item.duration}</span>}
+            {item.year && <span className="text-white/85 text-xs font-semibold">{item.year}</span>}
+            {item.language && <span className="text-white/85 text-xs font-semibold">{item.language}</span>}
           </div>
 
-          <p className="text-white/90 text-xs sm:text-base leading-relaxed mb-4 sm:mb-7 max-w-xl line-clamp-2 sm:line-clamp-3 drop-shadow">
+          {/* Mobile: tiny meta row */}
+          <div className="flex sm:hidden items-center gap-2 mb-2.5 text-[10px] text-white/80 font-semibold">
+            {item.imdbRating && (
+              <span className="flex items-center gap-0.5 text-amber-400">
+                <Star className="w-2.5 h-2.5 fill-amber-400" /> {item.imdbRating}
+              </span>
+            )}
+            {item.year && <span>{item.year}</span>}
+            {genres[0] && <span className="text-white/60">· {genres[0]}</span>}
+          </div>
+
+          <p className="hidden sm:block text-white/90 text-sm sm:text-base leading-relaxed mb-7 max-w-xl line-clamp-3 drop-shadow">
             {item.description}
           </p>
 
-          <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+          <div className="flex items-center gap-2 sm:gap-3">
             <button
               onClick={() => onPlay(item)}
-              className="flex items-center gap-2 px-5 py-2.5 sm:px-8 sm:py-3.5 bg-amber-400 hover:bg-amber-300 text-black font-bold rounded-full text-xs sm:text-sm tracking-wide transition-all active:scale-95 shadow-xl shadow-amber-900/40"
+              className="flex items-center gap-1.5 sm:gap-2 px-4 py-2 sm:px-8 sm:py-3.5 bg-amber-400 hover:bg-amber-300 text-black font-bold rounded-full text-[11px] sm:text-sm tracking-wide transition-all active:scale-95 shadow-lg shadow-amber-900/40"
             >
-              <Play className="w-3.5 h-3.5 sm:w-4 sm:h-4 fill-black" />
+              <Play className="w-3 h-3 sm:w-4 sm:h-4 fill-black" />
               Watch Now
             </button>
             {isPremium && !isSubscribed && (
               <button
                 onClick={onSubscribeClick}
-                className="flex items-center gap-2 px-4 py-2.5 sm:px-7 sm:py-3.5 bg-white/10 hover:bg-white/15 text-white font-bold rounded-full text-xs sm:text-sm tracking-wide transition-all active:scale-95 border border-white/25 backdrop-blur-md"
+                className="hidden sm:flex items-center gap-2 px-7 py-3.5 bg-white/10 hover:bg-white/15 text-white font-bold rounded-full text-sm tracking-wide transition-all active:scale-95 border border-white/25 backdrop-blur-md"
               >
-                <Crown className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-400" /> Subscribe
+                <Crown className="w-4 h-4 text-amber-400" /> Subscribe
               </button>
             )}
           </div>
         </div>
       </div>
 
-      <div className="absolute bottom-3 sm:bottom-5 left-1/2 -translate-x-1/2 flex items-center gap-1.5 sm:gap-2 z-10">
-        {heroContent.map((_, i) => (
-          <button
-            key={i}
-            onClick={() => go(i)}
-            className={`transition-all duration-300 rounded-full ${i === current ? "w-6 sm:w-8 h-[4px] sm:h-[5px] bg-amber-400" : "w-1.5 h-1.5 sm:w-2 sm:h-2 bg-white/30 hover:bg-white/60"}`}
-          />
-        ))}
-      </div>
+      {/* Dots */}
+      {heroContent.length > 1 && (
+        <div className="absolute bottom-2 sm:bottom-5 left-1/2 -translate-x-1/2 flex items-center gap-1.5 sm:gap-2 z-20">
+          {heroContent.map((_, i) => (
+            <button
+              key={i}
+              onClick={() => go(i)}
+              aria-label={`Go to banner ${i + 1}`}
+              className={`transition-all duration-300 rounded-full ${i === current ? "w-5 sm:w-8 h-[3px] sm:h-[5px] bg-amber-400" : "w-1.5 h-1.5 sm:w-2 sm:h-2 bg-white/35"}`}
+            />
+          ))}
+        </div>
+      )}
 
-      <button
-        onClick={() => go((current - 1 + heroContent.length) % heroContent.length)}
-        className="hidden sm:flex absolute left-3 top-1/2 -translate-y-1/2 w-11 h-11 items-center justify-center rounded-full bg-black/55 hover:bg-amber-400 hover:text-black text-white border border-white/15 hover:border-amber-400 transition-all z-10 shadow-lg"
-      >
-        <ChevronLeft className="w-5 h-5" />
-      </button>
-      <button
-        onClick={() => go((current + 1) % heroContent.length)}
-        className="hidden sm:flex absolute right-3 top-1/2 -translate-y-1/2 w-11 h-11 items-center justify-center rounded-full bg-black/55 hover:bg-amber-400 hover:text-black text-white border border-white/15 hover:border-amber-400 transition-all z-10 shadow-lg"
-      >
-        <ChevronRight className="w-5 h-5" />
-      </button>
+      {/* Prev / next — visible on mobile + desktop */}
+      {heroContent.length > 1 && (
+        <>
+          <button
+            onClick={() => go((current - 1 + heroContent.length) % heroContent.length)}
+            className="absolute left-1.5 sm:left-3 top-1/2 -translate-y-1/2 w-8 h-8 sm:w-11 sm:h-11 flex items-center justify-center rounded-full bg-black/50 hover:bg-amber-400 hover:text-black text-white border border-white/20 hover:border-amber-400 transition-all z-20 shadow-lg"
+            aria-label="Previous banner"
+          >
+            <ChevronLeft className="w-4 h-4 sm:w-5 sm:h-5" />
+          </button>
+          <button
+            onClick={() => go((current + 1) % heroContent.length)}
+            className="absolute right-1.5 sm:right-3 top-1/2 -translate-y-1/2 w-8 h-8 sm:w-11 sm:h-11 flex items-center justify-center rounded-full bg-black/50 hover:bg-amber-400 hover:text-black text-white border border-white/20 hover:border-amber-400 transition-all z-20 shadow-lg"
+            aria-label="Next banner"
+          >
+            <ChevronRight className="w-4 h-4 sm:w-5 sm:h-5" />
+          </button>
+        </>
+      )}
     </div>
   );
 }
