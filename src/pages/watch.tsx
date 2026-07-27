@@ -718,7 +718,7 @@ function VideoPlayer({
               <button
                 onClick={onNext}
                 className="text-foreground hover:text-amber-400 p-1 transition-colors"
-                title="Next Episode (N)"
+                title="Skip Trailer / Next (N)"
               >
                 <SkipForward className="w-[14px] h-[14px]" />
               </button>
@@ -1226,20 +1226,50 @@ export default function WatchPage() {
         setLockPopupOpen(true);
         return;
       }
+      const movieUrl =
+        showData?.hlsUrl || showData?.videoUrl || showData?.sourceVideoUrl || "";
+      if (!movieUrl || String(movieUrl).startsWith("blob:")) {
+        toast({
+          title: "Movie not ready yet",
+          description: "The full movie file is still processing. Try again in a few minutes.",
+          variant: "destructive",
+        });
+        return;
+      }
     }
     setCurrentEp(ep);
     setAutoPlay(true);
     navigate(`/watch/${contentId}/${ep}`);
-  }, [contentId, navigate, isLockedForContent, requiredPlan, showData]);
+  }, [contentId, navigate, isLockedForContent, requiredPlan, showData, toast]);
+
+  // Keep episode in sync with URL (/watch/:id/0 = trailer, /1 = movie)
+  useEffect(() => {
+    const fromUrl = parseInt(params.epNum || "1", 10);
+    if ((fromUrl === 0 || fromUrl === 1) && fromUrl !== currentEp) {
+      setCurrentEp(fromUrl);
+    }
+  }, [params.epNum]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const epLabel   = currentEp === 0 ? "Trailer" : "Movie";
   const epTitle   = currentEp === 0 ? `Trailer - ${title}` : title;
   const plotTitle = currentEp === 0 ? "About Trailer" : "Plot Synopsis";
 
-  const videoSrc = (() => {
-    if (currentEp === 0 && showData?.trailerUrl) return showData.trailerUrl;
-    return showData?.hlsUrl || showData?.videoUrl || showData?.sourceVideoUrl || "";
-  })();
+  const pickPlayableUrl = (...candidates: Array<string | null | undefined>) => {
+    for (const c of candidates) {
+      const u = String(c || "").trim();
+      if (u && !u.startsWith("blob:")) return u;
+    }
+    return "";
+  };
+
+  const videoSrc =
+    currentEp === 0
+      ? pickPlayableUrl(showData?.trailerUrl)
+      : pickPlayableUrl(showData?.hlsUrl, showData?.videoUrl, showData?.sourceVideoUrl);
+
+  const skipToMovie = useCallback(() => goToEpisode(1), [goToEpisode]);
+  const hasTrailer = !!pickPlayableUrl(showData?.trailerUrl);
+  const hasMovie = !!pickPlayableUrl(showData?.hlsUrl, showData?.videoUrl, showData?.sourceVideoUrl);
 
   if (isLoading) {
     return (
@@ -1278,7 +1308,7 @@ export default function WatchPage() {
           {/* Player Container */}
           <div
             key={`${title}-ep-${currentEp}`}
-            className="relative overflow-hidden bg-black shadow-2xl rounded-xl sm:rounded-2xl border border-zinc-900 mb-6 sm:mb-8 w-full min-h-[200px] sm:min-h-0"
+            className="relative overflow-hidden bg-black shadow-2xl rounded-xl sm:rounded-2xl border border-zinc-900 mb-4 w-full min-h-[200px] sm:min-h-0"
             style={{ aspectRatio: "16 / 9" }}
             onClick={() => !playerStarted && setPlayerStarted(true)}
           >
@@ -1286,12 +1316,46 @@ export default function WatchPage() {
               videoSrc={videoSrc}
               thumbnail={detail.thumbnail}
               autoPlay={autoPlay}
-              videoSettings={showData?.videoSettings}
+              onNext={currentEp === 0 && hasMovie ? skipToMovie : undefined}
+              videoSettings={currentEp === 0 ? undefined : showData?.videoSettings}
               contentId={contentId}
-              resumeFrom={savedProgress?.progressPercent && savedProgress.progressPercent < 95 ? savedProgress.progressSeconds : undefined}
-              subtitles={showData?.subtitles || []}
+              resumeFrom={
+                currentEp === 1 && savedProgress?.progressPercent && savedProgress.progressPercent < 95
+                  ? savedProgress.progressSeconds
+                  : undefined
+              }
+              subtitles={currentEp === 0 ? [] : showData?.subtitles || []}
             />
             {currentAd && <AdOverlay ad={currentAd} onSkip={() => setAdDismissed(true)} />}
+
+            {/* Skip Trailer → play full movie */}
+            {currentEp === 0 && hasMovie && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  skipToMovie();
+                }}
+                className="absolute top-3 right-3 z-[50] flex items-center gap-1.5 rounded-lg bg-black/75 hover:bg-black/90 border border-white/25 px-3 py-2 text-xs sm:text-sm font-bold text-white shadow-lg backdrop-blur-sm transition-colors"
+              >
+                Skip Trailer
+                <SkipForward className="w-3.5 h-3.5" />
+              </button>
+            )}
+
+            {currentEp === 0 && !hasMovie && (
+              <div className="absolute bottom-16 left-1/2 -translate-x-1/2 z-[50] rounded-lg bg-black/80 border border-amber-400/40 px-3 py-2 text-[11px] text-amber-200 font-semibold">
+                Full movie still processing — trailer only for now
+              </div>
+            )}
+
+            {!videoSrc && (
+              <div className="absolute inset-0 z-[40] flex items-center justify-center bg-black/80 px-6 text-center">
+                <p className="text-sm text-foreground/80 font-semibold">
+                  {currentEp === 0 ? "Trailer not available." : "Movie video not available yet."}
+                </p>
+              </div>
+            )}
 
             {/* ── PRE-ROLL AD OVERLAY (page-level scope, correct showPreroll access) ── */}
             {showPreroll && (
@@ -1300,6 +1364,36 @@ export default function WatchPage() {
               </div>
             )}
           </div>
+
+          {/* Trailer / Movie switcher */}
+          {(hasTrailer || hasMovie) && (
+            <div className="flex items-center gap-2 mb-6 sm:mb-8">
+              {hasTrailer && (
+                <button
+                  type="button"
+                  onClick={() => goToEpisode(0)}
+                  className={`px-4 py-2 rounded-lg text-xs sm:text-sm font-bold transition-colors border ${
+                    currentEp === 0
+                      ? "bg-amber-400 text-black border-amber-400"
+                      : "bg-zinc-900 text-foreground/80 border-zinc-800 hover:border-zinc-600"
+                  }`}
+                >
+                  Trailer
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => goToEpisode(1)}
+                className={`px-4 py-2 rounded-lg text-xs sm:text-sm font-bold transition-colors border ${
+                  currentEp === 1
+                    ? "bg-amber-400 text-black border-amber-400"
+                    : "bg-zinc-900 text-foreground/80 border-zinc-800 hover:border-zinc-600"
+                }`}
+              >
+                Play Movie
+              </button>
+            </div>
+          )}
 
           {/* Details and Content Blocks */}
           <div className="space-y-6">

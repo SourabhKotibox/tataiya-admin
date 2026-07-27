@@ -1493,112 +1493,136 @@ export const uploadMediaFiles = async (
     );
   }
 
-  // Large files: upload browser → S3 directly (skips EC2 proxy, much faster)
+  const inferContentType = (f: File) => {
+    if (f.type) return f.type;
+    const n = f.name.toLowerCase();
+    if (n.endsWith('.mp4')) return 'video/mp4';
+    if (n.endsWith('.webm')) return 'video/webm';
+    if (n.endsWith('.mov')) return 'video/quicktime';
+    if (n.endsWith('.mkv')) return 'video/x-matroska';
+    if (n.endsWith('.m4v')) return 'video/x-m4v';
+    if (n.endsWith('.jpg') || n.endsWith('.jpeg')) return 'image/jpeg';
+    if (n.endsWith('.png')) return 'image/png';
+    if (n.endsWith('.webp')) return 'image/webp';
+    return 'application/octet-stream';
+  };
+
   const DIRECT_S3_THRESHOLD = 2 * 1024 * 1024; // 2MB
-  const file = optimizedFiles[0];
-  if (file && file.size >= DIRECT_S3_THRESHOLD) {
-    try {
-      const presign = await api('/media/presign', {
-        method: 'POST',
-        body: JSON.stringify({
-          fileName: file.name,
-          contentType: file.type || 'application/octet-stream',
-          folderId,
-          source,
-        }),
+  const uploaded: any[] = [];
+  const totalBytes = optimizedFiles.reduce((s, f) => s + f.size, 0) || 1;
+  let completedBytes = 0;
+
+  const reportOverall = (fileLoaded: number, fileTotal: number) => {
+    const loaded = completedBytes + fileLoaded;
+    const percent = Math.min(100, Math.round((loaded / totalBytes) * 100));
+    onUploadProgress?.({ loaded, total: totalBytes, percent });
+  };
+
+  const uploadOneDirectS3 = async (file: File) => {
+    const contentType = inferContentType(file);
+    const presign = await api('/media/presign', {
+      method: 'POST',
+      body: JSON.stringify({
+        fileName: file.name,
+        contentType,
+        folderId,
+        source: source || 'media-library',
+      }),
+    });
+    const data = presign?.data;
+    if (!data?.uploadUrl) throw new Error('Presign failed — no upload URL');
+
+    await new Promise<void>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('PUT', data.uploadUrl);
+      xhr.setRequestHeader('Content-Type', contentType);
+      xhr.timeout = 0;
+      xhr.upload.addEventListener('progress', (event) => {
+        if (!event.lengthComputable) return;
+        reportOverall(event.loaded, event.total);
       });
-      const data = presign?.data;
-      if (data?.uploadUrl) {
-        await new Promise<void>((resolve, reject) => {
-          const xhr = new XMLHttpRequest();
-          xhr.open('PUT', data.uploadUrl);
-          xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
-          xhr.timeout = 0; // no client timeout — 1–2GB can take a while
-          xhr.upload.addEventListener('progress', (event) => {
-            if (!event.lengthComputable) return;
-            const percent = Math.round((event.loaded / event.total) * 100);
-            onUploadProgress?.({ loaded: event.loaded, total: event.total, percent });
-          });
-          xhr.addEventListener('load', () => {
-            if (xhr.status >= 200 && xhr.status < 300) resolve();
-            else
-              reject(
-                new Error(
-                  `S3 upload failed (${xhr.status}): ${String(xhr.responseText || '').slice(0, 160) || 'check bucket CORS for PUT from https://tataiya.in'}`
-                )
-              );
-          });
-          xhr.addEventListener('error', () =>
-            reject(
-              new Error(
-                'S3 network/CORS error. Ensure bucket CORS allows PUT from https://tataiya.in with Content-Type header.'
-              )
+      xhr.addEventListener('load', () => {
+        if (xhr.status >= 200 && xhr.status < 300) resolve();
+        else
+          reject(
+            new Error(
+              `S3 upload failed (${xhr.status}): ${String(xhr.responseText || '').slice(0, 160) || 'check bucket CORS for PUT from https://tataiya.in'}`
             )
           );
-          xhr.addEventListener('abort', () => reject(new Error('S3 upload aborted')));
-          xhr.send(file);
-        });
+      });
+      xhr.addEventListener('error', () =>
+        reject(
+          new Error(
+            'S3 network/CORS error. Ensure bucket CORS allows PUT from https://tataiya.in with Content-Type header.'
+          )
+        )
+      );
+      xhr.addEventListener('abort', () => reject(new Error('S3 upload aborted')));
+      xhr.send(file);
+    });
 
-        const confirmed = await api('/media/confirm-s3', {
-          method: 'POST',
-          body: JSON.stringify({
-            key: data.key,
-            publicUrl: data.publicUrl,
-            folderId: data.folderId || folderId,
-            fileName: data.fileName,
-            originalName: data.originalName || file.name,
-            contentType: data.contentType || file.type,
-            fileSize: file.size,
-            source,
-          }),
-        });
-        onUploadProgress?.({ loaded: file.size, total: file.size, percent: 100 });
-        const payload = confirmed?.data || confirmed;
-        return {
-          success: true,
-          data: [payload],
-          compression: {
-            savedBytes: saved,
-            results: compressResults.map((r) => ({
-              skipped: r.skipped,
-              originalSize: r.originalSize,
-              compressedSize: r.compressedSize,
-            })),
-          },
-        };
+    const confirmed = await api('/media/confirm-s3', {
+      method: 'POST',
+      body: JSON.stringify({
+        key: data.key,
+        publicUrl: data.publicUrl,
+        folderId: data.folderId || folderId,
+        fileName: data.fileName,
+        originalName: data.originalName || file.name,
+        contentType,
+        fileSize: file.size,
+        source: source || 'media-library',
+      }),
+    });
+    completedBytes += file.size;
+    reportOverall(0, 0);
+    return confirmed?.data || confirmed;
+  };
+
+  // Prefer direct S3 for every file above threshold (one-by-one)
+  const smallFiles: File[] = [];
+  for (const file of optimizedFiles) {
+    if (file.size >= DIRECT_S3_THRESHOLD) {
+      try {
+        uploaded.push(await uploadOneDirectS3(file));
+      } catch (err: any) {
+        if (file.size >= 20 * 1024 * 1024) {
+          throw new Error(
+            err?.message ||
+              'Direct S3 upload failed for this large file. Check S3 bucket CORS allows PUT from https://tataiya.in, then retry.'
+          );
+        }
+        console.warn('Direct S3 upload failed, queueing for multipart:', err);
+        smallFiles.push(file);
       }
-    } catch (err: any) {
-      // Large videos must use direct S3 — proxying through EC2/nginx times out at ~100%
-      if (file.size >= 20 * 1024 * 1024) {
-        throw new Error(
-          err?.message ||
-            'Direct S3 upload failed for this large video. Check S3 bucket CORS allows PUT from https://tataiya.in, then retry.'
-        );
-      }
-      // Fall back to API multipart only for smaller files
-      if (err?.message && !String(err.message).includes('S3_NOT_CONFIGURED')) {
-        console.warn('Direct S3 upload failed, falling back to API upload:', err);
-      }
+    } else {
+      smallFiles.push(file);
     }
   }
 
-  const formData = new FormData();
-  optimizedFiles.forEach((f) => formData.append('file', f));
-  if (source) formData.append('source', source);
-  const result = await api(`/media/folders/${folderId}/files`, {
-    method: 'POST',
-    body: formData,
-    onUploadProgress: onUploadProgress
-      ? (p) =>
-          onUploadProgress({
-            loaded: p.loaded,
-            total: p.total,
-            percent: p.total ? Math.round((p.loaded / p.total) * 100) : 0,
-          })
-      : undefined,
-  });
+  if (smallFiles.length > 0) {
+    const formData = new FormData();
+    formData.append('source', source || 'media-library');
+    smallFiles.forEach((f) => formData.append('file', f));
+    const result = await api(`/media/folders/${folderId}/files`, {
+      method: 'POST',
+      body: formData,
+      onUploadProgress: onUploadProgress
+        ? (p) => {
+            const loaded = completedBytes + p.loaded;
+            const percent = Math.min(100, Math.round((loaded / totalBytes) * 100));
+            onUploadProgress({ loaded, total: totalBytes, percent });
+          }
+        : undefined,
+    });
+    const batch = result?.data || [];
+    uploaded.push(...(Array.isArray(batch) ? batch : [batch]));
+  }
+
+  onUploadProgress?.({ loaded: totalBytes, total: totalBytes, percent: 100 });
   return {
-    ...result,
+    success: true,
+    data: uploaded,
     compression: {
       savedBytes: saved,
       results: compressResults.map((r) => ({

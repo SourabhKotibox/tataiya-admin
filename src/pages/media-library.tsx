@@ -34,16 +34,24 @@ import {
 import {
   useGetMediaFolders,
   useGetMediaFilesByFolder,
-  useUploadMediaFiles,
   useDeleteMediaFile,
   useDeleteMediaFolder,
   useGetAllMediaFiles,
   useCreateMediaFolder,
   getImageUrl,
   useReprocessMediaHls,
+  uploadMediaFiles,
 } from "@/lib/api-client";
+import { useUploadQueue } from "@/contexts/UploadQueueContext";
+import { useQueryClient } from "@tanstack/react-query";
 
 const PAGE_LIMIT = 50;
+
+const isVideoFile = (file: { fileType?: string; name?: string } | null | undefined) =>
+  !!(file && (
+    (file.fileType || "").startsWith("video") ||
+    /\.(mp4|webm|mov|mkv|avi|m4v|flv)$/i.test(file.name || "")
+  ));
 
 const SOURCE_OPTIONS = [
   { value: "all", label: "All Sources" },
@@ -97,11 +105,12 @@ export default function MediaLibraryPage() {
   });
 
   // Mutations
-  const uploadFilesMutation = useUploadMediaFiles();
   const deleteFileMutation = useDeleteMediaFile();
   const deleteFolderMutation = useDeleteMediaFolder();
   const createFolderMutation = useCreateMediaFolder();
   const reprocessHlsMutation = useReprocessMediaHls();
+  const { startUpload } = useUploadQueue();
+  const queryClient = useQueryClient();
 
   const folders = foldersQuery.data?.data || [];
   const allFilesData = allFilesQuery.data;
@@ -210,13 +219,45 @@ export default function MediaLibraryPage() {
   };
 
   const uploadSelectedFiles = async (files: File[]) => {
-    if (!selectedFolder) return;
-    try {
-      await uploadFilesMutation.mutateAsync({ folderId: selectedFolder, files });
-      toast({ title: `${files.length} file${files.length > 1 ? "s" : ""} uploaded successfully!` });
-    } catch (error: any) {
-      toast({ title: "Upload failed", description: error.message, variant: "destructive" });
-    }
+    if (!selectedFolder || files.length === 0) return;
+    const folderId = selectedFolder;
+    const label = files.length === 1 ? files[0].name : `${files.length} files`;
+    const hasVideo = files.some(
+      (f) => f.type.startsWith("video/") || /\.(mp4|webm|mov|mkv|avi|m4v)$/i.test(f.name)
+    );
+
+    startUpload({
+      fileName: label,
+      run: async (onProgress) => {
+        try {
+          const result = await uploadMediaFiles(folderId, files, "media-library", ({ percent }) =>
+            onProgress(percent)
+          );
+          return result?.data;
+        } catch (err: any) {
+          toast({
+            title: "Upload failed",
+            description: err?.message || "Could not upload files",
+            variant: "destructive",
+          });
+          throw err;
+        }
+      },
+      onComplete: () => {
+        queryClient.invalidateQueries({ queryKey: ["media-files", folderId] });
+        queryClient.invalidateQueries({ queryKey: ["all-media-files"] });
+        toast({
+          title: `${files.length} file${files.length > 1 ? "s" : ""} uploaded`,
+          description: hasVideo
+            ? "Videos are converting to HLS in the background — status badges update automatically."
+            : undefined,
+        });
+      },
+    });
+    toast({
+      title: "Upload started",
+      description: `${label} — keep this tab open. Refresh cancels in-progress uploads.`,
+    });
   };
 
   const handleDuplicateConfirm = async () => {
@@ -250,7 +291,9 @@ export default function MediaLibraryPage() {
   };
 
   const handleCopyUrl = useCallback((file: any) => {
-    const url = getImageUrl(file.url || file.filePath);
+    const url = getImageUrl(
+      file.hlsMasterPlaylistUrl || file.url || file.hlsMasterPlaylistPath || file.filePath
+    );
     navigator.clipboard.writeText(url).then(() => {
       setCopiedId(file._id);
       setTimeout(() => setCopiedId(null), 2000);
@@ -261,7 +304,6 @@ export default function MediaLibraryPage() {
     foldersQuery.isLoading ||
     filesQuery.isLoading ||
     allFilesQuery.isLoading ||
-    uploadFilesMutation.isPending ||
     deleteFileMutation.isPending ||
     deleteFolderMutation.isPending;
 
@@ -527,7 +569,7 @@ export default function MediaLibraryPage() {
               {currentFiles.map((file: any) => (
                 <div key={file._id} className="group flex flex-col gap-2">
                   <div className="relative rounded-xl overflow-hidden bg-muted border border-border aspect-[4/3] hover:border-primary/50 transition-all duration-200">
-                    {file.fileType?.startsWith("video") ? (
+                    {isVideoFile(file) ? (
                       <video
                         src={`${getImageUrl(file.url || file.filePath)}#t=0.5`}
                         preload="metadata"
@@ -543,11 +585,13 @@ export default function MediaLibraryPage() {
                     )}
 
                     {/* HLS status badge */}
-                    {file.fileType?.startsWith("video") && (
+                    {isVideoFile(file) && (
                       <div className="absolute top-2 left-2 z-10">
                         {file.hlsStatus === "completed" || file.isHls ? (
                           <span className="px-1.5 py-0.5 rounded-md bg-amber-400 text-black text-[9px] font-black shadow">
-                            HLS {Array.isArray(file.hlsQualities) ? file.hlsQualities.length : ""}Q
+                            {file.hlsQualities?.[0]?.quality === "source"
+                              ? "Ready"
+                              : `HLS ${Array.isArray(file.hlsQualities) ? file.hlsQualities.length : ""}Q`}
                           </span>
                         ) : file.hlsStatus === "processing" || file.hlsStatus === "pending" ? (
                           <span className="px-1.5 py-0.5 rounded-md bg-black/70 text-amber-300 text-[9px] font-bold border border-amber-400/40 flex items-center gap-1">
@@ -579,7 +623,7 @@ export default function MediaLibraryPage() {
                       >
                         <Eye className="h-3.5 w-3.5" />
                       </button>
-                      {file.fileType?.startsWith("video") && file.hlsStatus !== "processing" && (
+                      {isVideoFile(file) && file.hlsStatus !== "processing" && (
                         <button
                           onClick={() => reprocessHlsMutation.mutate(file._id, {
                             onSuccess: () => toast({ title: "HLS quality generation started" }),
@@ -649,7 +693,7 @@ export default function MediaLibraryPage() {
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-3">
                           <div className="w-10 h-10 rounded-lg overflow-hidden bg-muted shrink-0">
-                            {file.fileType?.startsWith("video") ? (
+                            {isVideoFile(file) ? (
                               <video src={`${getImageUrl(file.url || file.filePath)}#t=0.5`} preload="metadata" className="w-full h-full object-cover" />
                             ) : (
                               <img src={getImageUrl(file.url || file.filePath)} alt={file.name} className="w-full h-full object-cover" loading="lazy" />
@@ -664,7 +708,7 @@ export default function MediaLibraryPage() {
                         </div>
                       </td>
                       <td className="px-4 py-3 text-xs text-muted-foreground hidden sm:table-cell capitalize">
-                        {file.fileType?.startsWith("video") ? "Video" : "Image"}
+                        {isVideoFile(file) ? "Video" : "Image"}
                       </td>
                       <td className="px-4 py-3 hidden md:table-cell">
                         {file.source && (
@@ -688,6 +732,25 @@ export default function MediaLibraryPage() {
                           >
                             <Eye className="h-3.5 w-3.5" />
                           </button>
+                          {isVideoFile(file) && file.hlsStatus !== "processing" && (
+                            <button
+                              onClick={() =>
+                                reprocessHlsMutation.mutate(file._id, {
+                                  onSuccess: () => toast({ title: "HLS quality generation started" }),
+                                  onError: (e: any) =>
+                                    toast({
+                                      title: e?.message || "Failed to start HLS",
+                                      variant: "destructive",
+                                    }),
+                                })
+                              }
+                              disabled={reprocessHlsMutation.isPending}
+                              className="p-1.5 rounded-lg text-amber-400 hover:text-amber-300 hover:bg-amber-400/10 transition-colors"
+                              title="Generate HLS qualities"
+                            >
+                              <Video className="h-3.5 w-3.5" />
+                            </button>
+                          )}
                           <button
                             onClick={() => setConfirmDelete({ id: file._id, name: file.name, type: "file" })}
                             className="p-1.5 rounded-lg text-primary hover:text-red-300 hover:bg-primary/10 transition-colors"
@@ -788,7 +851,7 @@ export default function MediaLibraryPage() {
           <div className="max-h-56 overflow-y-auto space-y-2 my-2">
             {duplicateFiles.map(({ existing, new: newFile }, i) => (
               <div key={i} className="flex items-center gap-3 p-3 bg-muted rounded-lg">
-                {existing.fileType?.startsWith("video") ? (
+                {isVideoFile(existing) ? (
                   <video src={`${getImageUrl(existing.url || existing.filePath)}#t=0.5`} preload="metadata" className="h-11 w-11 rounded object-contain bg-zinc-800" />
                 ) : (
                   <img src={getImageUrl(existing.url || existing.filePath)} alt={existing.name} className="h-11 w-11 rounded object-contain bg-zinc-800" />
@@ -857,7 +920,7 @@ export default function MediaLibraryPage() {
               <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4" style={{ scrollbarWidth: "thin" }}>
                 {/* Media viewport */}
                 <div className="rounded-xl overflow-hidden bg-muted border border-border flex items-center justify-center max-h-[300px] aspect-video">
-                  {previewMedia.fileType?.startsWith("video") ? (
+                  {isVideoFile(previewMedia) ? (
                     <video
                       src={getImageUrl(previewMedia.url || previewMedia.filePath)}
                       controls
