@@ -125,7 +125,9 @@ function VideoPlayer({
     startX: number;
     startVal: number;
     width: number;
-  }>({ active: false, mode: null, startY: 0, startX: 0, startVal: 0, width: 1 });
+    height: number;
+    edge: "left" | "right" | null;
+  }>({ active: false, mode: null, startY: 0, startX: 0, startVal: 0, width: 1, height: 1, edge: null });
   const gestureHudTimer = useRef<ReturnType<typeof setTimeout>>();
   const [cssFullscreen, setCssFullscreen] = useState(false);
 
@@ -279,33 +281,40 @@ function VideoPlayer({
     return !!el.closest("button, input, a, [data-player-control], [role='slider']");
   };
 
-  const onGestureStart = useCallback((clientX: number, clientY: number, width: number) => {
+  /** Only left/right EDGE vertical swipes adjust brightness/volume — never the middle */
+  const onGestureStart = useCallback((clientX: number, clientY: number, width: number, height: number) => {
     if (ignoreGestureRef.current || uiLocked) {
       gestureRef.current.active = false;
+      gestureRef.current.edge = null;
       return;
     }
+    const edgeZone = Math.max(56, width * 0.22);
+    let edge: "left" | "right" | null = null;
+    if (clientX <= edgeZone) edge = "left";
+    else if (clientX >= width - edgeZone) edge = "right";
+
     gestureRef.current = {
-      active: true,
-      mode: null, // decide after movement
+      active: edge !== null,
+      mode: null,
       startY: clientY,
       startX: clientX,
-      startVal: clientX < width / 2 ? brightness : (muted ? 0 : volume),
+      startVal: edge === "left" ? brightness : (muted ? 0 : volume),
       width,
+      height,
+      edge,
     };
   }, [brightness, muted, volume, uiLocked]);
 
-  const onGestureMove = useCallback((clientX: number, clientY: number) => {
+  const onGestureMove = useCallback((clientY: number) => {
     const g = gestureRef.current;
-    if (!g.active || ignoreGestureRef.current) return;
+    if (!g.active || !g.edge || ignoreGestureRef.current) return;
     const dy = g.startY - clientY;
-    const dx = Math.abs(clientX - g.startX);
     if (!g.mode) {
-      // Need a clear vertical drag (works for swipe + continuous drag)
-      if (Math.abs(dy) < 8 || Math.abs(dy) <= dx * 0.85) return;
-      g.mode = g.startX < g.width / 2 ? "brightness" : "volume";
+      if (Math.abs(dy) < 14) return; // need a real vertical swipe
+      g.mode = g.edge === "left" ? "brightness" : "volume";
       g.startVal = g.mode === "brightness" ? brightness : (muted ? 0 : volume);
     }
-    const delta = dy / 180; // drag sensitivity
+    const delta = dy / Math.max(160, g.height * 0.45);
     if (g.mode === "brightness") {
       const next = Math.max(0.2, Math.min(1, g.startVal + delta));
       setBrightness(next);
@@ -328,6 +337,7 @@ function VideoPlayer({
     if (hadMode) gestureMovedRef.current = true;
     gestureRef.current.active = false;
     gestureRef.current.mode = null;
+    gestureRef.current.edge = null;
     return hadMode;
   }, []);
 
@@ -389,13 +399,17 @@ function VideoPlayer({
     return !!(doc.fullscreenElement || doc.webkitFullscreenElement || doc.mozFullScreenElement || doc.msFullscreenElement);
   };
 
-  /* fullscreen — keep same time + playing state; avoid native video FS (resets custom controls) */
+  const isMobileBrowser = () =>
+    typeof navigator !== "undefined" &&
+    (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) ||
+      (navigator.maxTouchPoints > 1 && /Mac/.test(navigator.userAgent)));
+
+  /* fullscreen — mobile uses CSS FS (reliable); desktop prefers native API */
   const toggleFullscreen = useCallback(() => {
     const c = containerRef.current as any;
     const v = videoRef.current;
     if (!c) return;
 
-    // Snapshot position so we can restore if the browser hiccups
     if (v) {
       fsTimeRef.current = v.currentTime;
       fsWasPlayingRef.current = !v.paused;
@@ -403,41 +417,41 @@ function VideoPlayer({
 
     const doc = document as any;
     const nativeFull = isNativeFullscreen();
+    const entering = !nativeFull && !cssFullscreen;
 
-    if (!nativeFull && !cssFullscreen) {
-      const req = c.requestFullscreen || c.webkitRequestFullscreen || c.mozRequestFullScreen || c.msRequestFullscreen;
-      if (req) {
-        Promise.resolve(req.call(c))
-          .then(() => {
-            (screen.orientation as any)?.lock?.("landscape").catch(() => {});
-          })
-          .catch(() => {
-            // Fallback: CSS fullscreen keeps React controls + exact resume position
-            setCssFullscreen(true);
-            setIsFullscreen(true);
-          });
-      } else {
-        setCssFullscreen(true);
-        setIsFullscreen(true);
+    if (!entering) {
+      if (nativeFull) {
+        const exit = doc.exitFullscreen || doc.webkitExitFullscreen || doc.mozCancelFullScreen || doc.msExitFullscreen;
+        try { exit?.call(doc); } catch { /* ignore */ }
       }
-    } else if (nativeFull) {
-      const exit = doc.exitFullscreen || doc.webkitExitFullscreen || doc.mozCancelFullScreen || doc.msExitFullscreen;
-      if (exit) {
-        Promise.resolve(exit.call(doc))
-          .then(() => {
-            (screen.orientation as any)?.unlock?.();
-          })
-          .catch(() => {});
-      }
-      setCssFullscreen(false);
-    } else {
       setCssFullscreen(false);
       setIsFullscreen(false);
-      try {
-        (screen.orientation as any)?.unlock?.();
-      } catch {
-        /* ignore */
-      }
+      try { (screen.orientation as any)?.unlock?.(); } catch { /* ignore */ }
+      return;
+    }
+
+    // Mobile / tablets: CSS fullscreen always works with our custom controls
+    if (isMobileBrowser()) {
+      setCssFullscreen(true);
+      setIsFullscreen(true);
+      try { (screen.orientation as any)?.lock?.("landscape").catch(() => {}); } catch { /* ignore */ }
+      return;
+    }
+
+    const req = c.requestFullscreen || c.webkitRequestFullscreen || c.mozRequestFullScreen || c.msRequestFullscreen;
+    if (req) {
+      Promise.resolve(req.call(c))
+        .then(() => {
+          setIsFullscreen(true);
+          try { (screen.orientation as any)?.lock?.("landscape").catch(() => {}); } catch { /* ignore */ }
+        })
+        .catch(() => {
+          setCssFullscreen(true);
+          setIsFullscreen(true);
+        });
+    } else {
+      setCssFullscreen(true);
+      setIsFullscreen(true);
     }
   }, [cssFullscreen]);
 
@@ -768,6 +782,32 @@ function VideoPlayer({
     revealControls();
   }, [cssFullscreen, revealControls]);
 
+  // CSS fullscreen must escape overflow:hidden ancestors (clips fixed on iOS)
+  useEffect(() => {
+    if (!cssFullscreen) return;
+    const restored: { el: HTMLElement; overflow: string }[] = [];
+    let el: HTMLElement | null | undefined = containerRef.current?.parentElement;
+    while (el && el !== document.documentElement) {
+      const style = getComputedStyle(el);
+      if (style.overflow !== "visible" || style.overflowX !== "visible" || style.overflowY !== "visible") {
+        restored.push({ el, overflow: el.style.overflow });
+        el.style.overflow = "visible";
+      }
+      el = el.parentElement;
+    }
+    const prevHtml = document.documentElement.style.overflow;
+    const prevBody = document.body.style.overflow;
+    document.documentElement.style.overflow = "hidden";
+    document.body.style.overflow = "hidden";
+    return () => {
+      restored.forEach(({ el: node, overflow }) => {
+        node.style.overflow = overflow;
+      });
+      document.documentElement.style.overflow = prevHtml;
+      document.body.style.overflow = prevBody;
+    };
+  }, [cssFullscreen]);
+
   useEffect(() => () => clearTimeout(hideTimerRef.current), []);
 
   const changeQuality = (key: string, url: string) => {
@@ -832,12 +872,13 @@ function VideoPlayer({
   return (
     <div
       ref={containerRef}
-      className={`relative bg-black overflow-hidden w-full h-full select-none touch-none ${
-        cssFullscreen ? "fixed inset-0 z-[400] w-screen h-screen rounded-none" : ""
+      className={`relative bg-black overflow-hidden w-full h-full select-none ${
+        cssFullscreen ? "fixed inset-0 z-[400] w-screen h-[100dvh] rounded-none" : ""
       }`}
+      style={{ touchAction: "manipulation" }}
       onMouseMove={() => { if (!uiLocked) revealControls(); }}
       onMouseLeave={() => {
-        if (playing && !uiLocked) {
+        if (playing && !uiLocked && !settingsOpen) {
           clearTimeout(hideTimerRef.current);
           setControlsVisible(false);
         }
@@ -861,48 +902,34 @@ function VideoPlayer({
           return;
         }
         ignoreGestureRef.current = false;
+        gestureMovedRef.current = false;
         const t = e.touches[0];
         const rect = containerRef.current?.getBoundingClientRect();
         if (!t || !rect) return;
-        onGestureStart(t.clientX - rect.left, t.clientY - rect.top, rect.width);
+        onGestureStart(t.clientX - rect.left, t.clientY - rect.top, rect.width, rect.height);
       }}
       onTouchMove={(e) => {
         if (ignoreGestureRef.current) return;
         const t = e.touches[0];
-        const rect = containerRef.current?.getBoundingClientRect();
-        if (!t || !rect || !gestureRef.current.active) return;
+        if (!t || !gestureRef.current.active) return;
         if (gestureRef.current.mode) e.preventDefault();
-        onGestureMove(t.clientX - rect.left, t.clientY - rect.top);
+        onGestureMove(t.clientY - (containerRef.current?.getBoundingClientRect().top || 0));
       }}
-      onTouchEnd={(e) => {
+      onTouchEnd={() => {
         if (ignoreGestureRef.current) {
           ignoreGestureRef.current = false;
           onGestureEnd();
-          // Let the button receive its click — don't steal with screen tap
-          touchHandledRef.current = true;
+          // Do NOT set touchHandledRef — let the button's click fire normally
           return;
         }
         const moved = onGestureEnd();
-        touchHandledRef.current = true;
-        if (!moved) handleScreenTap(e);
-      }}
-      onMouseDown={(e) => {
-        if (e.button !== 0 || isPlayerControlTarget(e.target)) return;
-        ignoreGestureRef.current = false;
-        const rect = containerRef.current?.getBoundingClientRect();
-        if (!rect) return;
-        onGestureStart(e.clientX - rect.left, e.clientY - rect.top, rect.width);
-      }}
-      onMouseMoveCapture={(e) => {
-        if (!gestureRef.current.active || ignoreGestureRef.current) return;
-        if (e.buttons !== 1) return;
-        const rect = containerRef.current?.getBoundingClientRect();
-        if (!rect) return;
-        onGestureMove(e.clientX - rect.left, e.clientY - rect.top);
-      }}
-      onMouseUp={() => {
-        if (ignoreGestureRef.current) return;
-        onGestureEnd();
+        if (moved) {
+          touchHandledRef.current = true; // suppress click after volume/brightness swipe
+        } else {
+          // Tap on video surface (not a control): toggle controls / play
+          touchHandledRef.current = true;
+          handleScreenTap();
+        }
       }}
     >
       {/* Real video element */}
@@ -960,20 +987,24 @@ function VideoPlayer({
         </div>
       )}
 
-      {/* Volume / brightness gesture HUD */}
+      {/* Volume / brightness gesture HUD — sits on the edge being adjusted */}
       {gestureHud && (
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-40 pointer-events-none">
-          <div className="flex flex-col items-center gap-2 px-5 py-4 rounded-2xl bg-black/75 border border-white/15 backdrop-blur-md min-w-[88px]">
+        <div
+          className={`absolute top-1/2 -translate-y-1/2 z-40 pointer-events-none ${
+            gestureHud.type === "brightness" ? "left-3" : "right-3"
+          }`}
+        >
+          <div className="flex flex-col items-center gap-2 px-3 py-3 rounded-2xl bg-black/75 border border-white/15 backdrop-blur-md min-w-[72px]">
             {gestureHud.type === "volume" ? (
-              gestureHud.value === 0 ? <VolumeX className="w-6 h-6 text-amber-400" /> : <Volume2 className="w-6 h-6 text-amber-400" />
+              gestureHud.value === 0 ? <VolumeX className="w-5 h-5 text-amber-400" /> : <Volume2 className="w-5 h-5 text-amber-400" />
             ) : (
-              <Sun className="w-6 h-6 text-amber-400" />
+              <Sun className="w-5 h-5 text-amber-400" />
             )}
-            <div className="w-16 h-1.5 rounded-full bg-white/20 overflow-hidden">
-              <div className="h-full bg-amber-400 rounded-full transition-all" style={{ width: `${Math.round(gestureHud.value * 100)}%` }} />
+            <div className="w-1.5 h-20 rounded-full bg-white/20 overflow-hidden flex flex-col justify-end">
+              <div className="w-full bg-amber-400 rounded-full transition-all" style={{ height: `${Math.round(gestureHud.value * 100)}%` }} />
             </div>
             <span className="text-[10px] font-bold text-white/90 tabular-nums">
-              {gestureHud.type === "volume" ? "Volume" : "Brightness"} {Math.round(gestureHud.value * 100)}%
+              {Math.round(gestureHud.value * 100)}%
             </span>
           </div>
         </div>
@@ -1203,7 +1234,7 @@ function VideoPlayer({
                           </div>
                           <span className="text-[10px] tabular-nums text-white/60 w-8 text-right">{Math.round(brightness * 100)}</span>
                         </div>
-                        <p className="text-[9px] text-white/40 leading-snug">Tip: swipe up/down on left = brightness, right = volume</p>
+                        <p className="text-[9px] text-white/40 leading-snug">Tip: swipe on left edge = brightness, right edge = volume</p>
                       </div>
 
                       <button
