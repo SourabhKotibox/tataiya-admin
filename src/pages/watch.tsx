@@ -1520,7 +1520,7 @@ export default function WatchPage() {
                 </button>
 
                 {/* Download — hide when movie disables downloads */}
-                {(showData?.downloadAllowed !== false || inDownloadList || isOfflineHere) && (
+                {(showData?.downloadAllowed !== false) && (
                 <button
                   onClick={() => handleDownloadToggle()}
                   disabled={requestDownloadMutation.isPending || removeDownloadMutation.isPending || dlProgress !== null}

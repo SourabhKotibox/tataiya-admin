@@ -83,11 +83,13 @@ export default function MovieDetailPage() {
   };
 
   const related = detailData?.related || [];
+  // Strict: hide Download unless movie explicitly allows it (default true from API)
+  const downloadsEnabled = item?.downloadAllowed !== false;
 
   const isLiked = profileData?.likeRecords?.some((l: any) => l.contentId === id) || false;
   const toggleLikeMutation = useToggleLike();
 
-  // Downloads — use web endpoint as single source of truth (cross-device consistent)
+  // Downloads — server list syncs; offline file is per-device
   const { data: downloadsData } = useGetDownloads({ limit: 200 });
   const downloadItems: any[] = Array.isArray(downloadsData) ? downloadsData : [];
   const downloadRecord = downloadItems.find((d: any) => d.contentId === id);
@@ -97,13 +99,13 @@ export default function MovieDetailPage() {
   const removeDownloadMutation = useRemoveDownload();
 
   useEffect(() => {
-    if (!id) return;
+    if (!id || !downloadsEnabled) return;
     let cancelled = false;
     hasOfflineVideo(id).then((ok) => {
       if (!cancelled) setIsOfflineHere(ok);
     });
     return () => { cancelled = true; };
-  }, [id, dlProgress, inDownloadList]);
+  }, [id, dlProgress, inDownloadList, downloadsEnabled]);
 
   // Wishlist — real API
   const { data: wishlistData } = useGetWishlist({ limit: 100 });
@@ -261,172 +263,177 @@ export default function MovieDetailPage() {
           {item.description}
         </p>
 
-        {/* Action buttons */}
-        <div className="flex items-center gap-3 flex-wrap">
-          {/* Watch Now */}
-          <button
-            onClick={() => {
-              if (isLocked) {
-                setPlansModalOpen(true);
-              } else if (item.trailerUrl) {
-                setLocation(`/watch/${id}/0`);
-              } else {
-                setLocation(`/watch/${id}`);
-              }
-            }}
-            className="flex items-center gap-2.5 px-8 py-3.5 font-black rounded-xl text-sm tracking-wide transition-all active:scale-95 shadow-lg bg-amber-400 hover:bg-amber-300 text-black shadow-amber-900/40"
-          >
-            {isLocked ? <Crown className="w-4 h-4 fill-black" /> : <Play className="w-4 h-4 fill-black" />}
-            {isLocked ? "Unlock Now" : "Watch Now"}
-          </button>
-
-          <button
-            onClick={() => {
-              if (!user) { setLocation("/login"); return; }
-              toggleWishlistMutation.mutate(
-                { contentId: id!, contentType: 'movie' },
-                {
-                  onSuccess: () => {
-                    toast({
-                      title: inWatchlist ? "Removed from watchlist" : "Added to watchlist",
-                    });
-                  },
-                  onError: (err: any) => {
-                    toast({
-                      title: "Failed to update watchlist",
-                      description: err?.message || "Please try again.",
-                      variant: "destructive",
-                    });
-                  },
+        {/* Action buttons — responsive, brand gold primary */}
+        <div className="flex flex-col gap-3 w-full max-w-xl">
+          <div className="flex items-stretch gap-2 sm:gap-3 flex-wrap">
+            <button
+              onClick={() => {
+                if (isLocked) {
+                  setPlansModalOpen(true);
+                } else if (item.trailerUrl) {
+                  setLocation(`/watch/${id}/0`);
+                } else {
+                  setLocation(`/watch/${id}`);
                 }
-              );
-            }}
-            disabled={toggleWishlistMutation.isPending}
-            className={`flex items-center gap-2 px-5 py-3.5 rounded-xl text-sm font-bold border-2 transition-all active:scale-95 disabled:opacity-70 ${
-              inWatchlist
-                ? "bg-amber-400/20 border-amber-400 text-amber-400"
-                : "bg-white/8 border-white/20 text-foreground hover:bg-white/12 hover:border-white/35"
-            }`}
-          >
-            {toggleWishlistMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : inWatchlist ? <Check className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
-            {inWatchlist ? "In Watchlist" : "Watchlist"}
-          </button>
+              }}
+              className="flex-1 min-w-[140px] sm:flex-none flex items-center justify-center gap-2 px-6 sm:px-9 py-3.5 font-black rounded-2xl text-sm tracking-wide transition-all active:scale-[0.98] bg-amber-400 hover:bg-amber-300 text-black shadow-[0_8px_28px_rgba(251,191,36,0.35)]"
+            >
+              {isLocked ? <Crown className="w-4 h-4 fill-black shrink-0" /> : <Play className="w-4 h-4 fill-black shrink-0" />}
+              {isLocked ? "Unlock Now" : "Watch Now"}
+            </button>
 
-          {/* Download — only when movie allows downloads; Offline = cached on THIS device */}
-          {(item.downloadAllowed !== false || inDownloadList || isOfflineHere) && (
-          <button
-            onClick={async () => {
-              if (!user) { setLocation("/login"); return; }
-              if (item.downloadAllowed === false && !inDownloadList && !isOfflineHere) {
-                toast({ title: "Download unavailable", description: "Downloading is disabled for this movie." });
-                return;
-              }
-              // Remove only when this device has the offline file (or user clears list entry)
-              if (isOfflineHere && downloadRecord) {
-                removeDownloadMutation.mutate(
-                  { id: downloadRecord.id, contentId: id! },
+            <button
+              onClick={() => {
+                if (!user) { setLocation("/login"); return; }
+                toggleWishlistMutation.mutate(
+                  { contentId: id!, contentType: 'movie' },
                   {
-                    onSuccess: async () => {
-                      await removeOfflineVideo(id!);
-                      setIsOfflineHere(false);
-                      toast({ title: "Removed from this device" });
+                    onSuccess: () => {
+                      toast({
+                        title: inWatchlist ? "Removed from watchlist" : "Added to watchlist",
+                      });
                     },
-                    onError: () => toast({ title: "Failed to remove", variant: "destructive" }),
+                    onError: (err: any) => {
+                      toast({
+                        title: "Failed to update watchlist",
+                        description: err?.message || "Please try again.",
+                        variant: "destructive",
+                      });
+                    },
                   }
                 );
-                return;
-              }
-              // Cache on THIS device (even if another device already added it to the list)
-              requestDownloadMutation.mutate(
-                { contentId: id!, contentType: 'movie' },
-                {
-                  onSuccess: async (data: any) => {
-                    const downloadUrl = data?.data?.downloadUrl || data?.downloadUrl;
-                    if (downloadUrl) {
-                      setDlProgress(0);
-                      const ok = await cacheDownloadedVideo(downloadUrl, id!, undefined, setDlProgress);
-                      setDlProgress(null);
-                      setIsOfflineHere(ok);
-                      toast({
-                        title: ok ? "Saved offline on this device" : "Added to Downloads list",
-                        description: ok
-                          ? "Play without internet here in Tataiya. Other phones/browsers need their own download."
-                          : "List synced, but offline file is not on this device yet — check storage/CORS and retry.",
-                      });
-                    } else {
-                      toast({ title: "Added to downloads" });
+              }}
+              disabled={toggleWishlistMutation.isPending}
+              className={`flex items-center justify-center gap-2 px-4 sm:px-5 py-3.5 rounded-2xl text-sm font-bold border transition-all active:scale-[0.98] disabled:opacity-70 backdrop-blur-sm ${
+                inWatchlist
+                  ? "bg-amber-400/20 border-amber-400/60 text-amber-300"
+                  : "bg-white/10 border-white/20 text-white hover:bg-white/15 hover:border-white/35"
+              }`}
+              title={inWatchlist ? "In Watchlist" : "Add to Watchlist"}
+            >
+              {toggleWishlistMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : inWatchlist ? <Check className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+              <span className="hidden xs:inline sm:inline">{inWatchlist ? "In List" : "Watchlist"}</span>
+            </button>
+
+            {/* Download — never render when movie disables downloads */}
+            {downloadsEnabled && (
+              <button
+                onClick={async () => {
+                  if (!user) { setLocation("/login"); return; }
+                  if (isOfflineHere && downloadRecord) {
+                    removeDownloadMutation.mutate(
+                      { id: downloadRecord.id, contentId: id! },
+                      {
+                        onSuccess: async () => {
+                          await removeOfflineVideo(id!);
+                          setIsOfflineHere(false);
+                          toast({ title: "Removed from this device" });
+                        },
+                        onError: () => toast({ title: "Failed to remove", variant: "destructive" }),
+                      }
+                    );
+                    return;
+                  }
+                  requestDownloadMutation.mutate(
+                    { contentId: id!, contentType: 'movie' },
+                    {
+                      onSuccess: async (data: any) => {
+                        const downloadUrl = data?.data?.downloadUrl || data?.downloadUrl;
+                        if (downloadUrl) {
+                          setDlProgress(0);
+                          const ok = await cacheDownloadedVideo(downloadUrl, id!, undefined, setDlProgress);
+                          setDlProgress(null);
+                          setIsOfflineHere(ok);
+                          toast({
+                            title: ok ? "Saved offline on this device" : "Added to Downloads list",
+                            description: ok
+                              ? "Play without internet here in Tataiya."
+                              : "Could not cache offline on this device — try again on Wi‑Fi.",
+                          });
+                        } else {
+                          toast({ title: "Added to downloads" });
+                        }
+                      },
+                      onError: (err: any) =>
+                        toast({
+                          title: "Download failed",
+                          description: err?.message || "Please try again.",
+                          variant: "destructive",
+                        }),
                     }
-                  },
-                  onError: (err: any) => toast({ title: "Download failed", description: err?.message || "Please try again.", variant: "destructive" }),
-                }
-              );
-            }}
-            disabled={requestDownloadMutation.isPending || removeDownloadMutation.isPending || dlProgress !== null}
-            className={`flex items-center gap-2 px-5 py-3.5 rounded-xl text-sm font-bold border-2 transition-all active:scale-95 disabled:opacity-70 ${
-              isOfflineHere
-                ? "bg-emerald-500/20 border-emerald-500 text-emerald-400"
-                : inDownloadList
-                ? "bg-amber-400/15 border-amber-400/50 text-amber-300"
-                : "bg-white/8 border-white/20 text-foreground hover:bg-white/12 hover:border-white/35"
-            }`}
-          >
-            {requestDownloadMutation.isPending || dlProgress !== null ? (
-              dlProgress !== null && dlProgress > 0
-                ? <span className="text-xs font-bold">{dlProgress}%</span>
-                : <Loader2 className="w-4 h-4 animate-spin" />
-            ) : removeDownloadMutation.isPending ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : isOfflineHere ? (
-              <Check className="w-4 h-4" />
-            ) : (
-              <Download className="w-4 h-4" />
+                  );
+                }}
+                disabled={requestDownloadMutation.isPending || removeDownloadMutation.isPending || dlProgress !== null}
+                className={`flex items-center justify-center gap-2 px-4 sm:px-5 py-3.5 rounded-2xl text-sm font-bold border transition-all active:scale-[0.98] disabled:opacity-70 backdrop-blur-sm ${
+                  isOfflineHere
+                    ? "bg-emerald-500/20 border-emerald-400/50 text-emerald-300"
+                    : inDownloadList
+                    ? "bg-amber-400/15 border-amber-400/40 text-amber-200"
+                    : "bg-white/10 border-white/20 text-white hover:bg-white/15 hover:border-white/35"
+                }`}
+                title={isOfflineHere ? "Offline on this device" : "Download for offline"}
+              >
+                {requestDownloadMutation.isPending || dlProgress !== null ? (
+                  dlProgress !== null && dlProgress > 0
+                    ? <span className="text-xs font-bold tabular-nums">{dlProgress}%</span>
+                    : <Loader2 className="w-4 h-4 animate-spin" />
+                ) : removeDownloadMutation.isPending ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : isOfflineHere ? (
+                  <Check className="w-4 h-4" />
+                ) : (
+                  <Download className="w-4 h-4" />
+                )}
+                <span className="hidden sm:inline">
+                  {dlProgress !== null
+                    ? "Saving…"
+                    : isOfflineHere
+                    ? "Offline"
+                    : inDownloadList
+                    ? "Save here"
+                    : "Download"}
+                </span>
+              </button>
             )}
-            {dlProgress !== null
-              ? "Downloading..."
-              : isOfflineHere
-              ? "Offline here"
-              : inDownloadList
-              ? "Save offline here"
-              : "Download"}
-          </button>
-          )}
 
-          {/* Like button */}
-          <button
-            onClick={() => {
-              if (!user) { setLocation("/login"); return; }
-              toggleLikeMutation.mutate({ contentId: id!, contentType: 'movie' });
-            }}
-            disabled={toggleLikeMutation.isPending}
-            className={`w-12 h-12 flex items-center justify-center rounded-full border-2 transition-all active:scale-95 disabled:opacity-70 ${
-              isLiked
-                ? "bg-rose-500/20 border-rose-500 text-rose-400"
-                : "bg-white/8 border-white/20 text-foreground hover:border-white/35"
-            }`}
-          >
-            {toggleLikeMutation.isPending ? (
-              <Loader2 className="w-5 h-5 animate-spin" />
-            ) : (
-              <Heart className={`w-5 h-5 ${isLiked ? "fill-rose-500 text-rose-500" : ""}`} />
-            )}
-          </button>
+            <button
+              onClick={() => {
+                if (!user) { setLocation("/login"); return; }
+                toggleLikeMutation.mutate({ contentId: id!, contentType: 'movie' });
+              }}
+              disabled={toggleLikeMutation.isPending}
+              className={`w-12 h-12 shrink-0 flex items-center justify-center rounded-2xl border transition-all active:scale-[0.98] disabled:opacity-70 backdrop-blur-sm ${
+                isLiked
+                  ? "bg-rose-500/25 border-rose-400/50 text-rose-300"
+                  : "bg-white/10 border-white/20 text-white hover:bg-white/15"
+              }`}
+              aria-label="Like"
+            >
+              {toggleLikeMutation.isPending ? (
+                <Loader2 className="w-5 h-5 animate-spin" />
+              ) : (
+                <Heart className={`w-5 h-5 ${isLiked ? "fill-rose-400 text-rose-400" : ""}`} />
+              )}
+            </button>
 
-          <button
-            onClick={() => {
-              recordShareMutation.mutate({
-                contentId: id,
-                contentType: "movie",
-              });
-              navigator.clipboard.writeText(window.location.href);
-              toast({
-                title: "Link Copied",
-                description: "Movie link copied to clipboard successfully!",
-              });
-            }}
-            className="w-12 h-12 flex items-center justify-center rounded-full border-2 border-white/20 bg-white/8 text-foreground hover:border-white/35 transition-all active:scale-95"
-          >
-            <Share2 className="w-4 h-4" />
-          </button>
+            <button
+              onClick={() => {
+                recordShareMutation.mutate({
+                  contentId: id,
+                  contentType: "movie",
+                });
+                navigator.clipboard.writeText(window.location.href);
+                toast({
+                  title: "Link Copied",
+                  description: "Movie link copied to clipboard successfully!",
+                });
+              }}
+              className="w-12 h-12 shrink-0 flex items-center justify-center rounded-2xl border border-white/20 bg-white/10 text-white hover:bg-white/15 transition-all active:scale-[0.98] backdrop-blur-sm"
+              aria-label="Share"
+            >
+              <Share2 className="w-4 h-4" />
+            </button>
+          </div>
         </div>
             </div>{/* end text block */}
           </div>{/* end poster+text row */}
@@ -439,7 +446,7 @@ export default function MovieDetailPage() {
       {((item.cast && item.cast.length > 0) || (item.crew && item.crew.length > 0) || (item.crewMembers && item.crewMembers.length > 0)) && (
         <div className="pb-10">
           <div className="flex items-center gap-3 mb-5 px-6 sm:px-10 lg:px-16">
-            <div className="w-1 h-6 rounded-full flex-shrink-0" style={{ background: "#e50914" }} />
+            <div className="w-1 h-6 rounded-full flex-shrink-0 bg-amber-400" />
             <h2 className="text-foreground font-black text-lg sm:text-xl tracking-tight">Cast & Crew</h2>
           </div>
           <div
@@ -506,7 +513,7 @@ export default function MovieDetailPage() {
       {related.length > 0 && (
         <div className="pb-12">
           <div className="flex items-center gap-3 mb-5 px-6 sm:px-10 lg:px-16">
-            <div className="w-1 h-6 rounded-full flex-shrink-0" style={{ background: "#e50914" }} />
+            <div className="w-1 h-6 rounded-full flex-shrink-0 bg-amber-400" />
             <h2 className="text-foreground font-black text-lg sm:text-xl tracking-tight">More Like This</h2>
             <div className="flex-1" />
             <button
