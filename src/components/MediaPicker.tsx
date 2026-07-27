@@ -59,9 +59,16 @@ export default function MediaPicker({ open, onClose, onSelect, source, accept = 
       // Pass the entire media object (keep HLS fields for movie-form autofill)
       onSelect({
         ...selectedMedia,
-        url: getImageUrl(selectedMedia.hlsMasterPlaylistUrl || selectedMedia.url || selectedMedia.hlsMasterPlaylistPath || selectedMedia.filePath),
-        filePath: selectedMedia.url || selectedMedia.filePath,
-
+        url: getImageUrl(
+          selectedMedia.hlsMasterPlaylistUrl ||
+            selectedMedia.url ||
+            selectedMedia.hlsMasterPlaylistPath ||
+            selectedMedia.filePath
+        ),
+        filePath:
+          typeof selectedMedia.url === "string" && selectedMedia.url.startsWith("http")
+            ? selectedMedia.url
+            : selectedMedia.filePath || selectedMedia.url,
       });
       handleClose();
     } else if (mode === "upload" && selectedMedia?.file) {
@@ -101,9 +108,16 @@ export default function MediaPicker({ open, onClose, onSelect, source, accept = 
         if (uploadedFile) {
           onSelect({
             ...uploadedFile,
-            url: getImageUrl(uploadedFile.hlsMasterPlaylistUrl || uploadedFile.url || uploadedFile.hlsMasterPlaylistPath || uploadedFile.filePath),
-            filePath: uploadedFile.url || uploadedFile.filePath,
-
+            url: getImageUrl(
+              uploadedFile.hlsMasterPlaylistUrl ||
+                uploadedFile.url ||
+                uploadedFile.hlsMasterPlaylistPath ||
+                uploadedFile.filePath
+            ),
+            filePath:
+              typeof uploadedFile.url === "string" && uploadedFile.url.startsWith("http")
+                ? uploadedFile.url
+                : uploadedFile.filePath || uploadedFile.url,
           });
         } else {
           onSelect({ url: preview || "", filePath: "", name: selectedMedia.name });
