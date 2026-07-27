@@ -165,18 +165,37 @@ function VideoPlayer({
     }
   }, [currentTime, duration, contentId, playing]);
 
+  const settingsOpenRef = useRef(settingsOpen);
+  settingsOpenRef.current = settingsOpen;
+  const uiLockedRef = useRef(uiLocked);
+  uiLockedRef.current = uiLocked;
+
   const scheduleHide = useCallback(() => {
     clearTimeout(hideTimerRef.current);
-    if (playing && !uiLocked) {
-      hideTimerRef.current = setTimeout(() => setControlsVisible(false), 3000);
+    if (settingsOpenRef.current || uiLockedRef.current) return;
+    if (playing) {
+      hideTimerRef.current = setTimeout(() => {
+        if (settingsOpenRef.current || uiLockedRef.current) return;
+        setControlsVisible(false);
+      }, 8000);
     }
-  }, [playing, uiLocked]);
+  }, [playing]);
 
   const revealControls = useCallback(() => {
-    if (uiLocked) return;
+    if (uiLockedRef.current) return;
     setControlsVisible(true);
     scheduleHide();
-  }, [scheduleHide, uiLocked]);
+  }, [scheduleHide]);
+
+  // While settings is open, never auto-hide; when closed, start hide timer again
+  useEffect(() => {
+    if (settingsOpen) {
+      clearTimeout(hideTimerRef.current);
+      setControlsVisible(true);
+      return;
+    }
+    scheduleHide();
+  }, [settingsOpen, scheduleHide]);
 
   const showGestureHud = useCallback((type: "volume" | "brightness", value: number) => {
     setGestureHud({ type, value });
@@ -657,7 +676,7 @@ function VideoPlayer({
   const displayVol = muted ? 0 : volume;
   const VolumeIcon = displayVol === 0 ? VolumeX : displayVol < 0.5 ? Volume1 : Volume2;
   const FsIcon     = isFullscreen ? Minimize : Maximize;
-  const ctrlShow   = !uiLocked && (controlsVisible || !playing);
+  const ctrlShow   = !uiLocked && (controlsVisible || !playing || settingsOpen);
   const lockChromeShow = uiLocked && controlsVisible;
 
   const fmtTime = (sec: number) => {
@@ -925,7 +944,14 @@ function VideoPlayer({
             <div className="relative" onClick={(e) => e.stopPropagation()}>
               <button
                 onClick={() => {
-                  setSettingsOpen(!settingsOpen);
+                  setSettingsOpen((open) => {
+                    const next = !open;
+                    if (next) {
+                      clearTimeout(hideTimerRef.current);
+                      setControlsVisible(true);
+                    }
+                    return next;
+                  });
                   setCurrentMenu("main");
                 }}
                 className={`text-foreground hover:text-amber-400 transition-all duration-300 p-2 sm:p-1 touch-manipulation ${settingsOpen ? "text-amber-400 rotate-45 scale-110" : ""}`}
