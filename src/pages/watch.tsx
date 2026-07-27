@@ -1009,23 +1009,22 @@ function VideoPlayer({
         </div>
       )}
 
-      {/* Center play/pause controls overlay */}
+      {/* Center play/pause — skip ±10 only on larger screens to avoid overlap */}
       <div
         className={`absolute inset-0 flex items-center justify-center z-20 transition-opacity duration-300 pointer-events-none ${
           ctrlShow ? "opacity-100" : "opacity-0"
         }`}
       >
-        <div className="flex items-center gap-6 pointer-events-auto" data-player-control onClick={(e) => e.stopPropagation()}>
-          {/* Skip back */}
+        <div className="flex items-center gap-8 sm:gap-10 pointer-events-auto" data-player-control onClick={(e) => e.stopPropagation()}>
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); skip(-10); }}
-            className="w-11 h-11 rounded-full bg-black/40 border border-white/10 flex items-center justify-center hover:bg-black/60 transition-all duration-200 active:scale-90 touch-manipulation"
+            className="hidden sm:flex w-11 h-11 rounded-full bg-black/40 border border-white/10 items-center justify-center hover:bg-black/60 transition-all duration-200 active:scale-90 touch-manipulation"
+            aria-label="Back 10 seconds"
           >
             <RotateCcw className="w-4 h-4 text-foreground" />
           </button>
 
-          {/* Play/Pause */}
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); void togglePlay(); }}
@@ -1040,33 +1039,33 @@ function VideoPlayer({
             }
           </button>
 
-          {/* Skip forward */}
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); skip(10); }}
-            className="w-11 h-11 rounded-full bg-black/40 border border-white/10 flex items-center justify-center hover:bg-black/60 transition-all duration-200 active:scale-90 touch-manipulation"
+            className="hidden sm:flex w-11 h-11 rounded-full bg-black/40 border border-white/10 items-center justify-center hover:bg-black/60 transition-all duration-200 active:scale-90 touch-manipulation"
+            aria-label="Forward 10 seconds"
           >
             <RotateCw className="w-4 h-4 text-foreground" />
           </button>
         </div>
       </div>
 
-      {/* Bottom controls */}
+      {/* Bottom controls — compact mobile row; sliders live in Settings */}
       <div
-        className={`absolute bottom-0 left-0 right-0 z-30 transition-opacity duration-300 bg-gradient-to-t from-black/90 to-transparent pb-3 pt-6 ${
+        className={`absolute bottom-0 left-0 right-0 z-30 transition-opacity duration-300 bg-gradient-to-t from-black/95 via-black/55 to-transparent pb-2.5 pt-8 ${
           ctrlShow ? "opacity-100" : "opacity-0 pointer-events-none"
         }`}
         data-player-control
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Seek bar */}
+        {/* Seek + time */}
         <div className="px-3 sm:px-4">
-          <div className="relative h-5 sm:h-4 flex items-center group/seek cursor-pointer" onClick={(e) => e.stopPropagation()}>
-            <div className="absolute inset-x-0 h-[4px] sm:h-[3px] bg-white/20 rounded-full" />
-            <div className="absolute h-[4px] sm:h-[3px] bg-white/35 rounded-full" style={{ width: `${bufPct}%` }} />
-            <div className="absolute h-[4px] sm:h-[3px] bg-amber-400 rounded-full" style={{ width: `${seekPct}%` }} />
+          <div className="relative h-5 flex items-center group/seek cursor-pointer">
+            <div className="absolute inset-x-0 h-[3px] bg-white/20 rounded-full" />
+            <div className="absolute h-[3px] bg-white/35 rounded-full" style={{ width: `${bufPct}%` }} />
+            <div className="absolute h-[3px] bg-amber-400 rounded-full" style={{ width: `${seekPct}%` }} />
             <div
-              className="absolute w-3.5 h-3.5 sm:w-3 sm:h-3 bg-amber-400 border border-white/50 rounded-full shadow-lg scale-100 sm:scale-0 sm:group-hover/seek:scale-100 transition-transform -translate-x-1/2 pointer-events-none"
+              className="absolute w-3.5 h-3.5 bg-amber-400 border border-white/50 rounded-full shadow-lg -translate-x-1/2 pointer-events-none"
               style={{ left: `${seekPct}%` }}
             />
             <input
@@ -1076,72 +1075,50 @@ function VideoPlayer({
               aria-label="Seek"
             />
           </div>
+          <div className="flex items-center justify-between mt-1 mb-1">
+            <span className="text-white/85 text-[10px] sm:text-[11px] tabular-nums font-medium">
+              {fmtTime(currentTime)}
+            </span>
+            <span className="text-white/55 text-[10px] sm:text-[11px] tabular-nums">
+              {fmtTime(duration)}
+            </span>
+          </div>
         </div>
 
-        {/* Controls row */}
-        <div className="px-2 sm:px-3 mt-1 flex items-center justify-between gap-2">
-          <div className="flex items-center gap-1.5 sm:gap-3 min-w-0">
-            {/* Play/Pause */}
+        {/* Single clean action row */}
+        <div className="px-2 sm:px-3 flex items-center justify-between gap-1">
+          <div className="flex items-center gap-0.5 sm:gap-1.5">
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); void togglePlay(); }}
-              className="text-foreground hover:text-amber-400 transition-colors p-2 sm:p-1 touch-manipulation"
+              className="text-white hover:text-amber-400 transition-colors p-2.5 touch-manipulation"
               aria-label={playing ? "Pause" : "Play"}
             >
-              {playing ? <Pause className="w-[16px] h-[16px] fill-current" /> : <Play className="w-[16px] h-[16px] fill-current ml-px" />}
+              {playing ? <Pause className="w-5 h-5 fill-current" /> : <Play className="w-5 h-5 fill-current ml-px" />}
             </button>
 
-            {/* Next episode */}
             {onNext && (
               <button
                 type="button"
                 onClick={onNext}
-                className="text-foreground hover:text-amber-400 p-1 transition-colors touch-manipulation"
+                className="hidden sm:inline-flex text-white hover:text-amber-400 p-2 transition-colors touch-manipulation"
                 title="Skip Trailer / Next (N)"
               >
-                <SkipForward className="w-[14px] h-[14px]" />
+                <SkipForward className="w-4 h-4" />
               </button>
             )}
 
-            {/* Timestamp */}
-            <span className="text-foreground text-[11px] tabular-nums select-none px-1">
-              {fmtTime(currentTime)} / {fmtTime(duration)}
-            </span>
-          </div>
-
-          {/* Right Controls */}
-          <div className="flex items-center gap-1 sm:gap-2.5 shrink-0">
-            {/* Brightness (draggable) */}
-            <div className="flex items-center gap-1" data-player-control onClick={(e) => e.stopPropagation()}>
-              <Sun className="w-3.5 h-3.5 text-foreground/80 shrink-0" />
-              <div className="relative w-12 sm:w-14 h-6 flex items-center">
-                <div className="absolute inset-x-0 h-[3px] bg-white/20 rounded-full" />
-                <div className="absolute h-[3px] bg-amber-400 rounded-full" style={{ width: `${((brightness - 0.2) / 0.8) * 100}%` }} />
-                <input
-                  type="range"
-                  min={0.2}
-                  max={1}
-                  step={0.01}
-                  value={brightness}
-                  onChange={(e) => handleBrightness(parseFloat(e.target.value))}
-                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10 touch-manipulation"
-                  aria-label="Brightness"
-                />
-              </div>
-            </div>
-
-            {/* Volume (draggable on all sizes) */}
-            <div className="flex items-center gap-1" data-player-control onClick={(e) => e.stopPropagation()}>
+            {/* Desktop volume slider only */}
+            <div className="hidden sm:flex items-center gap-1 ml-1" data-player-control>
               <button
                 type="button"
                 onClick={toggleMute}
-                className="text-foreground hover:text-amber-400 transition-colors p-2 sm:p-1 touch-manipulation"
-                title="Mute (M)"
+                className="text-white hover:text-amber-400 transition-colors p-1.5 touch-manipulation"
                 aria-label="Mute"
               >
-                <VolumeIcon className="w-4 h-4 sm:w-[15px] sm:h-[15px]" />
+                <VolumeIcon className="w-4 h-4" />
               </button>
-              <div className="relative w-12 sm:w-16 h-6 flex items-center">
+              <div className="relative w-20 h-6 flex items-center">
                 <div className="absolute inset-x-0 h-[3px] bg-white/20 rounded-full" />
                 <div className="absolute h-[3px] bg-amber-400 rounded-full" style={{ width: `${displayVol * 100}%` }} />
                 <input
@@ -1151,15 +1128,28 @@ function VideoPlayer({
                   step={0.01}
                   value={displayVol}
                   onChange={(e) => handleVolume(parseFloat(e.target.value))}
-                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10 touch-manipulation"
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
                   aria-label="Volume"
                 />
               </div>
             </div>
+          </div>
 
-            {/* Settings Menu */}
+          <div className="flex items-center gap-0.5 sm:gap-1">
+            {/* Mobile mute only (no slider clutter) */}
+            <button
+              type="button"
+              onClick={toggleMute}
+              className="sm:hidden text-white hover:text-amber-400 transition-colors p-2.5 touch-manipulation"
+              aria-label="Mute"
+            >
+              <VolumeIcon className="w-5 h-5" />
+            </button>
+
+            {/* Settings */}
             <div className="relative" onClick={(e) => e.stopPropagation()}>
               <button
+                type="button"
                 onClick={() => {
                   setSettingsOpen((open) => {
                     const next = !open;
@@ -1171,17 +1161,51 @@ function VideoPlayer({
                   });
                   setCurrentMenu("main");
                 }}
-                className={`text-foreground hover:text-amber-400 transition-all duration-300 p-2 sm:p-1 touch-manipulation ${settingsOpen ? "text-amber-400 rotate-45 scale-110" : ""}`}
+                className={`text-white hover:text-amber-400 transition-all duration-300 p-2.5 touch-manipulation ${settingsOpen ? "text-amber-400" : ""}`}
                 aria-label="Settings"
               >
-                <Settings className="w-4 h-4 sm:w-[15px] sm:h-[15px]" />
+                <Settings className="w-5 h-5 sm:w-4 sm:h-4" />
               </button>
 
               {settingsOpen && (
-                <div className="absolute bottom-11 right-0 z-50 bg-[#0d0d16]/95 border border-amber-400/20 backdrop-blur-md rounded-xl p-2.5 w-[min(240px,78vw)] max-h-[min(55vh,320px)] overflow-y-auto text-xs text-foreground shadow-2xl flex flex-col gap-0.5">
+                <div className="absolute bottom-12 right-0 z-50 bg-[#0d0d16]/95 border border-amber-400/20 backdrop-blur-md rounded-xl p-2.5 w-[min(260px,82vw)] max-h-[min(55vh,360px)] overflow-y-auto text-xs text-foreground shadow-2xl flex flex-col gap-0.5">
                   {currentMenu === "main" && (
                     <>
                       <div className="text-[9px] uppercase font-bold text-foreground tracking-wider px-2 pb-1.5 border-b border-white/5">Settings</div>
+
+                      {/* Volume + brightness in settings (keeps bottom bar clean) */}
+                      <div className="px-2 py-2.5 space-y-3 border-b border-white/5 mb-1">
+                        <div className="flex items-center gap-2">
+                          <VolumeIcon className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                          <div className="relative flex-1 h-6 flex items-center">
+                            <div className="absolute inset-x-0 h-[3px] bg-white/20 rounded-full" />
+                            <div className="absolute h-[3px] bg-amber-400 rounded-full" style={{ width: `${displayVol * 100}%` }} />
+                            <input
+                              type="range" min={0} max={1} step={0.01} value={displayVol}
+                              onChange={(e) => handleVolume(parseFloat(e.target.value))}
+                              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10 touch-manipulation"
+                              aria-label="Volume"
+                            />
+                          </div>
+                          <span className="text-[10px] tabular-nums text-white/60 w-8 text-right">{Math.round(displayVol * 100)}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Sun className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                          <div className="relative flex-1 h-6 flex items-center">
+                            <div className="absolute inset-x-0 h-[3px] bg-white/20 rounded-full" />
+                            <div className="absolute h-[3px] bg-amber-400 rounded-full" style={{ width: `${((brightness - 0.2) / 0.8) * 100}%` }} />
+                            <input
+                              type="range" min={0.2} max={1} step={0.01} value={brightness}
+                              onChange={(e) => handleBrightness(parseFloat(e.target.value))}
+                              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10 touch-manipulation"
+                              aria-label="Brightness"
+                            />
+                          </div>
+                          <span className="text-[10px] tabular-nums text-white/60 w-8 text-right">{Math.round(brightness * 100)}</span>
+                        </div>
+                        <p className="text-[9px] text-white/40 leading-snug">Tip: swipe up/down on left = brightness, right = volume</p>
+                      </div>
+
                       <button
                         onClick={() => setCurrentMenu("quality")}
                         className="flex items-center justify-between w-full px-2 py-2.5 sm:py-1.5 rounded-lg hover:bg-white/10 text-left transition-colors touch-manipulation"
@@ -1252,7 +1276,6 @@ function VideoPlayer({
                             {currentQuality === q.key && <Check className="w-3.5 h-3.5 text-amber-400 flex-shrink-0 mt-0.5" />}
                           </button>
                         ))}
-
                       </div>
                     </>
                   )}
@@ -1321,17 +1344,22 @@ function VideoPlayer({
               )}
             </div>
 
-            {/* Fullscreen */}
-            <button onClick={toggleFullscreen} className="text-foreground hover:text-amber-400 transition-colors p-2 sm:p-1 touch-manipulation" aria-label="Fullscreen">
-              <FsIcon className="w-4 h-4 sm:w-[15px] sm:h-[15px]" />
+            <button
+              type="button"
+              onClick={toggleFullscreen}
+              className="text-white hover:text-amber-400 transition-colors p-2.5 touch-manipulation"
+              aria-label="Fullscreen"
+            >
+              <FsIcon className="w-5 h-5 sm:w-4 sm:h-4" />
             </button>
             <button
+              type="button"
               onClick={(e) => { e.stopPropagation(); toggleLock(); }}
-              className="text-foreground hover:text-amber-400 transition-colors p-2 sm:p-1 touch-manipulation"
+              className="text-white hover:text-amber-400 transition-colors p-2.5 touch-manipulation"
               aria-label="Lock controls"
               title="Lock screen controls"
             >
-              <Lock className="w-4 h-4 sm:w-[15px] sm:h-[15px]" />
+              <Lock className="w-5 h-5 sm:w-4 sm:h-4" />
             </button>
           </div>
         </div>
