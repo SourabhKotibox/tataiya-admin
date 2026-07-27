@@ -7,7 +7,10 @@ import {
   setBaseUrl,
 } from "./lib/api-client";
 
-setBaseUrl(import.meta.env.VITE_API_URL || "https://tataiya.in");
+setBaseUrl(
+  import.meta.env.VITE_API_URL ||
+    (import.meta.env.PROD ? "https://tataiya.in/api" : "http://localhost:3000")
+);
 
 setAuthTokenGetter(() =>
   localStorage.getItem("appAccessToken")
