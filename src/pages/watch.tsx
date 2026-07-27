@@ -13,6 +13,7 @@ import { useGetWebSubscriptionPlans, useCreateSubscription, useGetWebDetail, get
 import { PlayerPrerollAd } from "@/components/AdComponents";
 import { useToast } from "@/hooks/use-toast";
 import { LandscapeCard } from "@/components/ContentCard";
+import { useMiniPlayer } from "@/contexts/MiniPlayerContext";
 /* ─── AD OVERLAY ─── */
 function AdOverlay({ ad, onSkip }: { ad: any; onSkip: () => void }) {
   const [countdown, setCountdown] = useState(5);
@@ -77,6 +78,7 @@ function VideoPlayer({
   contentId,
   resumeFrom,
   subtitles = [],
+  onPlaybackSnapshot,
 }: {
   videoSrc: string;
   thumbnail: string;
@@ -86,6 +88,7 @@ function VideoPlayer({
   contentId?: string;
   resumeFrom?: number;
   subtitles?: Array<{ language: string; code?: string; filePath?: string; url?: string }>;
+  onPlaybackSnapshot?: (snap: { playing: boolean; currentTime: number; src: string }) => void;
 }) {
   const videoRef      = useRef<HTMLVideoElement>(null);
   const containerRef  = useRef<HTMLDivElement>(null);
@@ -111,14 +114,20 @@ function VideoPlayer({
   const lastTapRef = useRef(0);
   const tapTimerRef = useRef<ReturnType<typeof setTimeout>>();
   const touchHandledRef = useRef(false);
+  const ignoreGestureRef = useRef(false);
+  const gestureMovedRef = useRef(false);
+  const fsTimeRef = useRef<number | null>(null);
+  const fsWasPlayingRef = useRef(false);
   const gestureRef = useRef<{
     active: boolean;
     mode: "volume" | "brightness" | null;
     startY: number;
     startX: number;
     startVal: number;
-  }>({ active: false, mode: null, startY: 0, startX: 0, startVal: 0 });
+    width: number;
+  }>({ active: false, mode: null, startY: 0, startX: 0, startVal: 0, width: 1 });
   const gestureHudTimer = useRef<ReturnType<typeof setTimeout>>();
+  const [cssFullscreen, setCssFullscreen] = useState(false);
 
   // Quality & Speed Settings state
   const [currentSrc,     setCurrentSrc]     = useState(() => videoSrc ? getImageUrl(videoSrc) : "");
@@ -264,27 +273,39 @@ function VideoPlayer({
     });
   }, [scheduleHide]);
 
+  const isPlayerControlTarget = (target: EventTarget | null) => {
+    const el = target as HTMLElement | null;
+    if (!el?.closest) return false;
+    return !!el.closest("button, input, a, [data-player-control], [role='slider']");
+  };
+
   const onGestureStart = useCallback((clientX: number, clientY: number, width: number) => {
+    if (ignoreGestureRef.current || uiLocked) {
+      gestureRef.current.active = false;
+      return;
+    }
     gestureRef.current = {
       active: true,
       mode: null, // decide after movement
       startY: clientY,
       startX: clientX,
       startVal: clientX < width / 2 ? brightness : (muted ? 0 : volume),
+      width,
     };
-  }, [brightness, muted, volume]);
+  }, [brightness, muted, volume, uiLocked]);
 
-  const onGestureMove = useCallback((clientX: number, clientY: number, width: number) => {
+  const onGestureMove = useCallback((clientX: number, clientY: number) => {
     const g = gestureRef.current;
-    if (!g.active) return;
+    if (!g.active || ignoreGestureRef.current) return;
     const dy = g.startY - clientY;
     const dx = Math.abs(clientX - g.startX);
     if (!g.mode) {
-      if (Math.abs(dy) < 12 || Math.abs(dy) < dx) return; // need clear vertical swipe
-      g.mode = g.startX < width / 2 ? "brightness" : "volume";
+      // Need a clear vertical drag (works for swipe + continuous drag)
+      if (Math.abs(dy) < 8 || Math.abs(dy) <= dx * 0.85) return;
+      g.mode = g.startX < g.width / 2 ? "brightness" : "volume";
       g.startVal = g.mode === "brightness" ? brightness : (muted ? 0 : volume);
     }
-    const delta = dy / 220; // swipe sensitivity
+    const delta = dy / 180; // drag sensitivity
     if (g.mode === "brightness") {
       const next = Math.max(0.2, Math.min(1, g.startVal + delta));
       setBrightness(next);
@@ -303,9 +324,19 @@ function VideoPlayer({
   }, [brightness, muted, volume, showGestureHud]);
 
   const onGestureEnd = useCallback(() => {
+    const hadMode = gestureRef.current.mode !== null;
+    if (hadMode) gestureMovedRef.current = true;
     gestureRef.current.active = false;
     gestureRef.current.mode = null;
+    return hadMode;
   }, []);
+
+  const handleBrightness = (val: number) => {
+    const next = Math.max(0.2, Math.min(1, val));
+    setBrightness(next);
+    showGestureHud("brightness", next);
+    revealControls();
+  };
 
   /* seek */
   const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -330,10 +361,12 @@ function VideoPlayer({
   const handleVolume = (val: number) => {
     const v = videoRef.current;
     if (!v) return;
-    v.volume = val;
-    v.muted  = val === 0;
-    setVolume(val);
-    setMuted(val === 0);
+    const next = Math.max(0, Math.min(1, val));
+    v.volume = next;
+    v.muted  = next === 0;
+    setVolume(next);
+    setMuted(next === 0);
+    showGestureHud("volume", next);
     revealControls();
   };
 
@@ -351,33 +384,62 @@ function VideoPlayer({
     revealControls();
   }, [revealControls]);
 
-  /* fullscreen */
+  const isNativeFullscreen = () => {
+    const doc = document as any;
+    return !!(doc.fullscreenElement || doc.webkitFullscreenElement || doc.mozFullScreenElement || doc.msFullscreenElement);
+  };
+
+  /* fullscreen — keep same time + playing state; avoid native video FS (resets custom controls) */
   const toggleFullscreen = useCallback(() => {
     const c = containerRef.current as any;
-    const v = videoRef.current as any;
-    if (!c || !v) return;
+    const v = videoRef.current;
+    if (!c) return;
+
+    // Snapshot position so we can restore if the browser hiccups
+    if (v) {
+      fsTimeRef.current = v.currentTime;
+      fsWasPlayingRef.current = !v.paused;
+    }
 
     const doc = document as any;
-    const isFull = doc.fullscreenElement || doc.webkitFullscreenElement || doc.mozFullScreenElement || doc.msFullscreenElement;
+    const nativeFull = isNativeFullscreen();
 
-    if (!isFull) {
+    if (!nativeFull && !cssFullscreen) {
       const req = c.requestFullscreen || c.webkitRequestFullscreen || c.mozRequestFullScreen || c.msRequestFullscreen;
       if (req) {
-        req.call(c).then(() => {
-          (screen.orientation as any)?.lock?.('landscape').catch(() => {});
-        }).catch(() => {});
-      } else if (v.webkitEnterFullscreen) {
-        v.webkitEnterFullscreen();
+        Promise.resolve(req.call(c))
+          .then(() => {
+            (screen.orientation as any)?.lock?.("landscape").catch(() => {});
+          })
+          .catch(() => {
+            // Fallback: CSS fullscreen keeps React controls + exact resume position
+            setCssFullscreen(true);
+            setIsFullscreen(true);
+          });
+      } else {
+        setCssFullscreen(true);
+        setIsFullscreen(true);
       }
-    } else {
+    } else if (nativeFull) {
       const exit = doc.exitFullscreen || doc.webkitExitFullscreen || doc.mozCancelFullScreen || doc.msExitFullscreen;
       if (exit) {
-        exit.call(doc).then(() => {
-          (screen.orientation as any)?.unlock?.();
-        }).catch(() => {});
+        Promise.resolve(exit.call(doc))
+          .then(() => {
+            (screen.orientation as any)?.unlock?.();
+          })
+          .catch(() => {});
+      }
+      setCssFullscreen(false);
+    } else {
+      setCssFullscreen(false);
+      setIsFullscreen(false);
+      try {
+        (screen.orientation as any)?.unlock?.();
+      } catch {
+        /* ignore */
       }
     }
-  }, []);
+  }, [cssFullscreen]);
 
   /* video element events */
   useEffect(() => {
@@ -528,6 +590,16 @@ function VideoPlayer({
     loadSource();
 
     return () => {
+      const v = videoRef.current;
+      if (v) {
+        try {
+          v.pause();
+          v.removeAttribute("src");
+          v.load();
+        } catch {
+          /* ignore */
+        }
+      }
       if (hlsRef.current) {
         hlsRef.current.destroy();
         hlsRef.current = null;
@@ -535,6 +607,34 @@ function VideoPlayer({
     };
   }, [currentSrc, autoPlay, contentId]);
 
+  // Keep parent informed for mini-player handoff
+  useEffect(() => {
+    onPlaybackSnapshot?.({
+      playing,
+      currentTime,
+      src: currentSrc || videoSrc,
+    });
+  }, [playing, currentTime, currentSrc, videoSrc, onPlaybackSnapshot]);
+
+  // Hard-stop audio if this player unmounts for any reason
+  useEffect(() => {
+    return () => {
+      const v = videoRef.current;
+      if (v) {
+        try {
+          v.pause();
+          v.removeAttribute("src");
+          v.load();
+        } catch {
+          /* ignore */
+        }
+      }
+      if (hlsRef.current) {
+        hlsRef.current.destroy();
+        hlsRef.current = null;
+      }
+    };
+  }, []);
 
   // Apply selected subtitle track
   useEffect(() => {
@@ -579,12 +679,31 @@ function VideoPlayer({
     if (v) v.volume = volume;
   }, []);
 
-  /* fullscreen change */
+  /* fullscreen change — restore exact time + play state */
   useEffect(() => {
+    const restoreAfterFs = () => {
+      const v = videoRef.current;
+      if (!v) return;
+      const t = fsTimeRef.current;
+      if (t != null && Math.abs((v.currentTime || 0) - t) > 0.75) {
+        try {
+          v.currentTime = t;
+        } catch {
+          /* ignore */
+        }
+      }
+      if (fsWasPlayingRef.current && v.paused) {
+        v.play().catch(() => {});
+      }
+      revealControls();
+    };
+
     const onChange = () => {
-      const doc = document as any;
-      const isFull = !!(doc.fullscreenElement || doc.webkitFullscreenElement || doc.mozFullScreenElement || doc.msFullscreenElement);
+      const isFull = isNativeFullscreen() || cssFullscreen;
       setIsFullscreen(isFull);
+      // Give the browser a tick after FS transition, then restore
+      window.setTimeout(restoreAfterFs, 50);
+      window.setTimeout(restoreAfterFs, 250);
     };
     document.addEventListener("fullscreenchange", onChange);
     document.addEventListener("webkitfullscreenchange", onChange);
@@ -596,7 +715,7 @@ function VideoPlayer({
       document.removeEventListener("mozfullscreenchange", onChange);
       document.removeEventListener("MSFullscreenChange", onChange);
     };
-  }, []);
+  }, [cssFullscreen, revealControls]);
 
   /* keyboard shortcuts */
   useEffect(() => {
@@ -623,11 +742,31 @@ function VideoPlayer({
         case "KeyM": toggleMute(); break;
         case "KeyF": toggleFullscreen(); break;
         case "KeyN": onNext?.(); break;
+        case "Escape":
+          if (cssFullscreen) {
+            setCssFullscreen(false);
+            setIsFullscreen(false);
+          }
+          break;
       }
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [togglePlay, toggleMute, toggleFullscreen, revealControls, onNext, skip]);
+  }, [togglePlay, toggleMute, toggleFullscreen, revealControls, onNext, skip, cssFullscreen]);
+
+  // Keep playback continuous when entering/leaving CSS fullscreen
+  useEffect(() => {
+    if (!cssFullscreen) return;
+    const v = videoRef.current;
+    if (!v) return;
+    const t = fsTimeRef.current;
+    if (t != null && Math.abs(v.currentTime - t) > 0.75) {
+      try { v.currentTime = t; } catch { /* ignore */ }
+    }
+    if (fsWasPlayingRef.current && v.paused) v.play().catch(() => {});
+    setIsFullscreen(true);
+    revealControls();
+  }, [cssFullscreen, revealControls]);
 
   useEffect(() => () => clearTimeout(hideTimerRef.current), []);
 
@@ -675,7 +814,7 @@ function VideoPlayer({
   const bufPct     = duration > 0 ? (buffered   / duration) * 100 : 0;
   const displayVol = muted ? 0 : volume;
   const VolumeIcon = displayVol === 0 ? VolumeX : displayVol < 0.5 ? Volume1 : Volume2;
-  const FsIcon     = isFullscreen ? Minimize : Maximize;
+  const FsIcon     = isFullscreen || cssFullscreen ? Minimize : Maximize;
   const ctrlShow   = !uiLocked && (controlsVisible || !playing || settingsOpen);
   const lockChromeShow = uiLocked && controlsVisible;
 
@@ -693,7 +832,9 @@ function VideoPlayer({
   return (
     <div
       ref={containerRef}
-      className="relative bg-black overflow-hidden w-full h-full select-none touch-none"
+      className={`relative bg-black overflow-hidden w-full h-full select-none touch-none ${
+        cssFullscreen ? "fixed inset-0 z-[400] w-screen h-screen rounded-none" : ""
+      }`}
       onMouseMove={() => { if (!uiLocked) revealControls(); }}
       onMouseLeave={() => {
         if (playing && !uiLocked) {
@@ -706,26 +847,62 @@ function VideoPlayer({
           touchHandledRef.current = false;
           return;
         }
+        if (gestureMovedRef.current) {
+          gestureMovedRef.current = false;
+          return;
+        }
+        if (isPlayerControlTarget(e.target)) return;
         handleScreenTap(e);
       }}
       onTouchStart={(e) => {
+        if (isPlayerControlTarget(e.target)) {
+          ignoreGestureRef.current = true;
+          gestureRef.current.active = false;
+          return;
+        }
+        ignoreGestureRef.current = false;
         const t = e.touches[0];
         const rect = containerRef.current?.getBoundingClientRect();
         if (!t || !rect) return;
         onGestureStart(t.clientX - rect.left, t.clientY - rect.top, rect.width);
       }}
       onTouchMove={(e) => {
+        if (ignoreGestureRef.current) return;
         const t = e.touches[0];
         const rect = containerRef.current?.getBoundingClientRect();
         if (!t || !rect || !gestureRef.current.active) return;
         if (gestureRef.current.mode) e.preventDefault();
-        onGestureMove(t.clientX - rect.left, t.clientY - rect.top, rect.width);
+        onGestureMove(t.clientX - rect.left, t.clientY - rect.top);
       }}
       onTouchEnd={(e) => {
-        const moved = gestureRef.current.mode !== null;
-        onGestureEnd();
+        if (ignoreGestureRef.current) {
+          ignoreGestureRef.current = false;
+          onGestureEnd();
+          // Let the button receive its click — don't steal with screen tap
+          touchHandledRef.current = true;
+          return;
+        }
+        const moved = onGestureEnd();
         touchHandledRef.current = true;
         if (!moved) handleScreenTap(e);
+      }}
+      onMouseDown={(e) => {
+        if (e.button !== 0 || isPlayerControlTarget(e.target)) return;
+        ignoreGestureRef.current = false;
+        const rect = containerRef.current?.getBoundingClientRect();
+        if (!rect) return;
+        onGestureStart(e.clientX - rect.left, e.clientY - rect.top, rect.width);
+      }}
+      onMouseMoveCapture={(e) => {
+        if (!gestureRef.current.active || ignoreGestureRef.current) return;
+        if (e.buttons !== 1) return;
+        const rect = containerRef.current?.getBoundingClientRect();
+        if (!rect) return;
+        onGestureMove(e.clientX - rect.left, e.clientY - rect.top);
+      }}
+      onMouseUp={() => {
+        if (ignoreGestureRef.current) return;
+        onGestureEnd();
       }}
     >
       {/* Real video element */}
@@ -838,21 +1015,24 @@ function VideoPlayer({
           ctrlShow ? "opacity-100" : "opacity-0"
         }`}
       >
-        <div className="flex items-center gap-6 pointer-events-auto" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-6 pointer-events-auto" data-player-control onClick={(e) => e.stopPropagation()}>
           {/* Skip back */}
           <button
+            type="button"
             onClick={(e) => { e.stopPropagation(); skip(-10); }}
-            className="w-11 h-11 rounded-full bg-black/40 border border-white/10 flex items-center justify-center hover:bg-black/60 transition-all duration-200 active:scale-90"
+            className="w-11 h-11 rounded-full bg-black/40 border border-white/10 flex items-center justify-center hover:bg-black/60 transition-all duration-200 active:scale-90 touch-manipulation"
           >
             <RotateCcw className="w-4 h-4 text-foreground" />
           </button>
 
           {/* Play/Pause */}
           <button
-            onClick={(e) => { e.stopPropagation(); togglePlay(); }}
-            className={`w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-amber-400 hover:bg-amber-300 flex items-center justify-center shadow-lg shadow-amber-900/40 hover:scale-105 transition-all duration-200 active:scale-95 ${
+            type="button"
+            onClick={(e) => { e.stopPropagation(); void togglePlay(); }}
+            className={`w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-amber-400 hover:bg-amber-300 flex items-center justify-center shadow-lg shadow-amber-900/40 hover:scale-105 transition-all duration-200 active:scale-95 touch-manipulation ${
               loading ? "opacity-0 pointer-events-none scale-90" : "opacity-100"
             }`}
+            aria-label={playing ? "Pause" : "Play"}
           >
             {playing
               ? <Pause className="w-5 h-5 sm:w-6 sm:h-6 text-black fill-black" />
@@ -862,8 +1042,9 @@ function VideoPlayer({
 
           {/* Skip forward */}
           <button
+            type="button"
             onClick={(e) => { e.stopPropagation(); skip(10); }}
-            className="w-11 h-11 rounded-full bg-black/40 border border-white/10 flex items-center justify-center hover:bg-black/60 transition-all duration-200 active:scale-90"
+            className="w-11 h-11 rounded-full bg-black/40 border border-white/10 flex items-center justify-center hover:bg-black/60 transition-all duration-200 active:scale-90 touch-manipulation"
           >
             <RotateCw className="w-4 h-4 text-foreground" />
           </button>
@@ -872,9 +1053,10 @@ function VideoPlayer({
 
       {/* Bottom controls */}
       <div
-        className={`absolute bottom-0 left-0 right-0 z-20 transition-opacity duration-300 bg-gradient-to-t from-black/90 to-transparent pb-3 pt-6 ${
+        className={`absolute bottom-0 left-0 right-0 z-30 transition-opacity duration-300 bg-gradient-to-t from-black/90 to-transparent pb-3 pt-6 ${
           ctrlShow ? "opacity-100" : "opacity-0 pointer-events-none"
         }`}
+        data-player-control
         onClick={(e) => e.stopPropagation()}
       >
         {/* Seek bar */}
@@ -900,15 +1082,21 @@ function VideoPlayer({
         <div className="px-2 sm:px-3 mt-1 flex items-center justify-between gap-2">
           <div className="flex items-center gap-1.5 sm:gap-3 min-w-0">
             {/* Play/Pause */}
-            <button onClick={togglePlay} className="text-foreground hover:text-amber-400 transition-colors p-1">
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); void togglePlay(); }}
+              className="text-foreground hover:text-amber-400 transition-colors p-2 sm:p-1 touch-manipulation"
+              aria-label={playing ? "Pause" : "Play"}
+            >
               {playing ? <Pause className="w-[16px] h-[16px] fill-current" /> : <Play className="w-[16px] h-[16px] fill-current ml-px" />}
             </button>
 
             {/* Next episode */}
             {onNext && (
               <button
+                type="button"
                 onClick={onNext}
-                className="text-foreground hover:text-amber-400 p-1 transition-colors"
+                className="text-foreground hover:text-amber-400 p-1 transition-colors touch-manipulation"
                 title="Skip Trailer / Next (N)"
               >
                 <SkipForward className="w-[14px] h-[14px]" />
@@ -922,19 +1110,48 @@ function VideoPlayer({
           </div>
 
           {/* Right Controls */}
-          <div className="flex items-center gap-1 sm:gap-3 shrink-0">
-            {/* Volume */}
-            <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-              <button onClick={toggleMute} className="text-foreground hover:text-amber-400 transition-colors p-2 sm:p-1 touch-manipulation" title="Mute (M)" aria-label="Mute">
+          <div className="flex items-center gap-1 sm:gap-2.5 shrink-0">
+            {/* Brightness (draggable) */}
+            <div className="flex items-center gap-1" data-player-control onClick={(e) => e.stopPropagation()}>
+              <Sun className="w-3.5 h-3.5 text-foreground/80 shrink-0" />
+              <div className="relative w-12 sm:w-14 h-6 flex items-center">
+                <div className="absolute inset-x-0 h-[3px] bg-white/20 rounded-full" />
+                <div className="absolute h-[3px] bg-amber-400 rounded-full" style={{ width: `${((brightness - 0.2) / 0.8) * 100}%` }} />
+                <input
+                  type="range"
+                  min={0.2}
+                  max={1}
+                  step={0.01}
+                  value={brightness}
+                  onChange={(e) => handleBrightness(parseFloat(e.target.value))}
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10 touch-manipulation"
+                  aria-label="Brightness"
+                />
+              </div>
+            </div>
+
+            {/* Volume (draggable on all sizes) */}
+            <div className="flex items-center gap-1" data-player-control onClick={(e) => e.stopPropagation()}>
+              <button
+                type="button"
+                onClick={toggleMute}
+                className="text-foreground hover:text-amber-400 transition-colors p-2 sm:p-1 touch-manipulation"
+                title="Mute (M)"
+                aria-label="Mute"
+              >
                 <VolumeIcon className="w-4 h-4 sm:w-[15px] sm:h-[15px]" />
               </button>
-              <div className="relative w-14 h-5 hidden sm:flex items-center">
-                <div className="absolute inset-x-0 h-[2px] bg-white/20 rounded-full" />
-                <div className="absolute h-[2px] bg-amber-400 rounded-full" style={{ width: `${displayVol * 100}%` }} />
+              <div className="relative w-12 sm:w-16 h-6 flex items-center">
+                <div className="absolute inset-x-0 h-[3px] bg-white/20 rounded-full" />
+                <div className="absolute h-[3px] bg-amber-400 rounded-full" style={{ width: `${displayVol * 100}%` }} />
                 <input
-                  type="range" min={0} max={1} step={0.05} value={displayVol}
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  value={displayVol}
                   onChange={(e) => handleVolume(parseFloat(e.target.value))}
-                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10 touch-manipulation"
                   aria-label="Volume"
                 />
               </div>
@@ -1267,6 +1484,13 @@ function LockPopup({ onClose, onSubscribed }: { onClose: () => void; onSubscribe
 export default function WatchPage() {
   const params = useParams<{ id: string; epNum?: string }>();
   const [, navigate] = useLocation();
+  const { startMini, stopMini } = useMiniPlayer();
+  const playbackSnapRef = useRef<{ playing: boolean; currentTime: number; src: string }>({
+    playing: false,
+    currentTime: 0,
+    src: "",
+  });
+  const metaRef = useRef({ title: "", poster: "", contentId: "", ep: 1 });
 
   const [user, setUser] = useState<any>(null);
   const [adDismissed, setAdDismissed] = useState(false);
@@ -1313,6 +1537,55 @@ export default function WatchPage() {
 
   const contentId = params.id || "";
 
+  // Entering full player → close corner mini player
+  useEffect(() => {
+    stopMini();
+  }, [contentId, stopMini]);
+
+  // Leaving watch page: if still playing, hand off to corner mini player
+  // Deferred so navigating watch→watch can cancel via stopMini / /watch guard
+  useEffect(() => {
+    return () => {
+      const snap = playbackSnapRef.current;
+      const meta = metaRef.current;
+      if (!snap.playing || !snap.src || !meta.contentId) return;
+      const payload = {
+        contentId: meta.contentId,
+        ep: meta.ep,
+        title: meta.title,
+        poster: meta.poster,
+        src: snap.src,
+        currentTime: snap.currentTime || 0,
+        playing: true as const,
+      };
+      window.setTimeout(() => {
+        const path = window.location.pathname || "";
+        if (path.includes("/watch/")) return;
+        startMini(payload);
+      }, 0);
+    };
+  }, [startMini]);
+
+  const onPlaybackSnapshot = useCallback(
+    (snap: { playing: boolean; currentTime: number; src: string }) => {
+      playbackSnapRef.current = snap;
+    },
+    []
+  );
+
+  // Resume from mini-player expand
+  const miniResume = (() => {
+    try {
+      const raw = sessionStorage.getItem(`mini_resume_${contentId}`);
+      if (!raw) return undefined;
+      sessionStorage.removeItem(`mini_resume_${contentId}`);
+      const parsed = JSON.parse(raw);
+      return typeof parsed?.time === "number" ? parsed.time : undefined;
+    } catch {
+      return undefined;
+    }
+  })();
+
   const { data: detailData, isLoading } = useGetWebDetail(contentId);
   const showData = (detailData as any)?.content || detailData;
   const related: any[] = (detailData as any)?.related || [];
@@ -1347,6 +1620,16 @@ export default function WatchPage() {
   const [autoPlay,  setAutoPlay]        = useState(false);
   const [expanded,  setExpanded]        = useState(false);
   const [lockPopupOpen, setLockPopupOpen] = useState(false);
+
+  // Keep mini-player meta fresh for leave handoff
+  useEffect(() => {
+    metaRef.current = {
+      title: showData?.title || "Movie",
+      poster: showData?.bannerImage || showData?.thumbnail || showData?.poster || "",
+      contentId,
+      ep: currentEp,
+    };
+  }, [showData, contentId, currentEp]);
 
   // Fetch saved watch position so the player can resume from where the user left off
   const { data: savedProgress } = useGetWatchProgress(contentId || undefined);
@@ -1549,11 +1832,14 @@ export default function WatchPage() {
               videoSettings={currentEp === 0 ? undefined : showData?.videoSettings}
               contentId={contentId}
               resumeFrom={
-                currentEp === 1 && savedProgress?.progressPercent && savedProgress.progressPercent < 95
+                miniResume && miniResume > 5
+                  ? miniResume
+                  : currentEp === 1 && savedProgress?.progressPercent && savedProgress.progressPercent < 95
                   ? savedProgress.progressSeconds
                   : undefined
               }
               subtitles={currentEp === 0 ? [] : showData?.subtitles || []}
+              onPlaybackSnapshot={onPlaybackSnapshot}
             />
             {currentAd && <AdOverlay ad={currentAd} onSkip={() => setAdDismissed(true)} />}
 

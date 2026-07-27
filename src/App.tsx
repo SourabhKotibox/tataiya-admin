@@ -2,6 +2,7 @@
 import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
 import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import { UploadQueueProvider } from "@/contexts/UploadQueueContext";
+import { MiniPlayerProvider } from "@/contexts/MiniPlayerContext";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "next-themes";
@@ -404,9 +405,11 @@ function App() {
             <UploadQueueProvider>
               <TooltipProvider>
                 <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-                  <Router />
+                  <MiniPlayerProvider>
+                    <Router />
+                    <Toaster />
+                  </MiniPlayerProvider>
                 </WouterRouter>
-                <Toaster />
               </TooltipProvider>
             </UploadQueueProvider>
           </QueryClientProvider>
