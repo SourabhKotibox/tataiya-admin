@@ -1418,48 +1418,79 @@ export function PublicHeader({ activeTab, setActiveTab, onSignIn, onSignOut, use
                   )}
                 </button>
                 {notificationsOpen && (
-                  <div className="absolute top-[calc(100%+8px)] right-0 w-[320px] bg-[#0a0a0a]/98 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl overflow-hidden z-[80] animate-in fade-in slide-in-from-top-2 duration-200">
-                    <div className="p-3.5 border-b border-border flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="text-white font-bold text-sm">Notifications</span>
-                        {unreadCount > 0 && <span className="bg-primary text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full">{unreadCount} new</span>}
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <button
-                          onClick={() => {
-                            const allIds = new Set(notifications.map((n: any) => n._id || n.id));
-                            setReadNotifications(allIds);
-                          }}
-                          className="text-white/70 hover:text-white text-[10px] font-medium px-2 py-1 rounded-lg hover:bg-white/5 transition-colors"
-                        >
-                          Mark all as read
-                        </button>
-                        <button onClick={() => setNotificationsOpen(false)} className="text-white/70 hover:text-white"><X className="w-3.5 h-3.5" /></button>
-                      </div>
-                    </div>
-                    <div className="max-h-[300px] overflow-y-auto divide-y divide-border/60">
-                      {notifications.length === 0 ? (
-                        <div className="p-6 text-center">
-                          <Bell className="w-8 h-8 text-white/60 mx-auto mb-2" />
-                          <p className="text-white/70 text-xs font-medium">No notifications yet</p>
+                  <>
+                    {/* Mobile backdrop */}
+                    <div
+                      className="fixed inset-0 z-[70] bg-black/50 sm:hidden"
+                      onClick={() => setNotificationsOpen(false)}
+                    />
+                    <div className="fixed left-3 right-3 top-[4.25rem] z-[80] max-h-[min(70vh,420px)] sm:absolute sm:inset-auto sm:left-auto sm:right-0 sm:top-[calc(100%+8px)] sm:w-[340px] sm:max-h-[360px] bg-[#0a0a0a]/98 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+                      <div className="p-3.5 border-b border-white/10 flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="text-white font-bold text-sm truncate">Notifications</span>
+                          {unreadCount > 0 && (
+                            <span className="bg-amber-400 text-black text-[9px] font-bold px-1.5 py-0.5 rounded-full shrink-0">
+                              {unreadCount} new
+                            </span>
+                          )}
                         </div>
-                      ) : (
-                        notifications.map((n: any) => {
-                          const nid = n._id || n.id;
-                          const isRead = readNotifications.has(nid);
-                          const timeStr = formatRelativeTime(n.createdAt);
-                          return (
-                            <div key={nid} className={`p-3.5 transition-colors cursor-pointer ${isRead ? "hover:bg-white/5" : "bg-primary/5 hover:bg-primary/10"}`} onClick={() => setNotificationsOpen(false)}>
-                              {!isRead && <span className="inline-block w-1.5 h-1.5 bg-primary rounded-full mr-1.5 mb-0.5 align-middle" />}
-                              <p className="text-white text-xs font-bold leading-tight inline">{n.title}</p>
-                              {n.text && <p className="text-white/70 text-[11px] mt-1 leading-relaxed line-clamp-2">{n.text}</p>}
-                              {timeStr && <p className="text-white/65 text-[10px] mt-1.5 font-medium">{timeStr}</p>}
-                            </div>
-                          );
-                        })
-                      )}
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            onClick={() => {
+                              const allIds = new Set(notifications.map((n: any) => n._id || n.id));
+                              setReadNotifications(allIds);
+                            }}
+                            className="text-white/70 hover:text-white text-[10px] font-medium px-2 py-1 rounded-lg hover:bg-white/5 transition-colors whitespace-nowrap"
+                          >
+                            Mark all read
+                          </button>
+                          <button
+                            onClick={() => setNotificationsOpen(false)}
+                            className="w-8 h-8 flex items-center justify-center text-white/70 hover:text-white rounded-full hover:bg-white/5"
+                            aria-label="Close"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                      <div className="max-h-[min(58vh,340px)] sm:max-h-[300px] overflow-y-auto divide-y divide-white/5 overscroll-contain">
+                        {notifications.length === 0 ? (
+                          <div className="p-6 text-center">
+                            <Bell className="w-8 h-8 text-white/60 mx-auto mb-2" />
+                            <p className="text-white/70 text-xs font-medium">No notifications yet</p>
+                          </div>
+                        ) : (
+                          notifications.map((n: any) => {
+                            const nid = n._id || n.id;
+                            const isRead = readNotifications.has(nid);
+                            const timeStr = formatRelativeTime(n.createdAt);
+                            return (
+                              <div
+                                key={nid}
+                                className={`p-3.5 transition-colors cursor-pointer ${isRead ? "hover:bg-white/5" : "bg-amber-400/5 hover:bg-amber-400/10"}`}
+                                onClick={() => setNotificationsOpen(false)}
+                              >
+                                <div className="flex items-start gap-2">
+                                  {!isRead && <span className="mt-1.5 w-1.5 h-1.5 bg-amber-400 rounded-full shrink-0" />}
+                                  <div className="min-w-0 flex-1">
+                                    <p className="text-white text-xs font-bold leading-snug break-words">{n.title}</p>
+                                    {n.text && (
+                                      <p className="text-white/70 text-[11px] mt-1 leading-relaxed line-clamp-3 break-words">
+                                        {n.text}
+                                      </p>
+                                    )}
+                                    {timeStr && (
+                                      <p className="text-white/50 text-[10px] mt-1.5 font-medium">{timeStr}</p>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
                     </div>
-                  </div>
+                  </>
                 )}
               </div>
 

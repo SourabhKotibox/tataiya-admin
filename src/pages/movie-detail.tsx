@@ -2,7 +2,7 @@
 import { useState, useEffect } from "react";
 import { useRoute, useLocation } from "wouter";
 import {
-  Play, Plus, Share2, Heart, Star, Calendar, Globe, Clock, Film,
+  Play, Plus, Share2, Heart, Star, Film,
   ChevronLeft, Crown,
   Check, ChevronRight, Loader2, Download
 } from "lucide-react";
@@ -83,7 +83,6 @@ export default function MovieDetailPage() {
   };
 
   const related = detailData?.related || [];
-  const similarContent = detailData?.related || [];
 
   const isLiked = profileData?.likeRecords?.some((l: any) => l.contentId === id) || false;
   const toggleLikeMutation = useToggleLike();
@@ -158,13 +157,13 @@ export default function MovieDetailPage() {
       {/* ══════════════════════════════════════════
           HERO BANNER
       ══════════════════════════════════════════ */}
-      <div className="relative w-full overflow-hidden" style={{ minHeight: 480, maxHeight: 620 }}>
+      <div className="relative w-full overflow-hidden min-h-[320px] max-h-[520px] sm:min-h-[480px] sm:max-h-[620px]">
         {/* Backdrop */}
         {heroBg && (
           <img
             src={heroBg}
             alt={item.title}
-            className="absolute inset-0 w-full h-full object-cover object-top"
+            className="absolute inset-0 w-full h-full object-cover object-[center_20%] sm:object-top"
             style={{ filter: "brightness(0.45)" }}
           />
         )}
@@ -173,8 +172,8 @@ export default function MovieDetailPage() {
         <div className="absolute inset-0 bg-gradient-to-r from-[#0c0c14]/90 via-[#0c0c14]/30 to-transparent" />
 
         {/* Back button */}
-        <div className="absolute top-0 left-0 right-0 z-10" style={{ paddingTop: "72px" }}>
-          <div className="px-6 sm:px-10 lg:px-16">
+        <div className="absolute top-0 left-0 right-0 z-10 pt-[68px] sm:pt-[72px]">
+          <div className="px-4 sm:px-10 lg:px-16">
             <button
               onClick={() => window.history.back()}
               className="flex items-center gap-1.5 text-foreground/80 hover:text-foreground text-sm font-semibold transition-colors"
@@ -185,7 +184,7 @@ export default function MovieDetailPage() {
         </div>
 
         {/* Content over hero */}
-        <div className="relative z-10 flex items-end min-h-[480px] max-h-[620px] pb-10 px-6 sm:px-10 lg:px-16" style={{ paddingTop: 120 }}>
+        <div className="relative z-10 flex items-end min-h-[320px] sm:min-h-[480px] max-h-[520px] sm:max-h-[620px] pb-8 sm:pb-10 px-4 sm:px-10 lg:px-16 pt-24 sm:pt-[120px]">
           <div className="flex items-end gap-8 w-full">
             {/* Poster */}
             {posterImg && (
@@ -196,15 +195,15 @@ export default function MovieDetailPage() {
             {/* Text */}
             <div className="flex-1 min-w-0">
               {/* Genres */}
-              <div className="flex flex-wrap items-center gap-x-0 gap-y-1 mb-3">
-                {item.genres.map((g, i) => (
+              <div className="flex flex-wrap items-center gap-x-0 gap-y-1 mb-2 sm:mb-3">
+                {(item.genres || []).map((g: string, i: number) => (
                   <span key={g} className="text-foreground/80 text-sm font-medium">
                     {g}{i < item.genres.length - 1 && <span className="mx-2 text-foreground/80">•</span>}
                   </span>
                 ))}
               </div>
               {/* Title */}
-              <h1 className="text-3xl sm:text-4xl lg:text-5xl font-black text-foreground leading-tight mb-3 tracking-tight drop-shadow-lg">
+              <h1 className="text-2xl sm:text-4xl lg:text-5xl font-black text-foreground leading-tight mb-3 tracking-tight drop-shadow-lg">
                 {item.title}
               </h1>
 
@@ -225,12 +224,16 @@ export default function MovieDetailPage() {
               {item.ageRating}
             </span>
           )}
-          <span className="text-xs font-bold px-2.5 py-1 rounded border border-white/20 text-muted-foreground/80">
-            {item.year}
-          </span>
-          <span className="text-xs font-bold px-2.5 py-1 rounded border border-white/20 text-muted-foreground/80">
-            {item.duration}
-          </span>
+          {item.year && (
+            <span className="text-xs font-bold px-2.5 py-1 rounded border border-white/20 text-muted-foreground/80">
+              {item.year}
+            </span>
+          )}
+          {(item.durationFormatted || item.duration) && (
+            <span className="text-xs font-bold px-2.5 py-1 rounded border border-white/20 text-muted-foreground/80">
+              {item.durationFormatted || item.duration}
+            </span>
+          )}
           {item.language && (
             <span className="text-xs font-bold px-2.5 py-1 rounded border border-white/20 text-muted-foreground/80 uppercase">
               {item.language}
@@ -244,21 +247,9 @@ export default function MovieDetailPage() {
         </div>
 
         {/* Description */}
-        <p className="text-foreground/80 text-sm sm:text-[15px] leading-relaxed mb-5 max-w-2xl line-clamp-3">
+        <p className="text-foreground/80 text-sm sm:text-[15px] leading-relaxed mb-6 max-w-2xl line-clamp-3">
           {item.description}
         </p>
-
-        {/* Metadata row */}
-        <div className="flex flex-wrap items-center gap-3 mb-6 text-xs text-foreground/80">
-          <span className="flex items-center gap-1"><Calendar className="w-3 h-3" /> {item.year}</span>
-          {item.language && <span className="flex items-center gap-1"><Globe className="w-3 h-3" /> {item.language}</span>}
-          <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> {item.duration}</span>
-          {item.imdbRating && (
-            <span className="flex items-center gap-1 text-amber-400 font-bold">
-              <Star className="w-3 h-3 fill-amber-400" /> {item.imdbRating} IMDb
-            </span>
-          )}
-        </div>
 
         {/* Action buttons */}
         <div className="flex items-center gap-3 flex-wrap">
@@ -481,7 +472,7 @@ export default function MovieDetailPage() {
           3. MORE LIKE THIS
       ══════════════════════════════════════════ */}
       {related.length > 0 && (
-        <div className="pb-10">
+        <div className="pb-12">
           <div className="flex items-center gap-3 mb-5 px-6 sm:px-10 lg:px-16">
             <div className="w-1 h-6 rounded-full flex-shrink-0" style={{ background: "#e50914" }} />
             <h2 className="text-foreground font-black text-lg sm:text-xl tracking-tight">More Like This</h2>
@@ -503,37 +494,6 @@ export default function MovieDetailPage() {
           >
             {related.map((r) => (
               <LandscapeCard key={r.id} item={r} onClick={() => setLocation(`/movie/${r.id}`)} />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* ══════════════════════════════════════════
-          4. YOU MAY ALSO LIKE
-      ══════════════════════════════════════════ */}
-      {similarContent.length > 0 && (
-        <div className="pb-12">
-          <div className="flex items-center gap-3 mb-5 px-6 sm:px-10 lg:px-16">
-            <div className="w-1 h-6 rounded-full flex-shrink-0" style={{ background: "#e50914" }} />
-            <h2 className="text-foreground font-black text-lg sm:text-xl tracking-tight">You May Also Like</h2>
-            <div className="flex-1" />
-            <button
-              onClick={() => {
-                const firstGenre = item.genres?.[0] || '';
-                const path = "/browse/movie";
-                window.open(firstGenre ? `${path}?genre=${encodeURIComponent(firstGenre)}` : path, "_blank");
-              }}
-              className="text-foreground hover:text-primary text-xs transition-colors flex items-center gap-0.5 font-semibold"
-            >
-              See all <ChevronRight className="w-3.5 h-3.5" />
-            </button>
-          </div>
-          <div
-            className="flex gap-4 overflow-x-auto px-6 sm:px-10 lg:px-16 pb-2"
-            style={{ scrollbarWidth: "none" } as React.CSSProperties}
-          >
-            {similarContent.map((c) => (
-              <LandscapeCard key={c.id} item={c} onClick={() => setLocation(`/movie/${c.id}`)} />
             ))}
           </div>
         </div>

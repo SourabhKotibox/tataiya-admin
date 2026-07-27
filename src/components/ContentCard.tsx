@@ -66,6 +66,22 @@ function ImdbBadge({ rating }: { rating: any }) {
   );
 }
 
+function formatCardDuration(raw: any): string {
+  if (raw == null || raw === "") return "";
+  const s = String(raw);
+  if (/[hm]/i.test(s)) return s;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) return "";
+  // Stored as seconds when large; avoid "1432m" style bugs
+  if (n >= 60) {
+    const h = Math.floor(n / 3600);
+    const m = Math.floor((n % 3600) / 60);
+    if (h > 0) return `${h}h ${m}m`;
+    return `${Math.max(m, 1)}m`;
+  }
+  return `${n}m`;
+}
+
 // ─── PortraitCard ──────────────────────────────────────────────────────────────
 // Use fullWidth=true when inside a CSS grid (categories, search results).
 // Leave fullWidth=false (default) when inside a horizontal scroll row.
@@ -91,7 +107,7 @@ export function PortraitCard({
     getImageUrl(item.poster || item.posterImage || item.thumbnail) || "";
 
   const year = item.year || item.releaseYear || "";
-  const duration = item.duration ? (String(item.duration).endsWith("m") ? String(item.duration) : `${item.duration}m`) : "";
+  const duration = formatCardDuration(item.duration);
 
   return (
     <div
@@ -116,7 +132,7 @@ export function PortraitCard({
         />
 
         {/* Gradient overlay */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent pointer-events-none" />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent pointer-events-none" />
 
         {/* Top-left: badge */}
         <div className="absolute top-2 left-2 z-10">
@@ -130,16 +146,6 @@ export function PortraitCard({
           </div>
         )}
 
-        {/* Bottom info (always visible) */}
-        <div className="absolute bottom-0 left-0 right-0 px-2.5 pb-2.5 pt-6 z-10 pointer-events-none">
-          <p className="text-foreground font-bold text-xs truncate leading-tight">{item.title}</p>
-          {(year || duration) && (
-            <p className="text-foreground/80 text-[10px] mt-0.5 truncate">
-              {[year, duration].filter(Boolean).join(" · ")}
-            </p>
-          )}
-        </div>
-
         {/* Play button — bottom-right corner */}
         <button
           className="absolute bottom-2.5 right-2.5 z-20 w-9 h-9 rounded-full bg-amber-400 text-black flex items-center justify-center opacity-0 group-hover:opacity-100 scale-90 group-hover:scale-100 transition-all duration-200 shadow-lg pointer-events-auto"
@@ -151,6 +157,16 @@ export function PortraitCard({
         >
           <Play className="w-4 h-4 text-black fill-black ml-0.5" />
         </button>
+      </div>
+
+      {/* Title below image — avoids double text when poster already has title art */}
+      <div className="mt-2 px-0.5">
+        <p className="text-foreground font-bold text-xs truncate leading-tight">{item.title}</p>
+        {(year || duration) && (
+          <p className="text-foreground/70 text-[10px] mt-0.5 truncate">
+            {[year, duration].filter(Boolean).join(" · ")}
+          </p>
+        )}
       </div>
     </div>
   );
@@ -180,8 +196,7 @@ export function LandscapeCard({
     getImageUrl(item.backdrop || item.poster || item.posterImage || item.thumbnail) || "";
 
   const year = item.year || item.releaseYear || "";
-  const rawDur = item.duration;
-  const duration = !rawDur ? "" : (String(rawDur).match(/[hm]/i) ? String(rawDur) : (Number(rawDur) > 300 ? `${Math.floor(Number(rawDur)/3600)}h ${Math.floor((Number(rawDur)%3600)/60)}m` : `${rawDur}m`));
+  const duration = formatCardDuration(item.duration);
 
   return (
     <div
@@ -195,7 +210,7 @@ export function LandscapeCard({
         {/* Backdrop image */}
         <img
           src={imgSrc}
-          alt={item.title || ""}
+          alt=""
           className="w-full h-full object-cover group-hover:scale-[1.03] transition-transform duration-500"
           onError={(e) => {
             const el = e.target as HTMLImageElement;
@@ -204,8 +219,8 @@ export function LandscapeCard({
           }}
         />
 
-        {/* Gradient overlay */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black via-black/30 to-transparent pointer-events-none" />
+        {/* Soft bottom shade for play control only */}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent pointer-events-none" />
 
         {/* Top-left: badge */}
         <div className="absolute top-2 left-2 z-10">
@@ -219,29 +234,26 @@ export function LandscapeCard({
           </div>
         )}
 
-        {/* Bottom info row */}
-        <div className="absolute bottom-0 left-0 right-0 px-3 pb-3 pt-8 z-10 flex items-end justify-between gap-2">
-          <div className="min-w-0 flex-1">
-            <p className="text-foreground font-bold text-xs truncate leading-tight">{item.title}</p>
-            {(year || duration) && (
-              <p className="text-foreground/80 text-[10px] mt-0.5 truncate">
-                {[year, duration].filter(Boolean).join(" · ")}
-              </p>
-            )}
-          </div>
+        {/* Play button */}
+        <button
+          className="absolute bottom-2.5 right-2.5 z-20 flex-shrink-0 w-9 h-9 rounded-full bg-amber-400 text-black flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200 shadow-lg pointer-events-auto"
+          onClick={(e) => {
+            e.stopPropagation();
+            onClick();
+          }}
+          aria-label="Play"
+        >
+          <Play className="w-4 h-4 text-black fill-black ml-0.5" />
+        </button>
+      </div>
 
-          {/* Play button */}
-          <button
-            className="flex-shrink-0 w-9 h-9 rounded-full bg-amber-400 text-black flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200 shadow-lg pointer-events-auto"
-            onClick={(e) => {
-              e.stopPropagation();
-              onClick();
-            }}
-            aria-label="Play"
-          >
-            <Play className="w-4 h-4 text-black fill-black ml-0.5" />
-          </button>
-        </div>
+      <div className="mt-2 px-0.5">
+        <p className="text-foreground font-bold text-xs truncate leading-tight">{item.title}</p>
+        {(year || duration) && (
+          <p className="text-foreground/70 text-[10px] mt-0.5 truncate">
+            {[year, duration].filter(Boolean).join(" · ")}
+          </p>
+        )}
       </div>
     </div>
   );
