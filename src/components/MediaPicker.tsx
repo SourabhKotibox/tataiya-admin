@@ -5,6 +5,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { useGetAllMediaFiles, uploadMediaFiles, getMediaFolders, createMediaFolder } from "@/lib/api-client";
 import { getImageUrl } from "@/lib/api-client";
 import { useToast } from "@/hooks/use-toast";
+import { useUploadQueue } from "@/contexts/UploadQueueContext";
 
 interface MediaPickerProps {
   open: boolean;
@@ -16,11 +17,20 @@ interface MediaPickerProps {
 
 type FileTypeFilter = "all" | "image" | "video";
 
+function formatBytes(n: number) {
+  if (!n) return "0 B";
+  const u = ["B", "KB", "MB", "GB"];
+  const i = Math.min(u.length - 1, Math.floor(Math.log(n) / Math.log(1024)));
+  return `${(n / Math.pow(1024, i)).toFixed(i ? 1 : 0)} ${u[i]}`;
+}
+
 export default function MediaPicker({ open, onClose, onSelect, source, accept = "image/*,video/*" }: MediaPickerProps) {
   const { toast } = useToast();
+  const { startUpload } = useUploadQueue();
   const [mode, setMode] = useState<"library" | "upload">("library");
   const [selectedMedia, setSelectedMedia] = useState<any>(null);
   const [uploading, setUploading] = useState(false);
+  const [uploadPercent, setUploadPercent] = useState(0);
   const [preview, setPreview] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [fileTypeTab, setFileTypeTab] = useState<FileTypeFilter>("all");
@@ -52,11 +62,55 @@ export default function MediaPicker({ open, onClose, onSelect, source, accept = 
     const url = URL.createObjectURL(file);
     setPreview(url);
     setSelectedMedia({ name: file.name, file, isLocal: true });
+    setUploadPercent(0);
+  };
+
+  const resolveFolderId = async () => {
+    const folders = await getMediaFolders();
+    let folderId = folders?.data?.find((f: any) =>
+      f.name.toLowerCase() === source.toLowerCase()
+    )?._id;
+
+    if (!folderId) {
+      const newFolder = await createMediaFolder(source);
+      folderId = newFolder?.data?._id;
+    }
+    if (!folderId) throw new Error("Failed to create or find folder");
+    return folderId as string;
+  };
+
+  const finishWithUploadedFile = async (uploadedFile: any) => {
+    const isVideoUpload =
+      uploadedFile?.fileType?.startsWith?.("video/") ||
+      /\.(mp4|webm|mov|mkv|avi|m4v)$/i.test(uploadedFile?.name || "");
+
+    if (isVideoUpload && (uploadedFile?.hlsStatus === "processing" || uploadedFile?.hlsStatus === "pending")) {
+      toast({
+        title: "Uploaded — HLS generating in background",
+        description: "You can use the video now. Qualities appear when processing finishes.",
+      });
+    } else {
+      toast({ title: "File uploaded successfully!" });
+    }
+
+    await refetchMedia();
+    onSelect({
+      ...uploadedFile,
+      url: getImageUrl(
+        uploadedFile.hlsMasterPlaylistUrl ||
+          uploadedFile.url ||
+          uploadedFile.hlsMasterPlaylistPath ||
+          uploadedFile.filePath
+      ),
+      filePath:
+        typeof uploadedFile.url === "string" && uploadedFile.url.startsWith("http")
+          ? uploadedFile.url
+          : uploadedFile.filePath || uploadedFile.url,
+    });
   };
 
   const handleConfirm = async () => {
     if (mode === "library" && selectedMedia) {
-      // Pass the entire media object (keep HLS fields for movie-form autofill)
       onSelect({
         ...selectedMedia,
         url: getImageUrl(
@@ -73,55 +127,18 @@ export default function MediaPicker({ open, onClose, onSelect, source, accept = 
       handleClose();
     } else if (mode === "upload" && selectedMedia?.file) {
       setUploading(true);
+      setUploadPercent(0);
       try {
-        const folders = await getMediaFolders();
-        let folderId = folders?.data?.find((f: any) =>
-          f.name.toLowerCase() === source.toLowerCase()
-        )?._id;
-
-        if (!folderId) {
-          const newFolder = await createMediaFolder(source);
-          folderId = newFolder?.data?._id;
-        }
-
-        if (!folderId) throw new Error("Failed to create or find folder");
-
-        const result = await uploadMediaFiles(folderId, [selectedMedia.file], source);
-        let uploadedFile = result?.data?.[0];
-        const isVideoUpload =
-          selectedMedia.file?.type?.startsWith("video/") ||
-          /\.(mp4|webm|mov|mkv|avi|m4v)$/i.test(selectedMedia.file?.name || "");
-
-        if (isVideoUpload && (uploadedFile?.hlsStatus === "processing" || uploadedFile?.hlsStatus === "pending")) {
-          toast({
-            title: "Uploaded — HLS generating in background",
-            description: "You can use the video now. Qualities appear when processing finishes (usually a few minutes).",
-          });
-        } else {
-          toast({ title: "File uploaded successfully!" });
-        }
-
-        // Do NOT wait for HLS here — that made logos/images hang for ~2 minutes.
-        // Videos are selectable immediately; movie form / library poll for qualities.
-
-        await refetchMedia();
-        if (uploadedFile) {
-          onSelect({
-            ...uploadedFile,
-            url: getImageUrl(
-              uploadedFile.hlsMasterPlaylistUrl ||
-                uploadedFile.url ||
-                uploadedFile.hlsMasterPlaylistPath ||
-                uploadedFile.filePath
-            ),
-            filePath:
-              typeof uploadedFile.url === "string" && uploadedFile.url.startsWith("http")
-                ? uploadedFile.url
-                : uploadedFile.filePath || uploadedFile.url,
-          });
-        } else {
-          onSelect({ url: preview || "", filePath: "", name: selectedMedia.name });
-        }
+        const folderId = await resolveFolderId();
+        const result = await uploadMediaFiles(
+          folderId,
+          [selectedMedia.file],
+          source,
+          ({ percent }) => setUploadPercent(percent)
+        );
+        const uploadedFile = result?.data?.[0];
+        if (uploadedFile) await finishWithUploadedFile(uploadedFile);
+        else onSelect({ url: preview || "", filePath: "", name: selectedMedia.name });
         handleClose();
       } catch (error: any) {
         toast({ title: "Upload failed", description: error.message, variant: "destructive" });
@@ -131,12 +148,57 @@ export default function MediaPicker({ open, onClose, onSelect, source, accept = 
     }
   };
 
+  /** Close picker and keep uploading in the floating panel */
+  const handleUploadInBackground = async () => {
+    if (!(mode === "upload" && selectedMedia?.file)) return;
+    const file = selectedMedia.file as File;
+    const localPreview = preview;
+
+    try {
+      const folderId = await resolveFolderId();
+      startUpload({
+        fileName: file.name,
+        run: async (onProgress) => {
+          const result = await uploadMediaFiles(
+            folderId,
+            [file],
+            source,
+            ({ percent }) => onProgress(percent)
+          );
+          return result?.data?.[0];
+        },
+        onComplete: (uploadedFile) => {
+          if (!uploadedFile) return;
+          finishWithUploadedFile(uploadedFile).catch(() => {});
+        },
+      });
+
+      toast({
+        title: "Upload started in background",
+        description: `${file.name} — you can keep editing. Progress is shown at the bottom-right.`,
+      });
+
+      // Select a temporary local preview so the form isn't empty
+      onSelect({
+        url: localPreview || "",
+        filePath: "",
+        name: file.name,
+        pendingUpload: true,
+      });
+      handleClose();
+    } catch (error: any) {
+      toast({ title: "Could not start upload", description: error.message, variant: "destructive" });
+    }
+  };
+
   const handleClose = () => {
+    if (uploading) return; // block accidental close mid-upload (use background instead)
     setMode("library");
     setSelectedMedia(null);
     setPreview(null);
     setSearchQuery("");
     setFileTypeTab("all");
+    setUploadPercent(0);
     onClose();
   };
 
@@ -350,9 +412,26 @@ export default function MediaPicker({ open, onClose, onSelect, source, accept = 
                       <img src={preview} alt="Preview" className="max-h-52 mx-auto rounded-xl object-contain" />
                     )}
                     <p className="text-sm text-foreground/70 font-medium">{selectedMedia?.name}</p>
+                    {selectedMedia?.file?.size ? (
+                      <p className="text-xs text-muted-foreground">{formatBytes(selectedMedia.file.size)}</p>
+                    ) : null}
+                    {uploading && (
+                      <div className="max-w-sm mx-auto space-y-1.5 pt-2">
+                        <div className="h-2 rounded-full bg-muted overflow-hidden">
+                          <div
+                            className="h-full bg-primary transition-all duration-200"
+                            style={{ width: `${uploadPercent}%` }}
+                          />
+                        </div>
+                        <p className="text-xs font-semibold text-primary">
+                          Uploading… {uploadPercent}%
+                        </p>
+                      </div>
+                    )}
                     <Button
                       variant="outline"
                       size="sm"
+                      disabled={uploading}
                       onClick={(e) => { e.stopPropagation(); setPreview(null); setSelectedMedia(null); }}
                     >
                       <X className="h-4 w-4 mr-2" />
@@ -380,17 +459,31 @@ export default function MediaPicker({ open, onClose, onSelect, source, accept = 
           )}
         </div>
 
-        <DialogFooter className="px-6 py-4 border-t border-border shrink-0">
-          <Button variant="outline" onClick={handleClose} className="border-border">
+        <DialogFooter className="px-6 py-4 border-t border-border shrink-0 gap-2 sm:gap-2">
+          <Button variant="outline" onClick={handleClose} disabled={uploading} className="border-border">
             Cancel
           </Button>
+          {mode === "upload" && selectedMedia?.file && (
+            <Button
+              variant="outline"
+              onClick={handleUploadInBackground}
+              disabled={uploading}
+              className="border-primary/40 text-primary"
+            >
+              Upload in background
+            </Button>
+          )}
           <Button
             onClick={handleConfirm}
             disabled={!selectedMedia || uploading}
             className="bg-primary hover:bg-primary/90 text-white"
           >
             {uploading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-            {mode === "upload" ? (uploading ? "Uploading..." : "Upload & Select") : "Select"}
+            {mode === "upload"
+              ? uploading
+                ? `Uploading ${uploadPercent}%`
+                : "Upload & Select"
+              : "Select"}
           </Button>
         </DialogFooter>
       </DialogContent>

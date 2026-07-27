@@ -1461,13 +1461,84 @@ export const getMediaFilesByFolder = async (folderId: string) => {
   return api(`/media/folders/${folderId}/files`);
 };
 
-export const uploadMediaFiles = async (folderId: string, files: File[], source?: string) => {
+export const uploadMediaFiles = async (
+  folderId: string,
+  files: File[],
+  source?: string,
+  onUploadProgress?: (progress: { loaded: number; total: number; percent: number }) => void
+) => {
+  // Large files: upload browser → S3 directly (skips EC2 proxy, much faster)
+  const DIRECT_S3_THRESHOLD = 2 * 1024 * 1024; // 2MB
+  const file = files[0];
+  if (file && file.size >= DIRECT_S3_THRESHOLD) {
+    try {
+      const presign = await api('/media/presign', {
+        method: 'POST',
+        body: JSON.stringify({
+          fileName: file.name,
+          contentType: file.type || 'application/octet-stream',
+          folderId,
+          source,
+        }),
+      });
+      const data = presign?.data;
+      if (data?.uploadUrl) {
+        await new Promise<void>((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open('PUT', data.uploadUrl);
+          xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+          xhr.upload.addEventListener('progress', (event) => {
+            if (!event.lengthComputable) return;
+            const percent = Math.round((event.loaded / event.total) * 100);
+            onUploadProgress?.({ loaded: event.loaded, total: event.total, percent });
+          });
+          xhr.addEventListener('load', () => {
+            if (xhr.status >= 200 && xhr.status < 300) resolve();
+            else reject(new Error(`S3 upload failed (${xhr.status})`));
+          });
+          xhr.addEventListener('error', () => reject(new Error('S3 network error')));
+          xhr.addEventListener('abort', () => reject(new Error('S3 upload aborted')));
+          xhr.send(file);
+        });
+
+        const confirmed = await api('/media/confirm-s3', {
+          method: 'POST',
+          body: JSON.stringify({
+            key: data.key,
+            publicUrl: data.publicUrl,
+            folderId: data.folderId || folderId,
+            fileName: data.fileName,
+            originalName: data.originalName || file.name,
+            contentType: data.contentType || file.type,
+            fileSize: file.size,
+            source,
+          }),
+        });
+        onUploadProgress?.({ loaded: file.size, total: file.size, percent: 100 });
+        return { success: true, data: [confirmed?.data || confirmed] };
+      }
+    } catch (err: any) {
+      // Fall back to API multipart if S3 CORS/presign is not ready
+      if (err?.message && !String(err.message).includes('S3_NOT_CONFIGURED')) {
+        console.warn('Direct S3 upload failed, falling back to API upload:', err);
+      }
+    }
+  }
+
   const formData = new FormData();
-  files.forEach(file => formData.append('file', file));
+  files.forEach((f) => formData.append('file', f));
   if (source) formData.append('source', source);
   return api(`/media/folders/${folderId}/files`, {
     method: 'POST',
     body: formData,
+    onUploadProgress: onUploadProgress
+      ? (p) =>
+          onUploadProgress({
+            loaded: p.loaded,
+            total: p.total,
+            percent: p.total ? Math.round((p.loaded / p.total) * 100) : 0,
+          })
+      : undefined,
   });
 };
 
