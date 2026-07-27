@@ -89,11 +89,11 @@ export default function MovieForm() {
   const directorsList = (directorsData as any)?.data || [];
   const { data: actorsData } = useGetActors({ page: 1, limit: 200 });
   const actorsList = (actorsData as any)?.data || [];
-  const { data: genresData } = useGetGenres({ page: 1, limit: 100 });
+  const { data: genresData } = useGetGenres({ page: 1, limit: 100, admin: true });
   const genresList = (genresData as any)?.data || [];
   const { data: languagesData } = useGetLanguagesList();
   const languagesList = (languagesData as any)?.data || [];
-  const { data: categoriesData } = useGetCategoriesList({ limit: 100 });
+  const { data: categoriesData } = useGetCategoriesList({ limit: 100, admin: true });
   const categoriesList = (categoriesData as any)?.data || [];
   const { data: sectionsData } = useGetSections({ contentType: "movie", activeOnly: true });
   const sectionOptions = sectionsData?.data?.map((s: any) => ({ id: s.id || s._id, title: s.title })) || [];
