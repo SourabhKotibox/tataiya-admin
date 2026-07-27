@@ -159,10 +159,18 @@ const api = async (
           if (xhr.status >= 200 && xhr.status < 300) {
             resolve(data);
           } else {
-            reject(new Error(data.error || "API request failed"));
+            reject(new Error(data.error || data.message || `API request failed (${xhr.status})`));
           }
         } catch (e) {
-          reject(new Error("Failed to parse response"));
+          const snippet = String(xhr.responseText || "").replace(/\s+/g, " ").slice(0, 140);
+          reject(
+            new Error(
+              `Failed to parse response (${xhr.status}). ` +
+                (snippet
+                  ? snippet
+                  : "Empty/HTML response — usually nginx timeout on large proxy uploads. Prefer direct S3.")
+            )
+          );
         }
       });
 
@@ -1548,7 +1556,14 @@ export const uploadMediaFiles = async (
         };
       }
     } catch (err: any) {
-      // Fall back to API multipart if S3 CORS/presign is not ready
+      // Large videos must use direct S3 — proxying through EC2/nginx times out at ~100%
+      if (file.size >= 20 * 1024 * 1024) {
+        throw new Error(
+          err?.message ||
+            'Direct S3 upload failed for this large video. Check S3 bucket CORS allows PUT from https://tataiya.in, then retry.'
+        );
+      }
+      // Fall back to API multipart only for smaller files
       if (err?.message && !String(err.message).includes('S3_NOT_CONFIGURED')) {
         console.warn('Direct S3 upload failed, falling back to API upload:', err);
       }
