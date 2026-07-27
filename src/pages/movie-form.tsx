@@ -342,9 +342,14 @@ export default function MovieForm() {
           return;
         }
         if (media.hlsStatus === "failed") {
+          const raw = String(media.hlsError || "");
+          const short =
+            /SIGSEGV|segmentation/i.test(raw)
+              ? "Server video tools crashed probing this file. You can still save & play the original MP4 — HLS can be retried from Media Library."
+              : (raw.split("\n")[0] || "You can still save with the original file.").slice(0, 180);
           toast({
             title: "Transcoding failed",
-            description: media.hlsError || "You can still save with the original file.",
+            description: short,
             variant: "destructive",
           });
           setProcessingMediaId(null);
