@@ -418,7 +418,9 @@ function Hero({ activeTab, onPlay, onSubscribeClick, isSubscribed }: { activeTab
 
   return (
     <div
-      className="relative w-full overflow-hidden bg-[#030306] isolate aspect-[16/10] max-h-[300px] sm:aspect-auto sm:h-[min(72vh,820px)] sm:min-h-[400px] sm:max-h-none"
+      className="relative w-full overflow-hidden bg-[#030306] isolate
+        min-h-[280px] h-[min(58vh,420px)]
+        sm:min-h-[520px] sm:h-[min(78vh,900px)] sm:max-h-[900px]"
       onMouseEnter={() => setIsPaused(true)}
       onMouseLeave={() => setIsPaused(false)}
       onTouchStart={() => setIsPaused(true)}
@@ -429,7 +431,7 @@ function Hero({ activeTab, onPlay, onSubscribeClick, isSubscribed }: { activeTab
         <img
           src={getImageUrl(item.backdrop || item.poster) || ""}
           alt={item.title}
-          className="w-full h-full object-cover object-[center_20%] sm:object-center [filter:brightness(1.12)_contrast(1.05)_saturate(1.08)]"
+          className="w-full h-full object-cover object-center sm:object-contain sm:object-center [filter:brightness(1.08)_contrast(1.04)_saturate(1.06)]"
           onError={(e) => {
             const target = e.target as HTMLImageElement;
             target.onerror = null;
@@ -442,7 +444,7 @@ function Hero({ activeTab, onPlay, onSubscribeClick, isSubscribed }: { activeTab
       <div className={`absolute inset-0 transition-opacity duration-700 ${fading ? "opacity-0" : videoReady ? "opacity-100" : "opacity-0"}`}>
         <video
           ref={videoRef}
-          className="w-full h-full object-cover object-[center_20%] sm:object-center [filter:brightness(1.1)_contrast(1.04)_saturate(1.06)]"
+          className="w-full h-full object-cover object-center sm:object-contain [filter:brightness(1.06)_contrast(1.03)_saturate(1.05)]"
           playsInline
           muted={muted}
           autoPlay
@@ -450,10 +452,10 @@ function Hero({ activeTab, onPlay, onSubscribeClick, isSubscribed }: { activeTab
         />
       </div>
 
-      {/* Theme overlays — keep face/image visible; only vignette for text + page blend */}
-      <div className="absolute inset-y-0 left-0 z-[1] pointer-events-none w-full sm:w-[68%] bg-gradient-to-r from-[#030306]/85 via-[#030306]/40 to-transparent" />
-      <div className="absolute inset-x-0 bottom-0 z-[1] h-[36%] sm:h-[40%] pointer-events-none bg-gradient-to-t from-[#030306] via-[#030306]/45 to-transparent" />
-      <div className="absolute top-0 left-0 right-0 z-[1] h-14 sm:h-24 pointer-events-none bg-gradient-to-b from-[#030306]/65 to-transparent" />
+      {/* Soft vignettes — don't crush / crop the artwork */}
+      <div className="absolute inset-y-0 left-0 z-[1] pointer-events-none w-[75%] sm:w-[55%] bg-gradient-to-r from-[#030306]/90 via-[#030306]/45 to-transparent" />
+      <div className="absolute inset-x-0 bottom-0 z-[1] h-[28%] sm:h-[32%] pointer-events-none bg-gradient-to-t from-[#030306] via-[#030306]/55 to-transparent" />
+      <div className="absolute top-0 left-0 right-0 z-[1] h-16 sm:h-28 pointer-events-none bg-gradient-to-b from-[#030306]/80 to-transparent" />
 
       {/* Mute */}
       {bannerVideo.src && (
@@ -467,7 +469,7 @@ function Hero({ activeTab, onPlay, onSubscribeClick, isSubscribed }: { activeTab
       )}
 
       {/* Content — mobile: title + CTA only */}
-      <div className="absolute inset-x-0 bottom-0 z-10 px-3 pb-11 pt-10 sm:px-10 sm:pb-24 sm:pt-28 lg:px-14">
+      <div className="absolute inset-x-0 bottom-0 z-10 px-3 pb-14 pt-12 sm:px-10 sm:pb-28 sm:pt-32 lg:px-14">
         <div className={`max-w-2xl transition-all duration-500 ${fading ? "opacity-0 translate-y-3" : "opacity-100 translate-y-0"}`}>
           {/* Desktop badges only — keep mobile clean */}
           <div className="hidden sm:flex items-center gap-2 mb-3 flex-wrap">
@@ -530,7 +532,7 @@ function Hero({ activeTab, onPlay, onSubscribeClick, isSubscribed }: { activeTab
 
       {/* Dots */}
       {heroContent.length > 1 && (
-        <div className="absolute bottom-3 sm:bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-1.5 sm:gap-2 z-20">
+        <div className="absolute bottom-5 sm:bottom-8 left-1/2 -translate-x-1/2 flex items-center gap-1.5 sm:gap-2 z-20">
           {heroContent.map((_, i) => (
             <button
               key={i}
@@ -858,7 +860,7 @@ function HomeTab({ onPlay, onSubscribeClick, isSubscribed }: {
   if (isHomeLoading || isSectionsLoading || isAllContentLoading || !homeData) return <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-amber-400" /></div>;
 
   return (
-    <div className="pb-20 space-y-12 pt-6 sm:pt-10 relative z-10 bg-[#030306]">
+    <div className="pb-20 space-y-12 pt-8 sm:pt-12 relative z-10 bg-[#030306]">
       {cw.length > 0 && (
         <section className="px-4 sm:px-8 lg:px-12">
           <SectionHeader title="Continue Watching" icon={<Clock className="w-4 h-4" />} />
