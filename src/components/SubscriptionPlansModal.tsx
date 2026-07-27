@@ -4,6 +4,29 @@ import { useSettings } from "@/contexts/SettingsContext";
 import { useGetWebSubscriptionPlans, useCreateSubscriptionRazorpayOrder, useVerifySubscriptionRazorpayPayment } from "@/lib/api-client";
 import { useToast } from "@/hooks/use-toast";
 
+const normalizePlanKey = (name?: string) => {
+  const n = String(name || "free").toLowerCase();
+  if (!n || n === "free") return "free";
+  if (n.includes("premium") || n.includes("vip")) return "premium";
+  if (n.includes("standard")) return "standard";
+  if (n.includes("basic")) return "basic";
+  return "standard";
+};
+
+const persistSubscribedUser = (user: any, planName: string, expiry?: string | Date | null) => {
+  const updatedUser = {
+    ...user,
+    subscriptionPlan: normalizePlanKey(planName),
+    subscriptionStatus: "active",
+    subscription: true,
+    subscriptionExpiry: expiry || null,
+  };
+  localStorage.setItem("appUser", JSON.stringify(updatedUser));
+  localStorage.setItem("user", JSON.stringify(updatedUser));
+  window.dispatchEvent(new Event("user-updated"));
+  return updatedUser;
+};
+
 const loadRazorpay = () => {
   return new Promise((resolve) => {
     const script = document.createElement("script");
@@ -72,15 +95,7 @@ export default function SubscriptionPlansModal({ isOpen, onClose, onSubscribed }
       });
 
       if (orderData.isFree) {
-        // Free plan logic bypasses Razorpay popup
-        const updatedUser = {
-          ...user,
-          subscriptionPlan: plan.name,
-          subscriptionStatus: 'active'
-        };
-        localStorage.setItem("appUser", JSON.stringify(updatedUser));
-        window.dispatchEvent(new Event("user-updated"));
-
+        persistSubscribedUser(user, plan.name);
         toast({
           title: "Subscription Successful",
           description: `Successfully subscribed to ${plan.name}! Full library unlocked.`,
@@ -105,7 +120,7 @@ export default function SubscriptionPlansModal({ isOpen, onClose, onSubscribed }
         order_id: orderData.order.id,
         handler: async function (response: any) {
           try {
-            await verifyPaymentMutation.mutateAsync({
+            const verifyRes: any = await verifyPaymentMutation.mutateAsync({
               razorpay_order_id: response.razorpay_order_id,
               razorpay_payment_id: response.razorpay_payment_id,
               razorpay_signature: response.razorpay_signature,
@@ -113,13 +128,11 @@ export default function SubscriptionPlansModal({ isOpen, onClose, onSubscribed }
               userId: user.id || user._id,
             });
 
-            const updatedUser = {
-              ...user,
-              subscriptionPlan: plan.name,
-              subscriptionStatus: 'active'
-            };
-            localStorage.setItem("appUser", JSON.stringify(updatedUser));
-            window.dispatchEvent(new Event("user-updated"));
+            persistSubscribedUser(
+              user,
+              verifyRes?.subscriptionPlan || plan.name,
+              verifyRes?.subscriptionExpiry || null
+            );
 
             toast({
               title: "Subscription Successful",

@@ -6,10 +6,12 @@ import { getImageUrl } from "@/lib/api-client";
 function BadgeTop({ item }: { item: any }) {
   const isSubscribed = (() => {
     try {
-      const stored = localStorage.getItem("appUser");
+      const stored = localStorage.getItem("appUser") || localStorage.getItem("user");
       if (stored) {
         const u = JSON.parse(stored);
-        return u.subscriptionStatus === "active" && u.subscriptionPlan !== "free";
+        const status = String(u.subscriptionStatus || "").toLowerCase();
+        const plan = String(u.subscriptionPlan || "free").toLowerCase();
+        return status === "active" && plan !== "free";
       }
     } catch {}
     return false;

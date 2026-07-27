@@ -1205,12 +1205,18 @@ export default function WatchPage() {
     }
   };
 
-  // Use live profileData as source of truth for subscription (avoids stale localStorage)
-  const liveStatus = profileData?.subscriptionStatus || user?.subscriptionStatus;
-  const livePlan   = profileData?.subscriptionPlan   || user?.subscriptionPlan;
-  const userPlan = liveStatus === "active" ? (livePlan || "free") : "free";
-  const requiredPlan = showData?.planRequired || "free";
-  const isLockedForContent = getPlanLevel(userPlan) < getPlanLevel(requiredPlan);
+  // useGetAppProfile returns { user, likeRecords, ... } — subscription lives on user
+  const profileUser = profileData?.user || profileData;
+  const liveStatus = String(profileUser?.subscriptionStatus || user?.subscriptionStatus || "").toLowerCase();
+  const livePlan   = String(profileUser?.subscriptionPlan   || user?.subscriptionPlan || "free").toLowerCase();
+  const expiryRaw = profileUser?.subscriptionExpiry || user?.subscriptionExpiry;
+  const hasPaidPlan =
+    (profileUser?.subscription === true || (liveStatus === "active" && livePlan !== "free")) &&
+    (!expiryRaw || new Date(expiryRaw).getTime() >= Date.now());
+  const userPlan = hasPaidPlan ? livePlan : "free";
+  const requiredPlan = String(showData?.planRequired || "free").toLowerCase();
+  // Any active paid plan unlocks paid content (don't lock Standard users out of "premium" titles)
+  const isLockedForContent = requiredPlan !== "free" && !hasPaidPlan;
 
   const goToEpisode = useCallback((ep: number) => {
     if (ep !== 0 && ep !== 1) return;

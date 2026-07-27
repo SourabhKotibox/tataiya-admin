@@ -17,7 +17,18 @@ import {
   useGetDirectors, useGetActors, useCreateMovie, useUpdateMovie,
   useGetGenres, useGetLanguagesList, useGetMovieById, useGetCategoriesList,
   useGetSections, getImageUrl, useGetCountries,
+  getMediaFileById, useGetSubscriptionPlans,
 } from "@/lib/api-client";
+
+/** Map subscription plan display name → stored planRequired key */
+function planNameToKey(name: string): string {
+  const n = String(name || "").toLowerCase().trim();
+  if (!n || n === "free") return "free";
+  if (n.includes("premium") || n.includes("vip")) return "premium";
+  if (n.includes("standard")) return "standard";
+  if (n.includes("basic")) return "basic";
+  return n.replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "standard";
+}
 
 type Tab = "Movie Details" | "Basic Info" | "Quality Info" | "Subtitle Info" | "SEO Settings";
 
@@ -45,6 +56,24 @@ const durationToSecs = (d: string): number => {
 
 const getId = (item: any): string =>
   typeof item === "string" ? item : (item?._id || item?.id || "");
+
+/** Parse "Movie.Name.2024.1080p.WEB-DL" → title + year */
+function parseVideoFilename(name: string): { title: string; year?: string } {
+  const raw = (name || "").replace(/\.[^/.]+$/, "");
+  const yearMatch = raw.match(/(?:^|[.\s_\-(])((?:19|20)\d{2})(?:[.\s_\-)]|$)/);
+  const year = yearMatch?.[1];
+  const title = raw
+    .replace(/(?:^|[.\s_-])(?:19|20)\d{2}(?=[.\s_-]|$)/g, " ")
+    .replace(/\b(1080p|720p|480p|2160p|4k|web-?dl|bluray|x264|x265|hevc|aac|hdtv|webrip)\b/gi, " ")
+    .replace(/[._]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return { title, year };
+}
+
+function slugify(text: string): string {
+  return text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+}
 
 function ImageBox({ label, preview, onOpen }: { label: string; preview: string; onOpen: () => void }) {
   return (
@@ -99,6 +128,17 @@ export default function MovieForm() {
   const sectionOptions = sectionsData?.data?.map((s: any) => ({ id: s.id || s._id, title: s.title })) || [];
   const { data: countriesData } = useGetCountries({ limit: 100 });
   const countries = countriesData?.data || [];
+  const { data: plansData } = useGetSubscriptionPlans({ limit: 100 });
+  const subscriptionPlans = ((plansData as any)?.data || []).filter(
+    (p: any) => p.status !== false && p.status !== "inactive"
+  );
+  const planOptionsBase = [
+    { value: "free", label: "Free" },
+    ...subscriptionPlans.map((p: any) => ({
+      value: planNameToKey(p.name),
+      label: p.name,
+    })),
+  ].filter((opt, i, arr) => arr.findIndex((o) => o.value === opt.value) === i);
 
   const createMovieMutation = useCreateMovie();
   const updateMovieMutation = useUpdateMovie();
@@ -117,9 +157,17 @@ export default function MovieForm() {
   const [trailerFilePath, setTrailerFilePath] = useState("");
   const [description, setDescription] = useState("");
   const [shortDescription, setShortDescription] = useState("");
-  const [planRequired, setPlanRequired] = useState<"free" | "basic" | "standard" | "premium">("free");
+  const [planRequired, setPlanRequired] = useState("free");
   const [status, setStatus] = useState<"published" | "draft" | "processing" | "moderation" | "rejected">("draft");
   const [selectedSections, setSelectedSections] = useState<string[]>([]);
+
+  const planOptions = [...planOptionsBase];
+  if (planRequired && !planOptions.some((o) => o.value === planRequired)) {
+    planOptions.push({
+      value: planRequired,
+      label: `${planRequired.charAt(0).toUpperCase()}${planRequired.slice(1)} (not in plans)`,
+    });
+  }
 
   /* ---- Basic Info ---- */
   const [selectedLanguages, setSelectedLanguages] = useState<string[]>([]);
@@ -167,11 +215,53 @@ export default function MovieForm() {
   const [metaDescription, setMetaDescription] = useState("");
 
   const [isSaving, setIsSaving] = useState(false);
+  const [processingMediaId, setProcessingMediaId] = useState<string | null>(null);
 
-  const handleVideoSelect = (media: any) => {
-    setVideoPickerOpen(false);
+  const applyVideoAutoFill = (media: any, _opts?: { onlyEmpty?: boolean }) => {
+    const af = media.autoFill || {};
+    const parsed = parseVideoFilename(media.name || af.title || "");
+    const nextTitle = af.title || parsed.title;
+    const nextYear = af.year || parsed.year;
+    const nextDuration =
+      af.durationFormatted ||
+      (media.duration ? secsToDuration(media.duration) : "") ||
+      (af.duration ? secsToDuration(af.duration) : "");
 
-    // Prefer HLS master playlist when ready
+    // Only fill empty fields (functional updates stay fresh during HLS polling)
+    if (nextTitle) {
+      setTitle((prev) => prev || nextTitle);
+      setOriginalTitle((prev) => prev || nextTitle);
+      setSlug((prev) => prev || slugify(nextTitle));
+      setMetaTitle((prev) => prev || `${nextTitle} | Tataiya`);
+      setMetaDescription((prev) => prev || `Watch ${nextTitle} on Tataiya — 18+ movies streaming.`);
+      setTags((prev) => {
+        if (prev.length) return prev;
+        return nextTitle
+          .split(/\s+/)
+          .filter((w: string) => w.length > 2)
+          .slice(0, 6)
+          .map((w: string) => w.toLowerCase());
+      });
+    }
+    if (nextYear) setYear((prev) => prev || nextYear);
+    if (nextDuration) setDuration((prev) => prev || nextDuration);
+
+    // Tataiya is 18+ — set when still default/empty
+    setAgeRating((prev) => (prev && prev !== "0" ? prev : "18"));
+
+    const posterUrl = af.posterFrameUrl || media.posterFrameUrl;
+    if (posterUrl) {
+      const abs = getImageUrl(posterUrl);
+      setThumbnail((prev) => (prev.filePath ? prev : { filePath: posterUrl, preview: abs }));
+      setPoster((prev) => (prev.filePath ? prev : { filePath: posterUrl, preview: abs }));
+      setSeoImage((prev) => (prev.filePath ? prev : { filePath: posterUrl, preview: abs }));
+    }
+
+    // Never persist browser blob: preview URLs — they die on refresh and break playback
+    if (media.pendingUpload || String(media.url || "").startsWith("blob:") || String(media.filePath || "").startsWith("blob:")) {
+      return;
+    }
+
     const masterPath = media.hlsMasterPlaylistPath || media.hlsMasterPlaylistUrl;
     const isReady = media.isHls || media.hlsStatus === "completed" || !!masterPath;
 
@@ -179,9 +269,6 @@ export default function MovieForm() {
       setVideoUploadType("hls");
       setVideoUrl(masterPath);
       setVideoFilePath(media.filePath || masterPath);
-
-      if (media.duration) setDuration(secsToDuration(media.duration));
-
       const qualities = Array.isArray(media.hlsQualities) ? media.hlsQualities : [];
       if (qualities.length > 0) {
         setQualityEnabled(true);
@@ -199,34 +286,88 @@ export default function MovieForm() {
           })
         );
       }
-      if (!title && media.name) {
-        setTitle(media.name.replace(/\.[^/.]+$/, ""));
-      }
-      return;
-    }
-
-    // Raw / still-processing video — save local path; backend will generate HLS on movie save
-    setVideoUploadType("local");
-    setVideoFilePath(media.filePath || media.url || "");
-    if (!title && media.name) setTitle(media.name.replace(/\.[^/.]+$/, ""));
-
-    if (media.hlsStatus === "processing" || media.hlsStatus === "pending") {
-      // Keep polling hint via toast — qualities auto-fill after processing if user re-opens picker
-      console.info("Video HLS still processing — qualities will be available when complete");
-    }
-
-    if (media.duration) {
-      setDuration(secsToDuration(media.duration));
-    } else {
-      const videoUrl = media.url || media.filePath;
-      if (videoUrl) {
-        const video = document.createElement("video");
-        video.src = getImageUrl(videoUrl);
-        video.onloadedmetadata = () => setDuration(secsToDuration(Math.round(video.duration)));
-        video.onerror = () => console.warn("Could not load video metadata for duration calculation");
-      }
+    } else if (media.filePath || media.url) {
+      setVideoUploadType("local");
+      setVideoFilePath(media.filePath || media.url || "");
     }
   };
+
+  const handleVideoSelect = (media: any) => {
+    setVideoPickerOpen(false);
+    applyVideoAutoFill(media);
+
+    const mediaId = media.id || media._id || media.mediaFileId;
+    if (mediaId && (media.hlsStatus === "processing" || media.hlsStatus === "pending" || !media.duration)) {
+      setProcessingMediaId(String(mediaId));
+      toast({
+        title: "Video processing",
+        description: "Duration, cover frame & HLS qualities will auto-fill when ready.",
+      });
+    } else if (!media.duration) {
+      const videoSrc = media.url || media.filePath;
+      if (videoSrc) {
+        const video = document.createElement("video");
+        video.src = getImageUrl(videoSrc);
+        video.onloadedmetadata = () => setDuration((prev) => prev || secsToDuration(Math.round(video.duration)));
+      }
+    } else {
+      toast({
+        title: "Details auto-filled",
+        description: "Title, duration, age rating & SEO filled from the video.",
+      });
+    }
+  };
+
+  // Poll media file while HLS / metadata is processing — keep auto-filling
+  useEffect(() => {
+    if (!processingMediaId) return;
+    let cancelled = false;
+    let tries = 0;
+
+    const tick = async () => {
+      try {
+        const res = await getMediaFileById(processingMediaId);
+        const media = (res as any)?.data;
+        if (!media || cancelled) return;
+
+        applyVideoAutoFill(media);
+
+        if (media.hlsStatus === "completed") {
+          toast({
+            title: "HLS ready",
+            description:
+              media.transcoder === "aws" || media.autoFill?.transcoder === "aws"
+                ? "AWS MediaConvert finished — qualities auto-filled."
+                : "Transcoding finished — qualities auto-filled.",
+          });
+          setProcessingMediaId(null);
+          return;
+        }
+        if (media.hlsStatus === "failed") {
+          toast({
+            title: "Transcoding failed",
+            description: media.hlsError || "You can still save with the original file.",
+            variant: "destructive",
+          });
+          setProcessingMediaId(null);
+          return;
+        }
+
+        tries += 1;
+        if (tries > 120) setProcessingMediaId(null);
+      } catch {
+        /* ignore transient errors */
+      }
+    };
+
+    tick();
+    const id = window.setInterval(tick, 5000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [processingMediaId]);
 
   /* ---- Populate form on edit ---- */
   useEffect(() => {
@@ -469,6 +610,26 @@ export default function MovieForm() {
         seoImage: seoImage.filePath,
       };
 
+      const isBlob = (v: unknown) => typeof v === "string" && v.startsWith("blob:");
+      if (isBlob(payload.hlsUrl) || isBlob(payload.trailerUrl) || isBlob(payload.thumbnail) || isBlob(payload.posterImage) || isBlob(payload.bannerImage)) {
+        toast({
+          title: "Video/image still uploading",
+          description: "Wait for the background upload to finish, then save. Do not save blob preview URLs.",
+          variant: "destructive",
+        });
+        setIsSaving(false);
+        return;
+      }
+      if (!payload.hlsUrl) {
+        toast({
+          title: "Movie video required",
+          description: "Select a video from Media Library (or wait for upload + HLS to finish).",
+          variant: "destructive",
+        });
+        setIsSaving(false);
+        return;
+      }
+
       if (isEdit) {
         await updateMovieMutation.mutateAsync({ id: id!, data: payload });
       } else {
@@ -701,17 +862,23 @@ export default function MovieForm() {
                 <Label className="text-foreground text-sm font-medium">
                   Plan Required <span className="text-primary">*</span>
                 </Label>
-                <Select value={planRequired} onValueChange={(v) => setPlanRequired(v as any)}>
+                <Select value={planRequired} onValueChange={setPlanRequired}>
                   <SelectTrigger className="bg-muted border-border text-foreground h-10 rounded-lg text-sm">
-                    <SelectValue />
+                    <SelectValue placeholder="Select plan" />
                   </SelectTrigger>
                   <SelectContent className="bg-popover border-border text-foreground">
-                    <SelectItem value="free">Free</SelectItem>
-                    <SelectItem value="basic">Basic</SelectItem>
-                    <SelectItem value="standard">Standard</SelectItem>
-                    <SelectItem value="premium">Premium</SelectItem>
+                    {planOptions.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
+                {subscriptionPlans.length === 0 && (
+                  <p className="text-[11px] text-muted-foreground mt-1">
+                    No subscription plans found — only Free is available. Add plans under Subscriptions → Plans.
+                  </p>
+                )}
               </div>
               <div className="space-y-1.5">
                 <Label className="text-foreground text-sm font-medium">Status</Label>
@@ -1084,6 +1251,11 @@ export default function MovieForm() {
         {activeTab === "Quality Info" && (
           <div className="p-6 space-y-6">
             <SectionHeading title="Video Source" />
+            {processingMediaId && (
+              <div className="rounded-lg border border-primary/30 bg-primary/5 px-4 py-3 text-sm text-foreground">
+                Transcoding in progress — duration, cover frame, and HLS qualities will auto-fill when ready.
+              </div>
+            )}
             <div className="rounded-xl border border-border bg-muted/10 p-5">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                 <div className="space-y-1.5">

@@ -14,7 +14,7 @@ import {
 import {
   useGetWebHome, useGetWebBrowse, loginClient, registerClient, useGetPages,
   useGetGenres, useGetPublicNotifications, useGetWebSubscriptionPlans,
-  useGetWatchHistory, useGetSections, useGetWebAllContent,
+  useGetWatchHistory, useGetSections, useGetWebAllContent, getAppProfile,
 } from "@/lib/api-client";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { WebsiteReviews } from "@/components/WebsiteReviews";
@@ -52,27 +52,70 @@ type Tab = "home" | "movies" | "new";
 
 const PLAN_LEVEL: Record<string, number> = { free: 0, basic: 1, standard: 2, premium: 3 };
 
+function isUserSubscribed(user: any): boolean {
+  if (!user) return false;
+  // Explicit false from profile means free / inactive
+  if (user.subscription === false) return false;
+  if (user.subscription === true) {
+    const plan = String(user.subscriptionPlan || "standard").toLowerCase();
+    if (plan && plan !== "free") {
+      if (user.subscriptionExpiry) {
+        const exp = new Date(user.subscriptionExpiry);
+        if (!Number.isNaN(exp.getTime()) && exp.getTime() < Date.now()) return false;
+      }
+      return true;
+    }
+  }
+  const status = String(user.subscriptionStatus || "").toLowerCase();
+  const plan = String(user.subscriptionPlan || "free").toLowerCase();
+  if (status !== "active") return false;
+  if (!plan || plan === "free") return false;
+  if (user.subscriptionExpiry) {
+    const exp = new Date(user.subscriptionExpiry);
+    if (!Number.isNaN(exp.getTime()) && exp.getTime() < Date.now()) return false;
+  }
+  return true;
+}
+
 function userPlanLevel(user: any): number {
-  if (!user) return 0;
-  const active = user.subscriptionStatus === "active";
+  if (!isUserSubscribed(user)) return 0;
   const name = String(user.subscriptionPlan || "free").toLowerCase();
-  if (!active) return 0;
   if (name.includes("premium")) return 3;
   if (name.includes("standard")) return 2;
   if (name.includes("basic")) return 1;
   return PLAN_LEVEL[name] ?? 0;
 }
 
+function persistAppUser(partial: Record<string, any>) {
+  try {
+    const prev = JSON.parse(localStorage.getItem("appUser") || localStorage.getItem("user") || "{}");
+    const next = { ...prev, ...partial };
+    localStorage.setItem("appUser", JSON.stringify(next));
+    localStorage.setItem("user", JSON.stringify(next));
+    window.dispatchEvent(new Event("user-updated"));
+    return next;
+  } catch {
+    return partial;
+  }
+}
+
 function canPlayMovie(item: any, user: any): boolean {
   const required = String(item?.planRequired || (item?.isPremium ? "basic" : "free")).toLowerCase();
-  return userPlanLevel(user) >= (PLAN_LEVEL[required] ?? 0);
+  // Free titles are always playable
+  if (!required || required === "free") return true;
+  // Any active paid plan unlocks paid/premium titles (Standard covers the catalog)
+  return isUserSubscribed(user);
 }
 
 function resolveBannerVideo(item: any): { src: string; isTrailer: boolean; clipSeconds: number | null } {
-  const trailer = item?.trailerUrl ? getImageUrl(item.trailerUrl) : "";
+  const usable = (raw?: string | null) => {
+    if (!raw || String(raw).startsWith("blob:")) return "";
+    return getImageUrl(raw) || "";
+  };
+  const trailer = usable(item?.trailerUrl);
   if (trailer) return { src: trailer, isTrailer: true, clipSeconds: null };
-  const movie = item?.hlsUrl || item?.videoUrl || item?.sourceVideoUrl;
-  if (movie) return { src: getImageUrl(movie), isTrailer: false, clipSeconds: 300 };
+  const movie = usable(item?.hlsUrl) || usable(item?.videoUrl) || usable(item?.sourceVideoUrl);
+  if (movie) return { src: movie, isTrailer: false, clipSeconds: 300 };
   return { src: "", isTrailer: false, clipSeconds: null };
 }
 
@@ -368,7 +411,11 @@ function Hero({ activeTab, onPlay, onSubscribeClick, isSubscribed }: { activeTab
   }, [current, heroContent.length, isPaused, bannerVideo.src, go]);
 
   if (isLoading) {
-    return <div className="flex items-center justify-center w-full bg-[#030306]" style={{ height: "78vh", minHeight: 420 }}><Loader2 className="w-8 h-8 animate-spin text-amber-400" /></div>;
+    return (
+      <div className="flex items-center justify-center w-full bg-[#030306] h-[52vw] min-h-[220px] max-h-[420px] sm:h-[min(70vh,820px)] sm:min-h-[360px] sm:max-h-none">
+        <Loader2 className="w-8 h-8 animate-spin text-amber-400" />
+      </div>
+    );
   }
   if (!heroContent.length) return null;
 
@@ -376,8 +423,7 @@ function Hero({ activeTab, onPlay, onSubscribeClick, isSubscribed }: { activeTab
 
   return (
     <div
-      className="relative w-full overflow-hidden bg-[#030306]"
-      style={{ height: "78vh", minHeight: 420 }}
+      className="relative w-full overflow-hidden bg-[#030306] isolate h-[56vw] min-h-[240px] max-h-[420px] sm:h-[min(72vh,820px)] sm:min-h-[380px] sm:max-h-none"
       onMouseEnter={() => setIsPaused(true)}
       onMouseLeave={() => setIsPaused(false)}
     >
@@ -386,7 +432,7 @@ function Hero({ activeTab, onPlay, onSubscribeClick, isSubscribed }: { activeTab
         <img
           src={getImageUrl(item.backdrop || item.poster) || ""}
           alt={item.title}
-          className="w-full h-full object-cover object-center"
+          className="w-full h-full object-cover object-[center_20%] sm:object-center"
           onError={(e) => {
             const target = e.target as HTMLImageElement;
             target.onerror = null;
@@ -399,7 +445,7 @@ function Hero({ activeTab, onPlay, onSubscribeClick, isSubscribed }: { activeTab
       <div className={`absolute inset-0 transition-opacity duration-700 ${fading ? "opacity-0" : videoReady ? "opacity-100" : "opacity-0"}`}>
         <video
           ref={videoRef}
-          className="w-full h-full object-cover"
+          className="w-full h-full object-cover object-[center_20%] sm:object-center"
           playsInline
           muted={muted}
           autoPlay
@@ -407,91 +453,91 @@ function Hero({ activeTab, onPlay, onSubscribeClick, isSubscribed }: { activeTab
         />
       </div>
 
-      {/* Gradients */}
-      <div className="absolute inset-0 bg-gradient-to-r from-[#030306] via-[#030306]/55 to-transparent" />
-      <div className="absolute bottom-0 left-0 right-0 h-[55%] bg-gradient-to-t from-[#030306] to-transparent" />
-      <div className="absolute top-0 left-0 right-0 h-[20%] bg-gradient-to-b from-[#030306]/70 to-transparent" />
+      {/* Gradients — keep hero text readable over banners */}
+      <div className="absolute inset-0 z-[1] pointer-events-none bg-gradient-to-r from-[#030306] via-[#030306]/75 to-transparent sm:via-[#030306]/70 sm:to-[#030306]/15" />
+      <div className="absolute inset-0 z-[1] pointer-events-none bg-gradient-to-t from-[#030306] via-[#030306]/60 to-transparent" />
+      <div className="absolute top-0 left-0 right-0 z-[1] h-20 sm:h-32 pointer-events-none bg-gradient-to-b from-[#030306]/95 to-transparent" />
 
       {/* Mute toggle */}
       {bannerVideo.src && (
         <button
           onClick={() => setMuted((m) => !m)}
-          className="absolute top-24 right-5 z-20 w-10 h-10 rounded-full bg-black/55 border border-white/15 text-white flex items-center justify-center hover:bg-black/80 transition-colors"
+          className="absolute top-16 right-3 sm:top-28 sm:right-5 z-20 w-9 h-9 sm:w-11 sm:h-11 rounded-full bg-black/60 border border-white/20 text-white flex items-center justify-center hover:bg-amber-400 hover:text-black hover:border-amber-400 transition-all shadow-lg"
           aria-label={muted ? "Unmute" : "Mute"}
         >
-          {muted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+          {muted ? <VolumeX className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> : <Volume2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />}
         </button>
       )}
 
-      {/* Content */}
-      <div className="absolute bottom-14 sm:bottom-16 left-0 px-6 sm:px-10 lg:px-14 max-w-2xl w-full z-10">
-        <div className={`transition-all duration-500 ${fading ? "opacity-0 translate-y-4" : "opacity-100 translate-y-0"}`}>
-          <div className="flex items-center gap-2 mb-3 flex-wrap">
+      {/* Content — clear of fixed header */}
+      <div className="absolute inset-x-0 bottom-0 z-10 pt-16 pb-10 sm:pt-28 sm:pb-20 px-4 sm:px-10 lg:px-14">
+        <div className={`max-w-2xl transition-all duration-500 ${fading ? "opacity-0 translate-y-4" : "opacity-100 translate-y-0"}`}>
+          <div className="flex items-center gap-1.5 sm:gap-2 mb-2 sm:mb-3 flex-wrap">
             {isPremium && !isSubscribed ? <PremiumBadge /> : null}
-            <span className="flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-lg bg-amber-400/15 text-amber-300 border border-amber-400/30">
+            <span className="flex items-center gap-1.5 text-[10px] sm:text-xs font-bold px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-full bg-amber-400/15 text-amber-300 border border-amber-400/30">
               <Film className="w-3 h-3" />
               {bannerVideo.isTrailer ? "Trailer" : bannerVideo.src ? "Preview" : "Movie"}
             </span>
             {[...new Set<string>(item.genres || [])].slice(0, 2).map((g) => (
-              <span key={g} className="text-white text-xs bg-zinc-900/80 border border-zinc-800 px-2 py-1 rounded-lg font-semibold">{g}</span>
+              <span key={g} className="text-white text-[10px] sm:text-xs bg-zinc-900/80 border border-zinc-700/80 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-full font-semibold">{g}</span>
             ))}
           </div>
 
-          <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-white leading-tight mb-3 tracking-tight drop-shadow-lg">
+          <h1 className="text-[1.65rem] xs:text-3xl sm:text-5xl lg:text-6xl font-black text-white leading-[1.05] mb-2 sm:mb-4 tracking-tight drop-shadow-[0_4px_24px_rgba(0,0,0,0.85)]">
             {item.title}
           </h1>
 
-          <div className="flex items-center gap-3 mb-3 flex-wrap">
+          <div className="flex items-center gap-2 sm:gap-3 mb-2 sm:mb-4 flex-wrap">
             <ImdbBadge rating={item.imdbRating} />
             <AgeBadge rating={item.ageRating} />
-            {item.duration && <span className="text-white/80 text-xs font-semibold">{item.duration}</span>}
-            {item.year && <span className="text-white/80 text-xs font-semibold">{item.year}</span>}
-            {item.language && <span className="text-white text-xs font-semibold">{item.language}</span>}
+            {item.duration && <span className="text-white/85 text-[11px] sm:text-xs font-semibold">{item.duration}</span>}
+            {item.year && <span className="text-white/85 text-[11px] sm:text-xs font-semibold">{item.year}</span>}
+            {item.language && <span className="hidden xs:inline text-white/85 text-[11px] sm:text-xs font-semibold">{item.language}</span>}
           </div>
 
-          <p className="text-white text-sm sm:text-base leading-relaxed mb-6 max-w-lg line-clamp-3">
+          <p className="text-white/90 text-xs sm:text-base leading-relaxed mb-4 sm:mb-7 max-w-xl line-clamp-2 sm:line-clamp-3 drop-shadow">
             {item.description}
           </p>
 
-          <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
             <button
               onClick={() => onPlay(item)}
-              className="flex items-center gap-2.5 px-8 py-3.5 bg-amber-400 hover:bg-amber-300 text-black font-bold rounded-lg text-sm tracking-wide transition-all active:scale-95 shadow-xl shadow-amber-900/30"
+              className="flex items-center gap-2 px-5 py-2.5 sm:px-8 sm:py-3.5 bg-amber-400 hover:bg-amber-300 text-black font-bold rounded-full text-xs sm:text-sm tracking-wide transition-all active:scale-95 shadow-xl shadow-amber-900/40"
             >
-              <Play className="w-4 h-4 fill-black" />
+              <Play className="w-3.5 h-3.5 sm:w-4 sm:h-4 fill-black" />
               Watch Now
             </button>
             {isPremium && !isSubscribed && (
               <button
                 onClick={onSubscribeClick}
-                className="flex items-center gap-2.5 px-6 py-3.5 bg-white/10 hover:bg-white/15 text-white font-bold rounded-lg text-sm tracking-wide transition-all active:scale-95 border border-white/20"
+                className="flex items-center gap-2 px-4 py-2.5 sm:px-7 sm:py-3.5 bg-white/10 hover:bg-white/15 text-white font-bold rounded-full text-xs sm:text-sm tracking-wide transition-all active:scale-95 border border-white/25 backdrop-blur-md"
               >
-                <Crown className="w-4 h-4 text-amber-400" /> Subscribe
+                <Crown className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-400" /> Subscribe
               </button>
             )}
           </div>
         </div>
       </div>
 
-      <div className="absolute bottom-5 left-1/2 -translate-x-1/2 flex items-center gap-2 z-10">
+      <div className="absolute bottom-3 sm:bottom-5 left-1/2 -translate-x-1/2 flex items-center gap-1.5 sm:gap-2 z-10">
         {heroContent.map((_, i) => (
           <button
             key={i}
             onClick={() => go(i)}
-            className={`transition-all duration-300 rounded-full ${i === current ? "w-8 h-[5px] bg-amber-400" : "w-2 h-2 bg-white/30 hover:bg-white/60"}`}
+            className={`transition-all duration-300 rounded-full ${i === current ? "w-6 sm:w-8 h-[4px] sm:h-[5px] bg-amber-400" : "w-1.5 h-1.5 sm:w-2 sm:h-2 bg-white/30 hover:bg-white/60"}`}
           />
         ))}
       </div>
 
       <button
         onClick={() => go((current - 1 + heroContent.length) % heroContent.length)}
-        className="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 flex items-center justify-center rounded-full bg-black/50 hover:bg-black/80 text-white border border-zinc-800 hover:border-amber-400/50 transition-all z-10"
+        className="hidden sm:flex absolute left-3 top-1/2 -translate-y-1/2 w-11 h-11 items-center justify-center rounded-full bg-black/55 hover:bg-amber-400 hover:text-black text-white border border-white/15 hover:border-amber-400 transition-all z-10 shadow-lg"
       >
         <ChevronLeft className="w-5 h-5" />
       </button>
       <button
         onClick={() => go((current + 1) % heroContent.length)}
-        className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 flex items-center justify-center rounded-full bg-black/50 hover:bg-black/80 text-white border border-zinc-800 hover:border-amber-400/50 transition-all z-10"
+        className="hidden sm:flex absolute right-3 top-1/2 -translate-y-1/2 w-11 h-11 items-center justify-center rounded-full bg-black/55 hover:bg-amber-400 hover:text-black text-white border border-white/15 hover:border-amber-400 transition-all z-10 shadow-lg"
       >
         <ChevronRight className="w-5 h-5" />
       </button>
@@ -1030,39 +1076,34 @@ function SignInModal({ onClose }: { onClose: () => void }) {
         const res = await loginClient({ email: loginIdentifier, password });
         localStorage.setItem("appAccessToken", res.accessToken);
         localStorage.setItem("accessToken", res.accessToken); // legacy compat
-        localStorage.setItem("appUser", JSON.stringify({
+        const loggedIn = {
           id: res.userId,
           name: res.name || email.split("@")[0],
           avatar: res.avatar || null,
+          email: res.email || null,
           subscriptionPlan: res.subscriptionPlan || "free",
           subscriptionStatus: res.subscriptionStatus || "inactive",
-        }));
-        localStorage.setItem("user", JSON.stringify({
-          id: res.userId,
-          name: res.name || email.split("@")[0],
-          avatar: res.avatar || null,
-          subscriptionPlan: res.subscriptionPlan || "free",
-          subscriptionStatus: res.subscriptionStatus || "inactive",
-        }));
+          subscriptionExpiry: res.subscriptionExpiry || null,
+          subscription: !!res.subscription || (res.subscriptionStatus === "active" && res.subscriptionPlan && res.subscriptionPlan !== "free"),
+        };
+        localStorage.setItem("appUser", JSON.stringify(loggedIn));
+        localStorage.setItem("user", JSON.stringify(loggedIn));
         window.location.reload();
       } else {
         const res = await registerClient({ email, password, name, phone: phone || undefined });
         localStorage.setItem("appAccessToken", res.accessToken);
         localStorage.setItem("accessToken", res.accessToken); // legacy compat
-        localStorage.setItem("appUser", JSON.stringify({
+        const registered = {
           id: res.userId,
           name,
           avatar: res.avatar || null,
           subscriptionPlan: res.subscriptionPlan || "free",
           subscriptionStatus: res.subscriptionStatus || "inactive",
-        }));
-        localStorage.setItem("user", JSON.stringify({
-          id: res.userId,
-          name,
-          avatar: res.avatar || null,
-          subscriptionPlan: res.subscriptionPlan || "free",
-          subscriptionStatus: res.subscriptionStatus || "inactive",
-        }));
+          subscriptionExpiry: res.subscriptionExpiry || null,
+          subscription: false,
+        };
+        localStorage.setItem("appUser", JSON.stringify(registered));
+        localStorage.setItem("user", JSON.stringify(registered));
         window.location.reload();
       }
     } catch (err: any) {
@@ -1220,7 +1261,7 @@ export function PublicHeader({ activeTab, setActiveTab, onSignIn, onSignOut, use
   activeTab: Tab; setActiveTab: (t: Tab) => void; onSignIn: () => void; onSignOut?: () => void; user?: any; onSubscribeClick?: () => void;
 }) {
   const [scrolled, setScrolled] = useState(false);
-  const isSubscribed = user?.subscriptionStatus === "active" && user?.subscriptionPlan !== "free";
+  const isSubscribed = isUserSubscribed(user);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [, setLocation] = useLocation();
   const searchString = useSearch();
@@ -1377,7 +1418,7 @@ export function PublicHeader({ activeTab, setActiveTab, onSignIn, onSignOut, use
                   )}
                 </button>
                 {notificationsOpen && (
-                  <div className="absolute top-[calc(100%+8px)] right-0 w-[300px] bg-[#0a0a0a] border border-border rounded-2xl shadow-2xl overflow-hidden z-50 animate-in fade-in slide-in-from-top-2 duration-200">
+                  <div className="absolute top-[calc(100%+8px)] right-0 w-[320px] bg-[#0a0a0a]/98 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl overflow-hidden z-[80] animate-in fade-in slide-in-from-top-2 duration-200">
                     <div className="p-3.5 border-b border-border flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <span className="text-white font-bold text-sm">Notifications</span>
@@ -1427,11 +1468,17 @@ export function PublicHeader({ activeTab, setActiveTab, onSignIn, onSignOut, use
               {!isSubscribed && (
                 <button
                   onClick={onSubscribeClick || (() => setLocation("/browse"))}
-                  className="hidden sm:flex items-center gap-1.5 px-4 py-2 bg-amber-400 hover:bg-amber-500 text-black font-bold rounded-lg text-xs transition-all shadow-md shadow-amber-900/20 hover:-translate-y-0.5 active:translate-y-0"
+                  className="hidden sm:flex items-center gap-1.5 px-4 py-2 bg-amber-400 hover:bg-amber-500 text-black font-bold rounded-full text-xs transition-all shadow-md shadow-amber-900/20 hover:-translate-y-0.5 active:translate-y-0"
                 >
                   <Crown className="w-3.5 h-3.5" />
                   Subscribe
                 </button>
+              )}
+              {isSubscribed && (
+                <span className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold bg-amber-400/15 text-amber-300 border border-amber-400/30 capitalize">
+                  <Crown className="w-3.5 h-3.5" />
+                  {String(user?.subscriptionPlan || "standard")} plan
+                </span>
               )}
 
               <div className="relative" ref={avatarRef}>
@@ -1677,8 +1724,38 @@ export default function StreamingHomePage() {
       } catch (e) { /* ignore */ }
     };
     loadUser();
+
+    // Always refresh subscription from API so admin-activated plans show immediately
+    const refreshSubscription = async () => {
+      const token = localStorage.getItem("appAccessToken") || localStorage.getItem("accessToken");
+      if (!token) return;
+      try {
+        const res = await getAppProfile();
+        const profile = res?.data?.user || res?.data?.profile || res?.data;
+        if (!profile) return;
+        const next = persistAppUser({
+          id: profile.id || profile._id,
+          name: profile.name,
+          avatar: profile.avatar || null,
+          email: profile.email || null,
+          subscriptionPlan: profile.subscriptionPlan || "free",
+          subscriptionStatus: profile.subscriptionStatus || (profile.subscription ? "active" : "inactive"),
+          subscriptionExpiry: profile.subscriptionExpiry || null,
+          subscription: !!profile.subscription,
+        });
+        setUser(next);
+      } catch {
+        /* keep cached user */
+      }
+    };
+    refreshSubscription();
+
     window.addEventListener("user-updated", loadUser);
-    return () => window.removeEventListener("user-updated", loadUser);
+    window.addEventListener("focus", refreshSubscription);
+    return () => {
+      window.removeEventListener("user-updated", loadUser);
+      window.removeEventListener("focus", refreshSubscription);
+    };
   }, []);
 
   useEffect(() => {
@@ -1701,7 +1778,7 @@ export default function StreamingHomePage() {
     window.location.reload();
   };
 
-  const isSubscribed = user?.subscriptionStatus === "active" && user?.subscriptionPlan !== "free";
+  const isSubscribed = isUserSubscribed(user);
 
   const navigateToContent = useCallback((item: any) => {
     const id = item.contentId || item.id || item._id;

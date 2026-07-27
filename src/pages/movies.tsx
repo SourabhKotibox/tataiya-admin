@@ -28,10 +28,9 @@ import {
   useToggleMovieTrending,
   useUpdateMovieStatus,
   useGetLanguagesList,
+  useGetSubscriptionPlans,
 } from "@/lib/api-client";
 import { getImageUrl } from "@/lib/api-client";
-
-type AccessType = "paid" | "free" | "pay_per_view";
 
 type MovieRow = {
   id: string;
@@ -48,11 +47,20 @@ type MovieRow = {
   trending: boolean;
 };
 
-const ACCESS_BADGE: Record<string, { label: string; className: string }> = {
-  free: { label: "Free", className: "bg-green-500/20 text-green-400" },
-  basic: { label: "Basic", className: "bg-primary/20 text-blue-400" },
-  standard: { label: "Standard", className: "bg-purple-500/20 text-purple-400" },
-  premium: { label: "Premium", className: "bg-amber-500/20 text-amber-400" },
+function planNameToKey(name: string): string {
+  const n = String(name || "").toLowerCase().trim();
+  if (!n || n === "free") return "free";
+  if (n.includes("premium") || n.includes("vip")) return "premium";
+  if (n.includes("standard")) return "standard";
+  if (n.includes("basic")) return "basic";
+  return n.replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "standard";
+}
+
+const PLAN_BADGE_COLORS: Record<string, string> = {
+  free: "bg-green-500/20 text-green-400",
+  basic: "bg-primary/20 text-blue-400",
+  standard: "bg-purple-500/20 text-purple-400",
+  premium: "bg-amber-500/20 text-amber-400",
 };
 
 const STATUS_BADGE: Record<string, { label: string; className: string }> = {
@@ -83,6 +91,28 @@ export default function MoviesPage() {
 
   const { data: langsData } = useGetLanguagesList();
   const languagesList = langsData?.data || [];
+  const { data: plansData } = useGetSubscriptionPlans({ limit: 100 });
+  const subscriptionPlans = ((plansData as any)?.data || []).filter(
+    (p: any) => p.status !== false && p.status !== "inactive"
+  );
+  const planFilterOptions = [
+    { value: "all", label: "All Plans" },
+    { value: "free", label: "Free" },
+    ...subscriptionPlans.map((p: any) => ({
+      value: planNameToKey(p.name),
+      label: p.name,
+    })),
+  ].filter((opt, i, arr) => arr.findIndex((o) => o.value === opt.value) === i);
+
+  const planBadgeFor = (key?: string) => {
+    const k = String(key || "free").toLowerCase();
+    if (k === "free") return { label: "Free", className: PLAN_BADGE_COLORS.free };
+    const fromApi = subscriptionPlans.find((p: any) => planNameToKey(p.name) === k);
+    return {
+      label: fromApi?.name || k.charAt(0).toUpperCase() + k.slice(1),
+      className: PLAN_BADGE_COLORS[k] || "bg-zinc-500/20 text-foreground/70",
+    };
+  };
 
   useEffect(() => {
     setSelectedIds([]);
@@ -328,11 +358,11 @@ export default function MoviesPage() {
                   <SelectValue placeholder="All Plans" />
                 </SelectTrigger>
                 <SelectContent className="bg-popover border-border text-foreground">
-                  <SelectItem value="all">All Plans</SelectItem>
-                  <SelectItem value="free">Free</SelectItem>
-                  <SelectItem value="premium">Premium</SelectItem>
-                  <SelectItem value="standard">Standard</SelectItem>
-                  <SelectItem value="basic">Basic</SelectItem>
+                  {planFilterOptions.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -437,7 +467,7 @@ export default function MoviesPage() {
                 </TableRow>
               ) : (
                 filtered.map((movie) => {
-                  const planBadge = ACCESS_BADGE[movie.planRequired] || ACCESS_BADGE.free;
+                  const planBadge = planBadgeFor(movie.planRequired);
                   const statusBadge = STATUS_BADGE[movie.status] || STATUS_BADGE.draft;
                   return (
                     <TableRow key={movie.id} className="border-border hover:bg-muted/30">

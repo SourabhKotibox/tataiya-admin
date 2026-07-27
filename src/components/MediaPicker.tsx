@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { useGetAllMediaFiles, uploadMediaFiles, getMediaFolders, createMediaFolder } from "@/lib/api-client";
 import { getImageUrl } from "@/lib/api-client";
+import { formatBytes as formatCompressBytes } from "@/lib/compressImage";
 import { useToast } from "@/hooks/use-toast";
 import { useUploadQueue } from "@/contexts/UploadQueueContext";
 
@@ -96,6 +97,8 @@ export default function MediaPicker({ open, onClose, onSelect, source, accept = 
     await refetchMedia();
     onSelect({
       ...uploadedFile,
+      id: uploadedFile.id || uploadedFile.mediaFileId || uploadedFile._id,
+      mediaFileId: uploadedFile.mediaFileId || uploadedFile.id || uploadedFile._id,
       url: getImageUrl(
         uploadedFile.hlsMasterPlaylistUrl ||
           uploadedFile.url ||
@@ -137,6 +140,13 @@ export default function MediaPicker({ open, onClose, onSelect, source, accept = 
           ({ percent }) => setUploadPercent(percent)
         );
         const uploadedFile = result?.data?.[0];
+        const saved = result?.compression?.savedBytes || 0;
+        if (saved > 0) {
+          toast({
+            title: "Compressed & uploaded",
+            description: `Saved ${formatCompressBytes(saved)} — same quality, faster upload.`,
+          });
+        }
         if (uploadedFile) await finishWithUploadedFile(uploadedFile);
         else onSelect({ url: preview || "", filePath: "", name: selectedMedia.name });
         handleClose();
@@ -152,7 +162,6 @@ export default function MediaPicker({ open, onClose, onSelect, source, accept = 
   const handleUploadInBackground = async () => {
     if (!(mode === "upload" && selectedMedia?.file)) return;
     const file = selectedMedia.file as File;
-    const localPreview = preview;
 
     try {
       const folderId = await resolveFolderId();
@@ -173,17 +182,10 @@ export default function MediaPicker({ open, onClose, onSelect, source, accept = 
         },
       });
 
+      // Do not bind blob previews into form fields — save would break playback
       toast({
         title: "Upload started in background",
-        description: `${file.name} — you can keep editing. Progress is shown at the bottom-right.`,
-      });
-
-      // Select a temporary local preview so the form isn't empty
-      onSelect({
-        url: localPreview || "",
-        filePath: "",
-        name: file.name,
-        pendingUpload: true,
+        description: `${file.name} — keep this tab open. When done, the video fields fill automatically. Refresh will cancel the upload.`,
       });
       handleClose();
     } catch (error: any) {
@@ -448,6 +450,11 @@ export default function MediaPicker({ open, onClose, onSelect, source, accept = 
                     <p className="text-xs text-muted-foreground/80 mt-3">
                       {accept.includes("image") && accept.includes("video") ? "Images & Videos" : accept.includes("image") ? "Images only" : "Videos only"}
                     </p>
+                    {accept.includes("image") && (
+                      <p className="text-[11px] text-primary/90 mt-2 font-medium">
+                        Movie covers &amp; images are auto-compressed (WebP) — same quality, less space, faster upload.
+                      </p>
+                    )}
                   </div>
                 )}
               </div>

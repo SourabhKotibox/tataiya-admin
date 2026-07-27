@@ -29,18 +29,50 @@ export default function MovieDetailPage() {
 
   const { data: detailData, isLoading } = useGetWebDetail(id || "");
   const item = detailData;
+  const { data: profileData } = useGetAppProfile();
 
   useEffect(() => {
     const loadUser = () => {
       try {
-        const storedUser = localStorage.getItem("appUser");
+        const storedUser = localStorage.getItem("appUser") || localStorage.getItem("user");
         if (storedUser) setUser(JSON.parse(storedUser));
         else setUser(null);
       } catch (e) {}
     };
     loadUser();
+
+    const refresh = async () => {
+      const token = localStorage.getItem("appAccessToken") || localStorage.getItem("accessToken");
+      if (!token) return;
+      try {
+        const { getAppProfile } = await import("@/lib/api-client");
+        const res = await getAppProfile();
+        const profile = res?.data?.user || res?.data?.profile || res?.data;
+        if (!profile) return;
+        const next = {
+          id: profile.id || profile._id,
+          name: profile.name,
+          avatar: profile.avatar || null,
+          email: profile.email || null,
+          subscriptionPlan: profile.subscriptionPlan || "free",
+          subscriptionStatus: profile.subscriptionStatus || (profile.subscription ? "active" : "inactive"),
+          subscriptionExpiry: profile.subscriptionExpiry || null,
+          subscription: !!profile.subscription,
+        };
+        localStorage.setItem("appUser", JSON.stringify(next));
+        localStorage.setItem("user", JSON.stringify(next));
+        setUser(next);
+        window.dispatchEvent(new Event("user-updated"));
+      } catch { /* keep cached */ }
+    };
+    refresh();
+
     window.addEventListener("user-updated", loadUser);
-    return () => window.removeEventListener("user-updated", loadUser);
+    window.addEventListener("focus", refresh);
+    return () => {
+      window.removeEventListener("user-updated", loadUser);
+      window.removeEventListener("focus", refresh);
+    };
   }, []);
 
   const handleSignOut = () => {
@@ -97,9 +129,17 @@ export default function MovieDetailPage() {
     }
   };
 
-  const userPlan = user?.subscriptionStatus === "active" ? user.subscriptionPlan : "free";
-  const planRequired = item?.planRequired || "free";
-  const isLocked = getPlanLevel(userPlan) < getPlanLevel(planRequired);
+  const profileUser = profileData?.user || profileData;
+  const status = String(profileUser?.subscriptionStatus || user?.subscriptionStatus || "").toLowerCase();
+  const plan = String(profileUser?.subscriptionPlan || user?.subscriptionPlan || "free").toLowerCase();
+  const expiryRaw = profileUser?.subscriptionExpiry || user?.subscriptionExpiry;
+  const hasPaidPlan =
+    (profileUser?.subscription === true || (status === "active" && plan !== "free")) &&
+    (!expiryRaw || new Date(expiryRaw).getTime() >= Date.now());
+  const userPlan = hasPaidPlan ? plan : "free";
+  const planRequired = String(item?.planRequired || "free").toLowerCase();
+  // Any active paid plan unlocks paid titles
+  const isLocked = planRequired !== "free" && !hasPaidPlan;
 
   const heroBg = getImageUrl(item.backdrop || item.poster || item.posterImage || item.thumbnail) || "";
   const posterImg = getImageUrl(item.poster || item.posterImage || item.thumbnail || item.backdrop) || "";

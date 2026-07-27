@@ -300,7 +300,9 @@ export const useLogin = () => {
       if (data.refreshToken) {
         localStorage.setItem("adminRefreshToken", data.refreshToken);
       }
-      queryClient.clear();
+      // Don't wipe the whole cache — only drop auth/user so dashboard loads faster
+      queryClient.removeQueries({ queryKey: ["me"] });
+      queryClient.invalidateQueries({ queryKey: ["me"] });
     },
   });
 };
@@ -336,6 +338,7 @@ export const useGetMe = () => {
     queryFn: getMe,
     enabled: !!token,
     retry: 1,
+    staleTime: 60_000,
   });
 };
 
@@ -1466,9 +1469,25 @@ export const uploadMediaFiles = async (
   source?: string,
   onUploadProgress?: (progress: { loaded: number; total: number; percent: number }) => void
 ) => {
+  // Compress movie covers / images client-side first (same look, less bytes → faster upload)
+  const { compressImagesForUpload, formatBytes } = await import('./compressImage');
+  const { files: optimizedFiles, results: compressResults } = await compressImagesForUpload(files, source);
+  const saved = compressResults
+    .filter((r) => !r.skipped)
+    .reduce((sum, r) => sum + (r.originalSize - r.compressedSize), 0);
+  if (saved > 0) {
+    console.info(
+      `[upload] Compressed images, saved ${formatBytes(saved)} before transfer`,
+      compressResults.filter((r) => !r.skipped).map((r) => ({
+        from: formatBytes(r.originalSize),
+        to: formatBytes(r.compressedSize),
+      }))
+    );
+  }
+
   // Large files: upload browser → S3 directly (skips EC2 proxy, much faster)
   const DIRECT_S3_THRESHOLD = 2 * 1024 * 1024; // 2MB
-  const file = files[0];
+  const file = optimizedFiles[0];
   if (file && file.size >= DIRECT_S3_THRESHOLD) {
     try {
       const presign = await api('/media/presign', {
@@ -1514,7 +1533,19 @@ export const uploadMediaFiles = async (
           }),
         });
         onUploadProgress?.({ loaded: file.size, total: file.size, percent: 100 });
-        return { success: true, data: [confirmed?.data || confirmed] };
+        const payload = confirmed?.data || confirmed;
+        return {
+          success: true,
+          data: [payload],
+          compression: {
+            savedBytes: saved,
+            results: compressResults.map((r) => ({
+              skipped: r.skipped,
+              originalSize: r.originalSize,
+              compressedSize: r.compressedSize,
+            })),
+          },
+        };
       }
     } catch (err: any) {
       // Fall back to API multipart if S3 CORS/presign is not ready
@@ -1525,9 +1556,9 @@ export const uploadMediaFiles = async (
   }
 
   const formData = new FormData();
-  files.forEach((f) => formData.append('file', f));
+  optimizedFiles.forEach((f) => formData.append('file', f));
   if (source) formData.append('source', source);
-  return api(`/media/folders/${folderId}/files`, {
+  const result = await api(`/media/folders/${folderId}/files`, {
     method: 'POST',
     body: formData,
     onUploadProgress: onUploadProgress
@@ -1539,6 +1570,17 @@ export const uploadMediaFiles = async (
           })
       : undefined,
   });
+  return {
+    ...result,
+    compression: {
+      savedBytes: saved,
+      results: compressResults.map((r) => ({
+        skipped: r.skipped,
+        originalSize: r.originalSize,
+        compressedSize: r.compressedSize,
+      })),
+    },
+  };
 };
 
 export const deleteMediaFile = async (fileId: string) => {
