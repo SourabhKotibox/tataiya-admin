@@ -28,8 +28,18 @@ type ApiOptions = RequestInit & {
 export const getImageUrl = (filePath) => {
   if (!filePath) return "";
 
-  if (filePath.startsWith("http") || filePath.startsWith("data:") || filePath.startsWith("blob:"))
+  if (filePath.startsWith("http") || filePath.startsWith("data:") || filePath.startsWith("blob:")) {
+    // Old bug: S3 files were saved as https://tataiya.in/uploads/media/...
+    // Rewrite those to the real S3 public URL.
+    const m = filePath.match(/^https?:\/\/(?:www\.)?tataiya\.in\/uploads\/(media\/.+)$/i);
+    if (m) {
+      const s3Base =
+        import.meta.env.VITE_S3_PUBLIC_BASE ||
+        "https://tatiyatv.s3.eu-north-1.amazonaws.com";
+      return `${String(s3Base).replace(/\/$/, "")}/${m[1]}`;
+    }
     return filePath;
+  }
 
   // Static frontend assets (logo, favicon, etc.) — keep as-is
   if (filePath === "/logo.png" || filePath === "/favicon.png" || filePath.startsWith("/assets/"))
@@ -38,7 +48,14 @@ export const getImageUrl = (filePath) => {
   // Local uploads
   if (filePath.startsWith("/uploads/") || filePath.startsWith("uploads/")) {
     const cleanPath = filePath.startsWith("/") ? filePath.slice(1) : filePath;
-    // baseUrl may be https://tataiya.in/api — strip trailing /api for static files
+    // Rewrite /uploads/media/* → S3 (current production storage)
+    if (cleanPath.startsWith("uploads/media/") || cleanPath.startsWith("media/")) {
+      const key = cleanPath.replace(/^uploads\//, "");
+      const s3Base =
+        import.meta.env.VITE_S3_PUBLIC_BASE ||
+        "https://tatiyatv.s3.eu-north-1.amazonaws.com";
+      return `${String(s3Base).replace(/\/$/, "")}/${key}`;
+    }
     const origin = String(baseUrl || "").replace(/\/api\/?$/, "") || "https://tataiya.in";
     return `${origin}/${cleanPath}`;
   }
