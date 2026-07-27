@@ -441,9 +441,11 @@ export default function UserProfilePage() {
   };
 
   const handlePlayDownload = async (item: any) => {
+    const navId = item.contentId || item.id;
     const blobUrl = await getOfflineVideoUrl(item.contentId);
     if (blobUrl) sessionStorage.setItem(`offline_url_${item.contentId}_`, blobUrl);
-    handlePlayItem(item);
+    // Open watch player (movie, skip trailer) so offline blob is used
+    setLocation(`/watch/${navId}/1`);
   };
 
   const handlePlayItem = (item: any) => {

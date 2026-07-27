@@ -3400,12 +3400,10 @@ export const useRequestDownload = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: requestDownload,
-    onSuccess: (res, variables) => {
+    onSuccess: () => {
+      // Pages call cacheDownloadedVideo themselves with progress UI — don't double-fetch
       queryClient.invalidateQueries({ queryKey: ['downloads'] });
       queryClient.invalidateQueries({ queryKey: ['app-profile'] });
-      if (res?.success && res?.data?.downloadUrl) {
-        cacheDownloadedVideo(res.data.downloadUrl, variables.contentId, variables.episodeId);
-      }
     },
   });
 };
@@ -3563,56 +3561,183 @@ export const useGetWatchHistory = (options?: { page?: number; limit?: number }) 
   });
 };
 
-// ─── OFFLINE CACHE (IndexedDB/Caches offline watch) ──────────────────────────
+// ─── OFFLINE CACHE (in-app only — OPFS / Cache API, never system Downloads) ───
 
+const OFFLINE_CACHE_NAME = 'video-offline-cache';
+const OFFLINE_META_KEY = 'offline_downloads_meta';
+const OFFLINE_OPFS_DIR = 'tataiya-offline';
+
+const offlineFileName = (contentId: string, episodeId?: string) =>
+  episodeId ? `episode-${episodeId}.mp4` : `movie-${contentId}.mp4`;
+
+const offlineCacheKey = (contentId: string, episodeId?: string) =>
+  episodeId ? `episode-${episodeId}` : `movie-${contentId}`;
+
+async function getOfflineOpfsDir(): Promise<FileSystemDirectoryHandle | null> {
+  try {
+    if (!navigator.storage?.getDirectory) return null;
+    const root = await navigator.storage.getDirectory();
+    return await root.getDirectoryHandle(OFFLINE_OPFS_DIR, { create: true });
+  } catch {
+    return null;
+  }
+}
+
+function saveOfflineMeta(contentId: string, episodeId: string | undefined, url: string, bytes?: number) {
+  try {
+    const existing = JSON.parse(localStorage.getItem(OFFLINE_META_KEY) || '[]');
+    const metaKey = offlineCacheKey(contentId, episodeId);
+    const next = existing.filter((m: any) => m.key !== metaKey);
+    next.push({
+      key: metaKey,
+      contentId,
+      episodeId,
+      url,
+      bytes: bytes || 0,
+      cachedAt: Date.now(),
+      offline: true,
+    });
+    localStorage.setItem(OFFLINE_META_KEY, JSON.stringify(next));
+  } catch {
+    /* ignore quota on meta */
+  }
+}
+
+/** True if this movie/episode is cached for offline playback inside the app */
+export const hasOfflineVideo = async (contentId: string, episodeId?: string): Promise<boolean> => {
+  const name = offlineFileName(contentId, episodeId);
+  try {
+    const dir = await getOfflineOpfsDir();
+    if (dir) {
+      const handle = await dir.getFileHandle(name);
+      const file = await handle.getFile();
+      if (file.size > 0) return true;
+    }
+  } catch {
+    /* not in OPFS */
+  }
+  if (!('caches' in window)) return false;
+  try {
+    const cache = await caches.open(OFFLINE_CACHE_NAME);
+    return !!(await cache.match(offlineCacheKey(contentId, episodeId)));
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * Download video into private browser storage (OPFS preferred).
+ * Does NOT save to the system Downloads folder — only playable inside Tataiya.
+ */
 export const cacheDownloadedVideo = async (
   url: string,
   contentId: string,
   episodeId?: string,
   onProgress?: (pct: number) => void
 ): Promise<boolean> => {
-  // Store metadata so the downloads list can display it offline
-  try {
-    const key = 'offline_downloads_meta';
-    const existing = JSON.parse(localStorage.getItem(key) || '[]');
-    const metaKey = episodeId ? `episode-${episodeId}` : `movie-${contentId}`;
-    if (!existing.find((m: any) => m.key === metaKey)) {
-      existing.push({ key: metaKey, contentId, episodeId, url, cachedAt: Date.now() });
-      localStorage.setItem(key, JSON.stringify(existing));
-    }
-  } catch {}
+  const cleanUrl = String(url || '').trim();
+  if (!cleanUrl || cleanUrl.startsWith('blob:')) return false;
+  // HLS playlists cannot be offline-cached as a single file
+  if (/\.m3u8(\?|#|$)/i.test(cleanUrl)) {
+    console.warn('Offline cache skipped — HLS playlist cannot be stored as one file');
+    return false;
+  }
 
+  // Ask browser to keep this origin's storage (helps on mobile)
+  try {
+    await navigator.storage?.persist?.();
+  } catch {
+    /* ignore */
+  }
+
+  if (await hasOfflineVideo(contentId, episodeId)) {
+    onProgress?.(100);
+    return true;
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(cleanUrl, { mode: 'cors', credentials: 'omit' });
+  } catch (err) {
+    console.warn('Offline fetch failed (check S3 CORS for GET from https://tataiya.in):', err);
+    return false;
+  }
+  if (!response.ok || !response.body) {
+    console.warn('Offline fetch not ok', response.status);
+    return false;
+  }
+
+  const contentType = response.headers.get('Content-Type') || 'video/mp4';
+  if (/mpegurl|application\/vnd\.apple\.mpegurl/i.test(contentType)) {
+    return false;
+  }
+
+  const contentLength = Number(response.headers.get('Content-Length') || '0');
+  const fileName = offlineFileName(contentId, episodeId);
+
+  // Prefer OPFS — streams to disk, works for large movies without holding RAM
+  try {
+    const dir = await getOfflineOpfsDir();
+    if (dir) {
+      const handle = await dir.getFileHandle(fileName, { create: true });
+      const writable = await handle.createWritable();
+      const reader = response.body.getReader();
+      let received = 0;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        await writable.write(value);
+        received += value.byteLength;
+        if (contentLength > 0) onProgress?.(Math.min(99, Math.round((received / contentLength) * 100)));
+      }
+      await writable.close();
+      saveOfflineMeta(contentId, episodeId, cleanUrl, received || contentLength);
+      onProgress?.(100);
+      return true;
+    }
+  } catch (err) {
+    console.warn('OPFS offline write failed, trying Cache API:', err);
+  }
+
+  // Cache API fallback — stream Response (no giant in-memory chunk array)
   if (!('caches' in window)) return false;
-
-  const cacheKey = episodeId ? `episode-${episodeId}` : `movie-${contentId}`;
   try {
-    const cache = await caches.open('video-offline-cache');
-    const existingEntry = await cache.match(cacheKey);
-    if (existingEntry) { onProgress?.(100); return true; }
+    // Body may already be consumed if OPFS partially read it — always re-fetch for Cache API
+    const res2 = await fetch(cleanUrl, { mode: 'cors', credentials: 'omit' });
+    if (!res2.ok || !res2.body) return false;
 
-    // Stream the file so we can report progress
-    const response = await fetch(url, { mode: 'cors' });
-    if (!response.ok || !response.body) return false;
+    const cache = await caches.open(OFFLINE_CACHE_NAME);
+    const cacheKey = offlineCacheKey(contentId, episodeId);
+    const length2 = Number(res2.headers.get('Content-Length') || contentLength || '0');
+    const type2 = res2.headers.get('Content-Type') || contentType;
 
-    const contentLength = Number(response.headers.get('Content-Length') || '0');
-    const reader = response.body.getReader();
-    const chunks: BlobPart[] = [];
-    let received = 0;
+    const [forCache, forProgress] = res2.body.tee();
+    void (async () => {
+      const reader = forProgress.getReader();
+      let received = 0;
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          received += value.byteLength;
+          if (length2 > 0) onProgress?.(Math.min(99, Math.round((received / length2) * 100)));
+        }
+      } catch {
+        /* progress is best-effort */
+      }
+    })();
+    await cache.put(
+      cacheKey,
+      new Response(forCache, {
+        status: 200,
+        headers: {
+          'Content-Type': type2,
+          ...(length2 ? { 'Content-Length': String(length2) } : {}),
+        },
+      })
+    );
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      chunks.push(value);
-      received += value.length;
-      if (contentLength > 0) onProgress?.(Math.round((received / contentLength) * 100));
-    }
-
-    const blob = new Blob(chunks, {
-      type: response.headers.get('Content-Type') || 'video/mp4',
-    });
-    await cache.put(cacheKey, new Response(blob, {
-      headers: { 'Content-Type': blob.type },
-    }));
+    saveOfflineMeta(contentId, episodeId, cleanUrl, length2);
     onProgress?.(100);
     return true;
   } catch (error) {
@@ -3622,20 +3747,36 @@ export const cacheDownloadedVideo = async (
 };
 
 export const getOfflineVideoUrl = async (contentId: string, episodeId?: string): Promise<string | null> => {
-  // 1. Check sessionStorage (set when user taps play from downloads list)
   const sessionKey = `offline_url_${contentId}_${episodeId || ''}`;
   const sessionUrl = sessionStorage.getItem(sessionKey);
   if (sessionUrl) return sessionUrl;
 
-  // 2. Check browser Cache API
+  // OPFS first
+  try {
+    const dir = await getOfflineOpfsDir();
+    if (dir) {
+      const handle = await dir.getFileHandle(offlineFileName(contentId, episodeId));
+      const file = await handle.getFile();
+      if (file.size > 0) {
+        const blobUrl = URL.createObjectURL(file);
+        sessionStorage.setItem(sessionKey, blobUrl);
+        return blobUrl;
+      }
+    }
+  } catch {
+    /* not in OPFS */
+  }
+
+  // Cache API
   if (!('caches' in window)) return null;
   try {
-    const cache = await caches.open('video-offline-cache');
-    const cacheKey = episodeId ? `episode-${episodeId}` : `movie-${contentId}`;
-    const matched = await cache.match(cacheKey);
+    const cache = await caches.open(OFFLINE_CACHE_NAME);
+    const matched = await cache.match(offlineCacheKey(contentId, episodeId));
     if (matched) {
       const blob = await matched.blob();
-      return URL.createObjectURL(blob);
+      const blobUrl = URL.createObjectURL(blob);
+      sessionStorage.setItem(sessionKey, blobUrl);
+      return blobUrl;
     }
   } catch (error) {
     console.warn('Error reading offline cache:', error);
@@ -3644,22 +3785,31 @@ export const getOfflineVideoUrl = async (contentId: string, episodeId?: string):
 };
 
 export const removeOfflineVideo = async (contentId: string, episodeId?: string) => {
-  // Remove from localStorage metadata
   try {
-    const key = 'offline_downloads_meta';
-    const existing = JSON.parse(localStorage.getItem(key) || '[]');
-    const metaKey = episodeId ? `episode-${episodeId}` : `movie-${contentId}`;
-    localStorage.setItem(key, JSON.stringify(existing.filter((m: any) => m.key !== metaKey)));
-  } catch {}
-  // Remove from sessionStorage
+    const existing = JSON.parse(localStorage.getItem(OFFLINE_META_KEY) || '[]');
+    const metaKey = offlineCacheKey(contentId, episodeId);
+    localStorage.setItem(OFFLINE_META_KEY, JSON.stringify(existing.filter((m: any) => m.key !== metaKey)));
+  } catch {
+    /* ignore */
+  }
   sessionStorage.removeItem(`offline_url_${contentId}_${episodeId || ''}`);
-  // Remove from browser Cache API
+
+  try {
+    const dir = await getOfflineOpfsDir();
+    if (dir) {
+      await dir.removeEntry(offlineFileName(contentId, episodeId));
+    }
+  } catch {
+    /* ignore */
+  }
+
   if (!('caches' in window)) return;
   try {
-    const cache = await caches.open('video-offline-cache');
-    const cacheKey = episodeId ? `episode-${episodeId}` : `movie-${contentId}`;
-    await cache.delete(cacheKey);
-  } catch {}
+    const cache = await caches.open(OFFLINE_CACHE_NAME);
+    await cache.delete(offlineCacheKey(contentId, episodeId));
+  } catch {
+    /* ignore */
+  }
 };
 
 // ── Razorpay Subscription Purchase ──────────────────────────────────────────

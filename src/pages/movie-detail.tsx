@@ -328,7 +328,12 @@ export default function MovieDetailPage() {
                         setDlProgress(0);
                         const ok = await cacheDownloadedVideo(downloadUrl, id!, undefined, setDlProgress);
                         setDlProgress(null);
-                        toast({ title: ok ? "Downloaded — available offline" : "Saved to downloads (online only)" });
+                        toast({
+                          title: ok ? "Downloaded — available offline in Tataiya" : "Saved to your Downloads list",
+                          description: ok
+                            ? "Watch without internet inside the app. Not saved to phone Files/Downloads."
+                            : "Offline cache failed (file too large or S3 CORS). You can still play online from Downloads.",
+                        });
                       } else {
                         toast({ title: "Added to downloads" });
                       }
