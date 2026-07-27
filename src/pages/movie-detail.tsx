@@ -6,7 +6,7 @@ import {
   ChevronLeft, Crown,
   Check, ChevronRight, Loader2, Download
 } from "lucide-react";
-import { useGetWebDetail, getImageUrl, useGetWishlist, useToggleWishlist, useGetAppProfile, useToggleLike, useRequestDownload, useRemoveDownload, useGetDownloads, cacheDownloadedVideo, removeOfflineVideo, useRecordShare } from "@/lib/api-client";
+import { useGetWebDetail, getImageUrl, useGetWishlist, useToggleWishlist, useGetAppProfile, useToggleLike, useRequestDownload, useRemoveDownload, useGetDownloads, cacheDownloadedVideo, removeOfflineVideo, hasOfflineVideo, useRecordShare } from "@/lib/api-client";
 import { useToast } from "@/hooks/use-toast";
 import { PublicHeader, PublicFooter } from "@/pages/streaming-home";
 import SubscriptionPlansModal from "@/components/SubscriptionPlansModal";
@@ -91,9 +91,19 @@ export default function MovieDetailPage() {
   const { data: downloadsData } = useGetDownloads({ limit: 200 });
   const downloadItems: any[] = Array.isArray(downloadsData) ? downloadsData : [];
   const downloadRecord = downloadItems.find((d: any) => d.contentId === id);
-  const isDownloaded = !!downloadRecord;
+  const inDownloadList = !!downloadRecord;
+  const [isOfflineHere, setIsOfflineHere] = useState(false);
   const requestDownloadMutation = useRequestDownload();
   const removeDownloadMutation = useRemoveDownload();
+
+  useEffect(() => {
+    if (!id) return;
+    let cancelled = false;
+    hasOfflineVideo(id).then((ok) => {
+      if (!cancelled) setIsOfflineHere(ok);
+    });
+    return () => { cancelled = true; };
+  }, [id, dlProgress, inDownloadList]);
 
   // Wishlist — real API
   const { data: wishlistData } = useGetWishlist({ limit: 100 });
@@ -302,55 +312,61 @@ export default function MovieDetailPage() {
             {inWatchlist ? "In Watchlist" : "Watchlist"}
           </button>
 
-          {/* Download — only when movie allows downloads */}
-          {(item.downloadAllowed !== false || isDownloaded) && (
+          {/* Download — only when movie allows downloads; Offline = cached on THIS device */}
+          {(item.downloadAllowed !== false || inDownloadList || isOfflineHere) && (
           <button
             onClick={async () => {
               if (!user) { setLocation("/login"); return; }
-              if (item.downloadAllowed === false && !isDownloaded) {
+              if (item.downloadAllowed === false && !inDownloadList && !isOfflineHere) {
                 toast({ title: "Download unavailable", description: "Downloading is disabled for this movie." });
                 return;
               }
-              if (isDownloaded) {
+              // Remove only when this device has the offline file (or user clears list entry)
+              if (isOfflineHere && downloadRecord) {
                 removeDownloadMutation.mutate(
                   { id: downloadRecord.id, contentId: id! },
                   {
                     onSuccess: async () => {
                       await removeOfflineVideo(id!);
-                      toast({ title: "Removed from downloads" });
+                      setIsOfflineHere(false);
+                      toast({ title: "Removed from this device" });
                     },
                     onError: () => toast({ title: "Failed to remove", variant: "destructive" }),
                   }
                 );
-              } else {
-                requestDownloadMutation.mutate(
-                  { contentId: id!, contentType: 'movie' },
-                  {
-                    onSuccess: async (data: any) => {
-                      const downloadUrl = data?.data?.downloadUrl || data?.downloadUrl;
-                      if (downloadUrl) {
-                        setDlProgress(0);
-                        const ok = await cacheDownloadedVideo(downloadUrl, id!, undefined, setDlProgress);
-                        setDlProgress(null);
-                        toast({
-                          title: ok ? "Downloaded — available offline in Tataiya" : "Saved to your Downloads list",
-                          description: ok
-                            ? "Watch without internet inside the app. Not saved to phone Files/Downloads."
-                            : "Offline cache failed (file too large or S3 CORS). You can still play online from Downloads.",
-                        });
-                      } else {
-                        toast({ title: "Added to downloads" });
-                      }
-                    },
-                    onError: (err: any) => toast({ title: "Download failed", description: err?.message || "Please try again.", variant: "destructive" }),
-                  }
-                );
+                return;
               }
+              // Cache on THIS device (even if another device already added it to the list)
+              requestDownloadMutation.mutate(
+                { contentId: id!, contentType: 'movie' },
+                {
+                  onSuccess: async (data: any) => {
+                    const downloadUrl = data?.data?.downloadUrl || data?.downloadUrl;
+                    if (downloadUrl) {
+                      setDlProgress(0);
+                      const ok = await cacheDownloadedVideo(downloadUrl, id!, undefined, setDlProgress);
+                      setDlProgress(null);
+                      setIsOfflineHere(ok);
+                      toast({
+                        title: ok ? "Saved offline on this device" : "Added to Downloads list",
+                        description: ok
+                          ? "Play without internet here in Tataiya. Other phones/browsers need their own download."
+                          : "List synced, but offline file is not on this device yet — check storage/CORS and retry.",
+                      });
+                    } else {
+                      toast({ title: "Added to downloads" });
+                    }
+                  },
+                  onError: (err: any) => toast({ title: "Download failed", description: err?.message || "Please try again.", variant: "destructive" }),
+                }
+              );
             }}
             disabled={requestDownloadMutation.isPending || removeDownloadMutation.isPending || dlProgress !== null}
             className={`flex items-center gap-2 px-5 py-3.5 rounded-xl text-sm font-bold border-2 transition-all active:scale-95 disabled:opacity-70 ${
-              isDownloaded
+              isOfflineHere
                 ? "bg-emerald-500/20 border-emerald-500 text-emerald-400"
+                : inDownloadList
+                ? "bg-amber-400/15 border-amber-400/50 text-amber-300"
                 : "bg-white/8 border-white/20 text-foreground hover:bg-white/12 hover:border-white/35"
             }`}
           >
@@ -360,12 +376,18 @@ export default function MovieDetailPage() {
                 : <Loader2 className="w-4 h-4 animate-spin" />
             ) : removeDownloadMutation.isPending ? (
               <Loader2 className="w-4 h-4 animate-spin" />
-            ) : isDownloaded ? (
+            ) : isOfflineHere ? (
               <Check className="w-4 h-4" />
             ) : (
               <Download className="w-4 h-4" />
             )}
-            {dlProgress !== null ? "Downloading..." : isDownloaded ? "Downloaded" : "Download"}
+            {dlProgress !== null
+              ? "Downloading..."
+              : isOfflineHere
+              ? "Offline here"
+              : inDownloadList
+              ? "Save offline here"
+              : "Download"}
           </button>
           )}
 

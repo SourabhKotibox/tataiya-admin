@@ -12,7 +12,7 @@ import { useTheme } from "next-themes";
 import {
   getImageUrl, updateAppProfile, uploadProfileAvatar, updatePassword, deleteAccount,
   useGetWishlist, useToggleWishlist,
-  useGetDownloads, useRemoveDownload, getOfflineVideoUrl, removeOfflineVideo,
+  useGetDownloads, useRemoveDownload, getOfflineVideoUrl, removeOfflineVideo, hasOfflineVideo,
   useGetAppProfile, useGetWatchHistory,
 } from "@/lib/api-client";
 import { PublicFooter } from "@/pages/streaming-home";
@@ -337,20 +337,26 @@ export default function UserProfilePage() {
   }, [refetchWishlist, refetchDownloads]);
 
   useEffect(() => {
-    if (downloadItems.length === 0) return;
+    if (downloadItems.length === 0) {
+      setOfflineCached({});
+      return;
+    }
+    let cancelled = false;
+    const ids = downloadItems.map((d: any) => d.id).join(",");
     const checkCache = async () => {
-      if (!('caches' in window)) return;
-      const cache = await caches.open('video-offline-cache');
       const results: Record<string, boolean> = {};
-      for (const item of downloadItems) {
-        const key = `movie-${item.contentId}`;
-        const match = await cache.match(key);
-        results[item.id] = !!match;
-      }
-      setOfflineCached(results);
+      await Promise.all(
+        downloadItems.map(async (item: any) => {
+          const cid = item.contentId || item.id;
+          results[item.id] = await hasOfflineVideo(cid);
+        })
+      );
+      if (!cancelled) setOfflineCached(results);
     };
     checkCache();
-  }, [downloadItems.length]);
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [downloadItems.map((d: any) => `${d.id}:${d.contentId}`).join("|")]);
 
   const handleSignOut = () => {
     localStorage.removeItem("appUser");
@@ -700,7 +706,12 @@ export default function UserProfilePage() {
               {activeTab === "downloads" && (
                 <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
                   <div className="flex items-center justify-between border-b border-border/40 pb-4 mb-6">
-                    <h2 className="text-xl font-black text-foreground">My Downloads</h2>
+                    <div>
+                      <h2 className="text-xl font-black text-foreground">My Downloads</h2>
+                      <p className="text-muted-foreground text-xs mt-1">
+                        List syncs across devices. Offline playback only works on the device where you saved the file.
+                      </p>
+                    </div>
                   </div>
 
                   {downloadsLoading ? (
@@ -715,9 +726,13 @@ export default function UserProfilePage() {
                       {downloadItems.map((item: any) => (
                         <div key={item.id} onClick={() => handlePlayDownload(item)} className="group relative rounded-xl overflow-hidden aspect-[2/3] cursor-pointer">
                           <img src={getImageUrl(item.poster || item.thumbnail || "")} alt={item.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-                          {offlineCached[item.id] && (
+                          {offlineCached[item.id] ? (
                             <div className="absolute top-2 left-2 flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-600/90 text-[9px] font-bold text-white z-20">
-                              <Wifi className="w-2.5 h-2.5" /> Offline
+                              Offline here
+                            </div>
+                          ) : (
+                            <div className="absolute top-2 left-2 flex items-center gap-1 px-2 py-0.5 rounded-full bg-black/70 border border-amber-400/40 text-[9px] font-bold text-amber-300 z-20">
+                              Needs network
                             </div>
                           )}
                           <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent" />

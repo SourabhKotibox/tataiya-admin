@@ -9,7 +9,7 @@ import {
 import { PublicHeader, PublicFooter } from "./streaming-home";
 import { WebsiteReviews } from "@/components/WebsiteReviews";
 import Hls from "hls.js";
-import { useGetWebSubscriptionPlans, useCreateSubscription, useGetWebDetail, getImageUrl, useGetPublicAds, useGetAppProfile, useToggleLike, useRequestDownload, useRemoveDownload, useGetWishlist, useToggleWishlist, useSaveWatchProgress, useGetWatchProgress, getOfflineVideoUrl, useGetDownloads, cacheDownloadedVideo, removeOfflineVideo, useRecordView, useRecordShare } from "@/lib/api-client";
+import { useGetWebSubscriptionPlans, useCreateSubscription, useGetWebDetail, getImageUrl, useGetPublicAds, useGetAppProfile, useToggleLike, useRequestDownload, useRemoveDownload, useGetWishlist, useToggleWishlist, useSaveWatchProgress, useGetWatchProgress, getOfflineVideoUrl, useGetDownloads, cacheDownloadedVideo, removeOfflineVideo, hasOfflineVideo, useRecordView, useRecordShare } from "@/lib/api-client";
 import { PlayerPrerollAd } from "@/components/AdComponents";
 import { useToast } from "@/hooks/use-toast";
 import { LandscapeCard } from "@/components/ContentCard";
@@ -1157,49 +1157,67 @@ export default function WatchPage() {
 
   const toggleLikeMutation = useToggleLike();
 
-  // Downloads — use web endpoint as single source of truth (cross-device consistent)
+  // Downloads — server list syncs; offline file is per-device
   const { data: downloadsData } = useGetDownloads({ limit: 200 });
   const downloadItems: any[] = Array.isArray(downloadsData) ? downloadsData : [];
   const downloadRecord = downloadItems.find((d: any) => d.contentId === contentId);
-  const isDownloaded = !!downloadRecord;
+  const inDownloadList = !!downloadRecord;
+  const [isOfflineHere, setIsOfflineHere] = useState(false);
   const requestDownloadMutation = useRequestDownload();
   const removeDownloadMutation = useRemoveDownload();
   const [dlProgress, setDlProgress] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!contentId) return;
+    let cancelled = false;
+    hasOfflineVideo(contentId).then((ok) => {
+      if (!cancelled) setIsOfflineHere(ok);
+    });
+    return () => { cancelled = true; };
+  }, [contentId, dlProgress, inDownloadList]);
 
   const handleDownloadToggle = useCallback(() => {
     if (!user) { navigate("/login"); return; }
 
     const record = downloadItems.find((d: any) => d.contentId === contentId);
-    if (record) {
+    if (isOfflineHere && record) {
       removeDownloadMutation.mutate(
         { id: record.id, contentId },
-        { onSuccess: async () => { await removeOfflineVideo(contentId); toast({ title: "Removed from downloads" }); } }
-      );
-    } else {
-      requestDownloadMutation.mutate(
-        { contentId, contentType: 'movie' },
         {
-          onSuccess: async (data: any) => {
-            const dlUrl = data?.data?.downloadUrl || data?.downloadUrl;
-            if (dlUrl) {
-              setDlProgress(0);
-              const ok = await cacheDownloadedVideo(dlUrl, contentId, undefined, setDlProgress);
-              setDlProgress(null);
-              toast({
-                title: ok ? "Downloaded — available offline in Tataiya" : "Saved to your Downloads list",
-                description: ok
-                  ? "Watch without internet inside the app. Not saved to phone Files/Downloads."
-                  : "Offline cache failed (file too large or S3 CORS). You can still play online from Downloads.",
-              });
-            } else {
-              toast({ title: "Added to downloads" });
-            }
+          onSuccess: async () => {
+            await removeOfflineVideo(contentId);
+            setIsOfflineHere(false);
+            toast({ title: "Removed from this device" });
           },
-          onError: (err: any) => toast({ title: "Download failed", description: err?.message || "Please try again.", variant: "destructive" }),
         }
       );
+      return;
     }
-  }, [user, navigate, downloadItems, contentId, removeDownloadMutation, requestDownloadMutation, toast]);
+
+    requestDownloadMutation.mutate(
+      { contentId, contentType: 'movie' },
+      {
+        onSuccess: async (data: any) => {
+          const dlUrl = data?.data?.downloadUrl || data?.downloadUrl;
+          if (dlUrl) {
+            setDlProgress(0);
+            const ok = await cacheDownloadedVideo(dlUrl, contentId, undefined, setDlProgress);
+            setDlProgress(null);
+            setIsOfflineHere(ok);
+            toast({
+              title: ok ? "Saved offline on this device" : "Added to Downloads list",
+              description: ok
+                ? "Play without internet here. Other devices need their own download."
+                : "List synced, but offline file is not on this device yet.",
+            });
+          } else {
+            toast({ title: "Added to downloads" });
+          }
+        },
+        onError: (err: any) => toast({ title: "Download failed", description: err?.message || "Please try again.", variant: "destructive" }),
+      }
+    );
+  }, [user, navigate, downloadItems, contentId, isOfflineHere, removeDownloadMutation, requestDownloadMutation, toast]);
 
   const getPlanLevel = (plan?: string) => {
     switch (plan?.toLowerCase()) {
@@ -1502,21 +1520,29 @@ export default function WatchPage() {
                 </button>
 
                 {/* Download — hide when movie disables downloads */}
-                {(showData?.downloadAllowed !== false || isDownloaded) && (
+                {(showData?.downloadAllowed !== false || inDownloadList || isOfflineHere) && (
                 <button
                   onClick={() => handleDownloadToggle()}
-                  disabled={requestDownloadMutation.isPending || removeDownloadMutation.isPending}
-                  className="flex flex-col items-center gap-1 px-4 py-2 text-foreground/80 hover:text-foreground transition-all active:scale-95 disabled:opacity-70"
+                  disabled={requestDownloadMutation.isPending || removeDownloadMutation.isPending || dlProgress !== null}
+                  className={`flex flex-col items-center gap-1 px-4 py-2 transition-all active:scale-95 disabled:opacity-70 ${
+                    isOfflineHere ? "text-emerald-400" : inDownloadList ? "text-amber-300" : "text-foreground/80 hover:text-foreground"
+                  }`}
                 >
-                  {requestDownloadMutation.isPending || removeDownloadMutation.isPending ? (
+                  {requestDownloadMutation.isPending || removeDownloadMutation.isPending || dlProgress !== null ? (
                     <Loader2 className="w-5 h-5 animate-spin" />
-                  ) : isDownloaded ? (
+                  ) : isOfflineHere ? (
                     <Check className="w-5 h-5 text-emerald-400" strokeWidth={3} />
                   ) : (
                     <Download className="w-5 h-5" />
                   )}
                   <span className="text-[11px] font-semibold mt-0.5">
-                    {isDownloaded ? "Downloaded" : "Download"}
+                    {dlProgress !== null
+                      ? `${dlProgress}%`
+                      : isOfflineHere
+                      ? "Offline here"
+                      : inDownloadList
+                      ? "Save offline"
+                      : "Download"}
                   </span>
                 </button>
                 )}
