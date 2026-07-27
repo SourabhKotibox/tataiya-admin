@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { useParams, useLocation } from "wouter";
 import {
   ChevronLeft, ChevronRight, Heart, Star, Share2, Lock, Unlock,
@@ -184,12 +185,12 @@ function VideoPlayer({
   const scheduleHide = useCallback(() => {
     clearTimeout(hideTimerRef.current);
     if (settingsOpenRef.current || uiLockedRef.current) return;
-    if (playing) {
-      hideTimerRef.current = setTimeout(() => {
-        if (settingsOpenRef.current || uiLockedRef.current) return;
-        setControlsVisible(false);
-      }, 8000);
-    }
+    // Keep controls visible at least 5 seconds after any reveal/tap
+    hideTimerRef.current = setTimeout(() => {
+      if (settingsOpenRef.current || uiLockedRef.current) return;
+      if (!playing) return; // stay visible while paused
+      setControlsVisible(false);
+    }, 5000);
   }, [playing]);
 
   const revealControls = useCallback(() => {
@@ -233,14 +234,13 @@ function VideoPlayer({
     if (!uiLocked) revealControls();
   }, [revealControls, uiLocked]);
 
-  /** Single tap = show/hide controls · Double tap = play/pause */
+  /** Single tap = always show controls for ≥5s · Double tap = play/pause */
   const handleScreenTap = useCallback((e?: React.SyntheticEvent) => {
     e?.stopPropagation?.();
     if (uiLocked) {
-      // When locked, single tap briefly shows unlock affordance only
       setControlsVisible(true);
       clearTimeout(hideTimerRef.current);
-      hideTimerRef.current = setTimeout(() => setControlsVisible(false), 1800);
+      hideTimerRef.current = setTimeout(() => setControlsVisible(false), 5000);
       return;
     }
     const now = Date.now();
@@ -252,11 +252,8 @@ function VideoPlayer({
     }
     lastTapRef.current = now;
     tapTimerRef.current = setTimeout(() => {
-      setControlsVisible((v) => {
-        const next = !v;
-        if (next) scheduleHide();
-        return next;
-      });
+      setControlsVisible(true);
+      scheduleHide();
     }, 280);
   }, [uiLocked, togglePlay, scheduleHide]);
 
@@ -404,7 +401,7 @@ function VideoPlayer({
     (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) ||
       (navigator.maxTouchPoints > 1 && /Mac/.test(navigator.userAgent)));
 
-  /* fullscreen — mobile uses CSS FS (reliable); desktop prefers native API */
+  /* fullscreen — prefer CSS FS (works on mobile); try native when available */
   const toggleFullscreen = useCallback(() => {
     const c = containerRef.current as any;
     const v = videoRef.current;
@@ -417,9 +414,9 @@ function VideoPlayer({
 
     const doc = document as any;
     const nativeFull = isNativeFullscreen();
-    const entering = !nativeFull && !cssFullscreen;
 
-    if (!entering) {
+    // Exit
+    if (nativeFull || cssFullscreen) {
       if (nativeFull) {
         const exit = doc.exitFullscreen || doc.webkitExitFullscreen || doc.mozCancelFullScreen || doc.msExitFullscreen;
         try { exit?.call(doc); } catch { /* ignore */ }
@@ -427,14 +424,22 @@ function VideoPlayer({
       setCssFullscreen(false);
       setIsFullscreen(false);
       try { (screen.orientation as any)?.unlock?.(); } catch { /* ignore */ }
+      revealControls();
       return;
     }
 
-    // Mobile / tablets: CSS fullscreen always works with our custom controls
-    if (isMobileBrowser()) {
+    // Enter — CSS first on touch devices (reliable); native on desktop
+    const preferCss = isMobileBrowser() || !c.requestFullscreen;
+
+    const enterCss = () => {
       setCssFullscreen(true);
       setIsFullscreen(true);
+      revealControls();
       try { (screen.orientation as any)?.lock?.("landscape").catch(() => {}); } catch { /* ignore */ }
+    };
+
+    if (preferCss) {
+      enterCss();
       return;
     }
 
@@ -443,17 +448,14 @@ function VideoPlayer({
       Promise.resolve(req.call(c))
         .then(() => {
           setIsFullscreen(true);
+          revealControls();
           try { (screen.orientation as any)?.lock?.("landscape").catch(() => {}); } catch { /* ignore */ }
         })
-        .catch(() => {
-          setCssFullscreen(true);
-          setIsFullscreen(true);
-        });
+        .catch(() => enterCss());
     } else {
-      setCssFullscreen(true);
-      setIsFullscreen(true);
+      enterCss();
     }
-  }, [cssFullscreen]);
+  }, [cssFullscreen, revealControls]);
 
   /* video element events */
   useEffect(() => {
@@ -869,16 +871,28 @@ function VideoPlayer({
     return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
   };
 
-  return (
+  const playerShell = (
     <div
       ref={containerRef}
       className={`relative bg-black overflow-hidden w-full h-full select-none ${
-        cssFullscreen ? "fixed inset-0 z-[400] w-screen h-[100dvh] rounded-none" : ""
+        cssFullscreen ? "rounded-none" : ""
       }`}
-      style={{ touchAction: "manipulation" }}
+      style={
+        cssFullscreen
+          ? {
+              position: "fixed",
+              inset: 0,
+              width: "100vw",
+              height: "100dvh",
+              zIndex: 99999,
+              touchAction: "manipulation",
+              background: "#000",
+            }
+          : { touchAction: "manipulation" }
+      }
       onMouseMove={() => { if (!uiLocked) revealControls(); }}
       onMouseLeave={() => {
-        if (playing && !uiLocked && !settingsOpen) {
+        if (playing && !uiLocked && !settingsOpen && !cssFullscreen) {
           clearTimeout(hideTimerRef.current);
           setControlsVisible(false);
         }
@@ -919,14 +933,12 @@ function VideoPlayer({
         if (ignoreGestureRef.current) {
           ignoreGestureRef.current = false;
           onGestureEnd();
-          // Do NOT set touchHandledRef — let the button's click fire normally
           return;
         }
         const moved = onGestureEnd();
         if (moved) {
-          touchHandledRef.current = true; // suppress click after volume/brightness swipe
+          touchHandledRef.current = true;
         } else {
-          // Tap on video surface (not a control): toggle controls / play
           touchHandledRef.current = true;
           handleScreenTap();
         }
@@ -1377,9 +1389,14 @@ function VideoPlayer({
 
             <button
               type="button"
-              onClick={toggleFullscreen}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                toggleFullscreen();
+              }}
+              onPointerDown={(e) => e.stopPropagation()}
               className="text-white hover:text-amber-400 transition-colors p-2.5 touch-manipulation"
-              aria-label="Fullscreen"
+              aria-label={isFullscreen || cssFullscreen ? "Exit fullscreen" : "Fullscreen"}
             >
               <FsIcon className="w-5 h-5 sm:w-4 sm:h-4" />
             </button>
@@ -1406,6 +1423,11 @@ function VideoPlayer({
       `}</style>
     </div>
   );
+
+  if (cssFullscreen && typeof document !== "undefined") {
+    return createPortal(playerShell, document.body);
+  }
+  return playerShell;
 }
 
 /* ─────────────────────────────────────────────────────────────
