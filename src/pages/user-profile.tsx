@@ -249,6 +249,11 @@ export default function UserProfilePage() {
   });
   const [activeTab, setActiveTab] = useState<ProfileTab>("overview");
   const [toast, setToast] = useState("");
+  const showReviews = settings.showReviews !== false;
+
+  useEffect(() => {
+    if (!showReviews && activeTab === "feedback") setActiveTab("overview");
+  }, [showReviews, activeTab]);
 
   const { data: profileData, refetch: refetchProfile } = useGetAppProfile();
 
@@ -480,7 +485,6 @@ export default function UserProfilePage() {
   }
 
   const isSubscribed = user.subscriptionStatus === "active" && user.subscriptionPlan !== "free";
-  const showReviews = settings.showReviews !== false;
 
   const TABS: { id: ProfileTab; label: string; icon: React.ReactNode; count?: number }[] = [
     { id: "overview", label: "Overview", icon: <User className="w-4 h-4" /> },
@@ -490,10 +494,6 @@ export default function UserProfilePage() {
     { id: "security", label: "Security", icon: <Shield className="w-4 h-4" /> },
     ...(showReviews ? [{ id: "feedback" as const, label: "Reviews", icon: <Star className="w-4 h-4" /> }] : []),
   ];
-
-  useEffect(() => {
-    if (!showReviews && activeTab === "feedback") setActiveTab("overview");
-  }, [showReviews, activeTab]);
 
   return (
     <div className="dark min-h-screen bg-[#030306] text-white font-sans selection:bg-amber-400/30 pb-24 lg:pb-0 overflow-x-hidden">
