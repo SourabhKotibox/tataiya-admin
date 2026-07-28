@@ -428,6 +428,8 @@ export default function UserProfilePage() {
       await deleteAccount();
       localStorage.removeItem("appUser");
       localStorage.removeItem("appAccessToken");
+      localStorage.removeItem("refreshToken");
+      localStorage.removeItem("ott_active_profile");
       setLocation("/");
     } catch {
       setDeleting(false); setDeleteConfirm(false);

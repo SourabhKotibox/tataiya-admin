@@ -240,7 +240,8 @@ export const logout = async () => {
 };
 
 export const deleteAccount = async () => {
-  return api("/api/auth/account", {
+  // End-user (app + web) account deletion — requires appAccessToken
+  return api("/api/app/account", {
     method: "DELETE",
   });
 };
