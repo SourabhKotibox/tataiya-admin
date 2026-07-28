@@ -50,13 +50,13 @@ function AvatarCircle({ name, avatarUrl, size = "lg" }: { name?: string; avatarU
   };
   if (avatarUrl) {
     return (
-      <div className={`${sizeMap[size]} rounded-full overflow-hidden flex-shrink-0 shadow-xl shadow-primary/40 bg-zinc-900 border border-white/10`}>
+      <div className={`${sizeMap[size]} rounded-full overflow-hidden flex-shrink-0 shadow-xl shadow-amber-900/40 bg-zinc-900 border border-white/10`}>
         <img src={getImageUrl(avatarUrl)} alt={name || "Avatar"} className="w-full h-full object-cover" />
       </div>
     );
   }
   return (
-    <div className={`${sizeMap[size]} rounded-full bg-gradient-to-br from-primary via-primary/80 to-primary/60 flex items-center justify-center font-black text-white flex-shrink-0 shadow-xl shadow-primary/40`}>
+    <div className={`${sizeMap[size]} rounded-full bg-gradient-to-br from-amber-400 via-amber-500 to-amber-700 flex items-center justify-center font-black text-black flex-shrink-0 shadow-xl shadow-amber-900/40`}>
       {name ? name[0].toUpperCase() : <User className="w-1/2 h-1/2" />}
     </div>
   );
@@ -487,32 +487,41 @@ export default function UserProfilePage() {
     { id: "downloads", label: "Downloads", icon: <Download className="w-4 h-4" />, count: downloadItems.length },
     { id: "settings", label: "Edit Profile", icon: <Settings className="w-4 h-4" /> },
     { id: "security", label: "Security", icon: <Shield className="w-4 h-4" /> },
-    { id: "feedback", label: "Rate Us", icon: <Star className="w-4 h-4" /> },
+    { id: "feedback", label: "Reviews", icon: <Star className="w-4 h-4" /> },
   ];
 
   return (
-    <div className="dark min-h-screen bg-background text-foreground font-sans selection:bg-primary/30 pb-20 lg:pb-0">
-      
+    <div className="dark min-h-screen bg-[#030306] text-white font-sans selection:bg-amber-400/30 pb-24 lg:pb-0 overflow-x-hidden">
+      {/* Soft atmosphere */}
+      <div
+        className="pointer-events-none fixed inset-x-0 top-0 h-[420px] opacity-90 z-0"
+        style={{
+          background:
+            "radial-gradient(ellipse 70% 55% at 50% -15%, rgba(255,184,0,0.16), transparent 55%), linear-gradient(180deg, #12100a 0%, #030306 72%)",
+        }}
+      />
+
       {/* ── Top bar ── */}
-      <header className="sticky top-0 z-50 bg-background/80 backdrop-blur-2xl border-b border-border/40">
-        <div className="w-full mx-auto px-4 sm:px-8 lg:px-12 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Link href="/" className="flex items-center justify-center w-8 h-8 rounded-full bg-muted hover:bg-muted/80 transition-colors group">
-              <ArrowLeft className="w-4 h-4 text-foreground group-hover:-translate-x-0.5 transition-transform" />
+      <header className="sticky top-0 z-50 bg-[#030306]/80 backdrop-blur-xl border-b border-white/5">
+        <div className="w-full mx-auto px-4 sm:px-8 lg:px-12 h-14 sm:h-16 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <Link href="/" className="flex items-center justify-center w-9 h-9 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 transition-colors group shrink-0">
+              <ArrowLeft className="w-4 h-4 text-white/80 group-hover:-translate-x-0.5 transition-transform" />
             </Link>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 min-w-0">
               {getLogoUrl() ? (
                 <img src={getLogoUrl()} alt={settings.platformName} className="h-7 w-auto object-contain" />
               ) : (
-                <h1 className="text-foreground font-black text-lg tracking-tight">{settings.platformName || "StreamIT"}</h1>
+                <h1 className="text-white font-black text-lg tracking-tight truncate">{settings.platformName || "Tataiya"}</h1>
               )}
+              <span className="hidden sm:inline text-white/30 text-xs font-semibold">/ Account</span>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <button onClick={() => { localStorage.removeItem("ott_active_profile"); setActiveProfile(null); }} className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-semibold text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-all">
-              <UserCircle2 className="w-4 h-4" /> <span className="hidden sm:inline">Switch Profile</span>
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            <button onClick={() => { localStorage.removeItem("ott_active_profile"); setActiveProfile(null); }} className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold text-white/60 hover:text-white hover:bg-white/5 transition-all">
+              <UserCircle2 className="w-4 h-4" /> <span className="hidden sm:inline">Switch</span>
             </button>
-            <button onClick={handleSignOut} className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-semibold text-muted-foreground hover:text-foreground hover:bg-red-500/10 hover:text-red-500 transition-all">
+            <button onClick={handleSignOut} className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold text-white/60 hover:text-red-400 hover:bg-red-500/10 transition-all">
               <LogOut className="w-4 h-4" /> <span className="hidden sm:inline">Sign Out</span>
             </button>
           </div>
@@ -520,69 +529,67 @@ export default function UserProfilePage() {
       </header>
 
       {/* ── Main Layout ── */}
-      <main className="w-full mx-auto px-4 sm:px-8 lg:px-12 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12">
+      <main className="relative z-10 w-full mx-auto px-4 sm:px-8 lg:px-12 py-6 sm:py-8">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8">
           
           {/* Left Column */}
-          <div className="lg:col-span-4 space-y-6">
+          <div className="lg:col-span-4 space-y-4 sm:space-y-5">
             
             {/* Profile Card */}
-            <div className="relative rounded-3xl overflow-hidden shadow-xl shadow-primary/5 border border-border/40 bg-card">
-              <div className="p-6 flex flex-col items-center text-center">
+            <div className="relative rounded-3xl overflow-hidden border border-white/10 bg-gradient-to-b from-[#14121a] to-[#0c0c12] shadow-[0_24px_80px_-40px_rgba(255,184,0,0.35)]">
+              <div className="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-amber-400/15 to-transparent pointer-events-none" />
+              <div className="relative p-6 flex flex-col items-center text-center">
                 <div className="relative mb-4">
                   <AvatarCircle name={user.name} avatarUrl={user.avatar} size="xl" />
-                  <button onClick={() => avatarInputRef.current?.click()} disabled={avatarUploading} className="absolute bottom-0 right-0 w-8 h-8 rounded-full bg-primary flex items-center justify-center text-white border-4 border-card hover:bg-primary/90 transition-all shadow-lg">
+                  <button onClick={() => avatarInputRef.current?.click()} disabled={avatarUploading} className="absolute bottom-0 right-0 w-8 h-8 rounded-full bg-amber-400 flex items-center justify-center text-black border-4 border-[#0c0c12] hover:bg-amber-300 transition-all shadow-lg">
                     {avatarUploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Camera className="w-3.5 h-3.5" />}
                   </button>
                   <input ref={avatarInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarFileChange} />
                 </div>
-                <h2 className="text-xl font-black tracking-tight">{user.name}</h2>
-                <p className="text-muted-foreground text-sm font-medium mt-0.5">{user.email || "Member"}</p>
+                <h2 className="text-xl font-black tracking-tight text-white">{user.name}</h2>
+                <p className="text-white/50 text-sm font-medium mt-1 truncate max-w-full">{user.email || "Member"}</p>
                 
                 <div className="flex flex-wrap items-center justify-center gap-2 mt-4">
                   {isSubscribed ? (
-                    <span className="flex items-center gap-1.5 px-3 py-1 bg-amber-500/10 border border-amber-500/20 text-amber-500 rounded-lg text-[11px] font-black uppercase tracking-wider">
-                      <Crown className="w-3.5 h-3.5" /> {user.subscriptionPlan} VIP
+                    <span className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-400/15 border border-amber-400/30 text-amber-300 rounded-full text-[11px] font-black uppercase tracking-wider">
+                      <Crown className="w-3.5 h-3.5" /> {user.subscriptionPlan}
                     </span>
                   ) : (
-                    <span className="flex items-center gap-1.5 px-3 py-1 bg-muted border border-border text-muted-foreground rounded-lg text-[11px] font-black uppercase tracking-wider">
-                      Free Member
+                    <span className="flex items-center gap-1.5 px-3 py-1.5 bg-white/5 border border-white/10 text-white/60 rounded-full text-[11px] font-black uppercase tracking-wider">
+                      Free plan
                     </span>
                   )}
-                  <span className="flex items-center gap-1.5 px-3 py-1 bg-primary/10 border border-primary/20 text-primary rounded-lg text-[11px] font-black uppercase tracking-wider">
+                  <span className="flex items-center gap-1.5 px-3 py-1.5 bg-white/5 border border-white/10 text-white/70 rounded-full text-[11px] font-bold">
                     {activeProfile.name}
                   </span>
                 </div>
 
-                {/* Quick Action Buttons */}
-                <div className="grid grid-cols-2 gap-2 mt-6 w-full">
-                  <Link href="/membership" className="flex items-center justify-center gap-2 py-2.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 text-xs font-bold transition-colors">
-                    <Crown className="w-4 h-4" /> VIP Plans
-                  </Link>
-                </div>
+                <Link href="/membership" className="mt-5 w-full flex items-center justify-center gap-2 py-3 rounded-2xl bg-amber-400 hover:bg-amber-300 text-black text-sm font-bold transition-colors shadow-lg shadow-amber-900/25">
+                  <Crown className="w-4 h-4" /> {isSubscribed ? "Manage plan" : "Upgrade to VIP"}
+                </Link>
               </div>
             </div>
 
             {/* Navigation Tabs (Vertical on Desktop) */}
-            <div className="bg-card/50 border border-border/40 rounded-3xl p-2 hidden lg:block">
+            <div className="bg-[#0c0c12]/90 border border-white/8 rounded-3xl p-2 hidden lg:block">
               {TABS.map((t) => (
                 <button
                   key={t.id}
                   onClick={() => setActiveTab(t.id)}
-                  className={`w-full flex items-center justify-between p-3.5 rounded-2xl transition-all duration-200 mb-1 last:mb-0 ${
+                  className={`w-full flex items-center justify-between p-3 rounded-2xl transition-all duration-200 mb-0.5 last:mb-0 ${
                     activeTab === t.id
-                      ? "bg-background text-foreground shadow-sm border border-border/50"
-                      : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+                      ? "bg-amber-400/12 text-white border border-amber-400/25"
+                      : "text-white/55 hover:bg-white/5 hover:text-white border border-transparent"
                   }`}
                 >
                   <div className="flex items-center gap-3">
-                    <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${activeTab === t.id ? "bg-primary/10 text-primary" : "bg-transparent"}`}>
+                    <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${activeTab === t.id ? "bg-amber-400 text-black" : "bg-white/5"}`}>
                       {t.icon}
                     </div>
                     <span className="font-bold text-sm">{t.label}</span>
                   </div>
                   {t.count ? (
-                    <span className={`min-w-[20px] h-[20px] flex items-center justify-center text-[10px] font-black rounded-full px-1.5 ${activeTab === t.id ? "bg-primary text-white" : "bg-muted-foreground/20 text-muted-foreground"}`}>
+                    <span className={`min-w-[20px] h-[20px] flex items-center justify-center text-[10px] font-black rounded-full px-1.5 ${activeTab === t.id ? "bg-amber-400 text-black" : "bg-white/10 text-white/60"}`}>
                       {t.count}
                     </span>
                   ) : null}
@@ -591,16 +598,23 @@ export default function UserProfilePage() {
             </div>
 
             {/* Navigation Tabs (Horizontal Scroll on Mobile) */}
-            <div className="lg:hidden flex items-center gap-2 overflow-x-auto pb-2" style={{ scrollbarWidth: "none" }}>
+            <div className="lg:hidden flex items-center gap-2 overflow-x-auto pb-1 -mx-1 px-1" style={{ scrollbarWidth: "none" }}>
               {TABS.map((t) => (
                 <button
                   key={t.id}
                   onClick={() => setActiveTab(t.id)}
-                  className={`flex items-center gap-2 px-4 py-2.5 rounded-xl whitespace-nowrap transition-all ${
-                    activeTab === t.id ? "bg-primary text-white shadow-md shadow-primary/20" : "bg-card border border-border/40 text-muted-foreground"
+                  className={`flex items-center gap-2 px-3.5 py-2.5 rounded-full whitespace-nowrap transition-all min-h-[42px] ${
+                    activeTab === t.id
+                      ? "bg-amber-400 text-black shadow-md shadow-amber-900/30"
+                      : "bg-white/5 border border-white/10 text-white/65"
                   }`}
                 >
                   {t.icon} <span className="text-xs font-bold">{t.label}</span>
+                  {typeof t.count === "number" && t.count > 0 && (
+                    <span className={`text-[10px] font-black px-1.5 py-0.5 rounded-full ${activeTab === t.id ? "bg-black/15" : "bg-white/10"}`}>
+                      {t.count}
+                    </span>
+                  )}
                 </button>
               ))}
             </div>
@@ -609,57 +623,69 @@ export default function UserProfilePage() {
 
           {/* Right Column (Content Area) */}
           <div className="lg:col-span-8">
-            <div className="bg-card/30 border border-border/30 rounded-3xl p-6 md:p-8 min-h-[600px]">
+            <div className="bg-[#0c0c12]/70 border border-white/8 rounded-3xl p-5 sm:p-7 md:p-8 min-h-[560px]">
 
               {/* OVERVIEW TAB */}
               {activeTab === "overview" && (
                 <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                  <div className="flex items-center justify-between border-b border-border/40 pb-4">
-                    <h2 className="text-xl font-black text-foreground">Welcome back, {user.name.split(" ")[0]}!</h2>
+                  <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2 border-b border-white/8 pb-4">
+                    <div>
+                      <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight">Welcome back, {user.name.split(" ")[0]}</h2>
+                      <p className="text-white/45 text-sm mt-1">Your watch activity and library at a glance.</p>
+                    </div>
                   </div>
 
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
                     {[
-                      { icon: <Film className="text-rose-500" />, label: "History", value: continueWatching.length },
-                      { icon: <Bookmark className="text-violet-500" />, label: "Wishlist", value: wishlistItems.length },
-                      { icon: <Download className="text-emerald-500" />, label: "Downloads", value: downloadItems.length },
-                      { icon: <Crown className="text-amber-500" />, label: "Plan", value: isSubscribed ? "VIP" : "Free" },
+                      { icon: <Film className="w-4 h-4 text-rose-400" />, label: "History", value: continueWatching.length, onClick: undefined },
+                      { icon: <Bookmark className="w-4 h-4 text-violet-400" />, label: "Wishlist", value: wishlistItems.length, onClick: () => setActiveTab("watchlist") },
+                      { icon: <Download className="w-4 h-4 text-emerald-400" />, label: "Downloads", value: downloadItems.length, onClick: () => setActiveTab("downloads") },
+                      { icon: <Crown className="w-4 h-4 text-amber-400" />, label: "Plan", value: isSubscribed ? "VIP" : "Free", onClick: () => setLocation("/membership") },
                     ].map((stat, i) => (
-                      <div key={i} className="bg-card/50 border border-border/40 rounded-2xl p-4 flex flex-col items-center text-center">
-                        <div className="w-10 h-10 rounded-full bg-background border border-border/50 flex items-center justify-center mb-3">
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={stat.onClick}
+                        className="bg-white/[0.03] border border-white/8 hover:border-amber-400/30 rounded-2xl p-4 flex flex-col items-center text-center transition-colors"
+                      >
+                        <div className="w-10 h-10 rounded-full bg-black/40 border border-white/10 flex items-center justify-center mb-3">
                           {stat.icon}
                         </div>
-                        <span className="text-2xl font-black text-foreground leading-none mb-1">{stat.value}</span>
-                        <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">{stat.label}</span>
-                      </div>
+                        <span className="text-2xl font-black text-white leading-none mb-1">{stat.value}</span>
+                        <span className="text-[10px] font-bold text-white/45 uppercase tracking-widest">{stat.label}</span>
+                      </button>
                     ))}
                   </div>
 
                   {/* Continue Watching */}
                   <div>
-                    <h3 className="text-lg font-black text-foreground mb-4 flex items-center gap-2">
-                      <Clock className="w-5 h-5 text-primary" /> Continue Watching
-                    </h3>
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-lg font-black text-white flex items-center gap-2">
+                        <Clock className="w-5 h-5 text-amber-400" /> Continue Watching
+                      </h3>
+                    </div>
                     {continueWatching.length === 0 ? (
-                      <div className="text-center py-10 bg-card/20 rounded-2xl border border-border/30">
-                        <p className="text-muted-foreground text-sm">Nothing to show yet.</p>
+                      <div className="text-center py-12 bg-white/[0.02] rounded-2xl border border-dashed border-white/10">
+                        <Play className="w-8 h-8 text-white/20 mx-auto mb-3" />
+                        <p className="text-white/55 text-sm font-medium">Nothing in progress yet</p>
+                        <Link href="/" className="inline-flex mt-4 text-amber-400 text-xs font-bold hover:underline">Browse movies</Link>
                       </div>
                     ) : (
-                      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
                         {continueWatching.slice(0, 6).map((item: any) => (
                           <div key={item.id || item._id} onClick={() => handlePlayItem(item)} className="group cursor-pointer">
-                            <div className="relative rounded-xl overflow-hidden bg-muted mb-2 aspect-video">
+                            <div className="relative rounded-xl overflow-hidden bg-zinc-900 mb-2 aspect-video border border-white/5">
                               <img src={getImageUrl(item.thumbnail || item.poster || "")} alt={item.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                               <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/50">
-                                <div className="h-full bg-primary" style={{ width: `${Math.round(item.progressPercent || item.progress || 25)}%` }} />
+                                <div className="h-full bg-amber-400" style={{ width: `${Math.round(item.progressPercent || item.progress || 25)}%` }} />
                               </div>
-                              <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 bg-black/20 transition-opacity">
-                                <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center text-white shadow-lg shadow-primary/30">
-                                  <Play className="w-4 h-4 fill-white ml-0.5" />
+                              <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 bg-black/25 transition-opacity">
+                                <div className="w-10 h-10 rounded-full bg-amber-400 flex items-center justify-center text-black shadow-lg">
+                                  <Play className="w-4 h-4 fill-black ml-0.5" />
                                 </div>
                               </div>
                             </div>
-                            <p className="text-foreground text-sm font-bold truncate">{item.title}</p>
+                            <p className="text-white text-sm font-bold truncate">{item.title}</p>
                           </div>
                         ))}
                       </div>
@@ -671,22 +697,26 @@ export default function UserProfilePage() {
               {/* WISHLIST TAB */}
               {activeTab === "watchlist" && (
                 <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-                  <div className="flex items-center justify-between border-b border-border/40 pb-4 mb-6">
-                    <h2 className="text-xl font-black text-foreground">My Wishlist</h2>
-                    <Link href="/browse" className="text-primary text-sm font-bold hover:underline">Browse</Link>
+                  <div className="flex items-center justify-between border-b border-white/8 pb-4 mb-6">
+                    <div>
+                      <h2 className="text-xl font-black text-white">My Wishlist</h2>
+                      <p className="text-white/45 text-xs mt-1">{wishlistItems.length} saved titles</p>
+                    </div>
+                    <Link href="/browse" className="text-amber-400 text-sm font-bold hover:underline">Browse</Link>
                   </div>
 
                   {wishlistLoading ? (
-                    <div className="py-20 flex justify-center"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
+                    <div className="py-20 flex justify-center"><Loader2 className="w-8 h-8 animate-spin text-amber-400" /></div>
                   ) : wishlistItems.length === 0 ? (
-                    <div className="text-center py-20 bg-card/20 rounded-2xl border border-border/30">
-                      <Bookmark className="w-10 h-10 text-muted-foreground/30 mx-auto mb-3" />
-                      <p className="text-foreground font-bold">Your wishlist is empty</p>
+                    <div className="text-center py-20 bg-white/[0.02] rounded-2xl border border-dashed border-white/10">
+                      <Bookmark className="w-10 h-10 text-white/20 mx-auto mb-3" />
+                      <p className="text-white font-bold">Your wishlist is empty</p>
+                      <p className="text-white/40 text-xs mt-1">Save movies to watch later</p>
                     </div>
                   ) : (
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
                       {wishlistItems.map((item: any) => (
-                        <div key={item.id} onClick={() => handlePlayItem(item)} className="group relative rounded-xl overflow-hidden aspect-[2/3] cursor-pointer">
+                        <div key={item.id} onClick={() => handlePlayItem(item)} className="group relative rounded-xl overflow-hidden aspect-[2/3] cursor-pointer border border-white/5">
                           <img src={getImageUrl(item.poster || item.backdrop || "")} alt={item.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                           <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent" />
                           <div className="absolute bottom-0 left-0 right-0 p-3">
@@ -705,34 +735,34 @@ export default function UserProfilePage() {
               {/* DOWNLOADS TAB */}
               {activeTab === "downloads" && (
                 <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-                  <div className="flex items-center justify-between border-b border-border/40 pb-4 mb-6">
+                  <div className="flex items-center justify-between border-b border-white/8 pb-4 mb-6">
                     <div>
-                      <h2 className="text-xl font-black text-foreground">My Downloads</h2>
-                      <p className="text-muted-foreground text-xs mt-1">
-                        List syncs across devices. Offline playback only works on the device where you saved the file.
+                      <h2 className="text-xl font-black text-white">My Downloads</h2>
+                      <p className="text-white/45 text-xs mt-1">
+                        Offline files stay on this device only.
                       </p>
                     </div>
                   </div>
 
                   {downloadsLoading ? (
-                    <div className="py-20 flex justify-center"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
+                    <div className="py-20 flex justify-center"><Loader2 className="w-8 h-8 animate-spin text-amber-400" /></div>
                   ) : downloadItems.length === 0 ? (
-                    <div className="text-center py-20 bg-card/20 rounded-2xl border border-border/30">
-                      <Download className="w-10 h-10 text-muted-foreground/30 mx-auto mb-3" />
-                      <p className="text-foreground font-bold">No downloads yet</p>
+                    <div className="text-center py-20 bg-white/[0.02] rounded-2xl border border-dashed border-white/10">
+                      <Download className="w-10 h-10 text-white/20 mx-auto mb-3" />
+                      <p className="text-white font-bold">No downloads yet</p>
                     </div>
                   ) : (
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
                       {downloadItems.map((item: any) => (
-                        <div key={item.id} onClick={() => handlePlayDownload(item)} className="group relative rounded-xl overflow-hidden aspect-[2/3] cursor-pointer">
+                        <div key={item.id} onClick={() => handlePlayDownload(item)} className="group relative rounded-xl overflow-hidden aspect-[2/3] cursor-pointer border border-white/5">
                           <img src={getImageUrl(item.poster || item.thumbnail || "")} alt={item.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                           {offlineCached[item.id] ? (
                             <div className="absolute top-2 left-2 flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-600/90 text-[9px] font-bold text-white z-20">
-                              Offline here
+                              Offline
                             </div>
                           ) : (
                             <div className="absolute top-2 left-2 flex items-center gap-1 px-2 py-0.5 rounded-full bg-black/70 border border-amber-400/40 text-[9px] font-bold text-amber-300 z-20">
-                              Needs network
+                              Online
                             </div>
                           )}
                           <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent" />
@@ -753,31 +783,32 @@ export default function UserProfilePage() {
               {/* SETTINGS TAB */}
               {activeTab === "settings" && (
                 <div className="max-w-md animate-in fade-in slide-in-from-bottom-4 duration-500">
-                  <h2 className="text-xl font-black text-foreground mb-6">Edit Profile</h2>
+                  <h2 className="text-xl font-black text-white mb-2">Edit Profile</h2>
+                  <p className="text-white/45 text-sm mb-6">Update how you appear across Tataiya.</p>
                   <div className="space-y-4">
                     <div>
-                      <label className="block text-xs font-black text-muted-foreground uppercase tracking-wider mb-2">Display Name</label>
+                      <label className="block text-xs font-black text-white/45 uppercase tracking-wider mb-2">Display Name</label>
                       <div className="relative">
-                        <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                        <input type="text" value={editName} onChange={(e) => setEditName(e.target.value)} className="w-full bg-background border border-border/50 focus:border-primary text-foreground pl-10 pr-4 py-3 rounded-xl text-sm font-semibold focus:outline-none transition-all" />
+                        <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-white/35" />
+                        <input type="text" value={editName} onChange={(e) => setEditName(e.target.value)} className="w-full bg-black/40 border border-white/10 focus:border-amber-400/50 text-white pl-10 pr-4 py-3 rounded-xl text-sm font-semibold focus:outline-none transition-all" />
                       </div>
                     </div>
                     <div>
-                      <label className="block text-xs font-black text-muted-foreground uppercase tracking-wider mb-2">Email Address</label>
+                      <label className="block text-xs font-black text-white/45 uppercase tracking-wider mb-2">Email Address</label>
                       <div className="relative">
-                        <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                        <input type="email" value={editEmail} onChange={(e) => setEditEmail(e.target.value)} className="w-full bg-background border border-border/50 focus:border-primary text-foreground pl-10 pr-4 py-3 rounded-xl text-sm font-semibold focus:outline-none transition-all" />
+                        <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-white/35" />
+                        <input type="email" value={editEmail} onChange={(e) => setEditEmail(e.target.value)} className="w-full bg-black/40 border border-white/10 focus:border-amber-400/50 text-white pl-10 pr-4 py-3 rounded-xl text-sm font-semibold focus:outline-none transition-all" />
                       </div>
                     </div>
                     <div>
-                      <label className="block text-xs font-black text-muted-foreground uppercase tracking-wider mb-2">Mobile Number</label>
+                      <label className="block text-xs font-black text-white/45 uppercase tracking-wider mb-2">Mobile Number</label>
                       <div className="relative">
-                        <Smartphone className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                        <input type="tel" value={editPhone} onChange={e => setEditPhone(e.target.value)} className="w-full bg-background border border-border/50 focus:border-primary text-foreground pl-10 pr-4 py-3 rounded-xl text-sm font-semibold focus:outline-none transition-all" />
+                        <Smartphone className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-white/35" />
+                        <input type="tel" value={editPhone} onChange={e => setEditPhone(e.target.value)} className="w-full bg-black/40 border border-white/10 focus:border-amber-400/50 text-white pl-10 pr-4 py-3 rounded-xl text-sm font-semibold focus:outline-none transition-all" />
                       </div>
                     </div>
                   </div>
-                  <button onClick={handleSaveProfile} disabled={editSaving || !editName.trim()} className="w-full mt-6 py-3 bg-primary hover:bg-primary/90 text-white font-extrabold rounded-xl text-sm flex items-center justify-center gap-2 transition-all shadow-lg shadow-primary/20 disabled:opacity-50">
+                  <button onClick={handleSaveProfile} disabled={editSaving || !editName.trim()} className="w-full mt-6 py-3 bg-amber-400 hover:bg-amber-300 text-black font-extrabold rounded-xl text-sm flex items-center justify-center gap-2 transition-all shadow-lg shadow-amber-900/25 disabled:opacity-50">
                     {editSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />} {editSaving ? "Saving..." : "Save Changes"}
                   </button>
                 </div>
@@ -787,43 +818,43 @@ export default function UserProfilePage() {
               {activeTab === "security" && (
                 <div className="max-w-md animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-8">
                   <div>
-                    <h2 className="text-xl font-black text-foreground mb-6">Security Settings</h2>
+                    <h2 className="text-xl font-black text-white mb-2">Security</h2>
+                    <p className="text-white/45 text-sm mb-6">Keep your account protected.</p>
                     <div className="space-y-4">
-                      {passwordError && <div className="p-3 bg-primary/10 text-primary text-xs font-semibold rounded-xl border border-primary/20">{passwordError}</div>}
+                      {passwordError && <div className="p-3 bg-red-500/10 text-red-300 text-xs font-semibold rounded-xl border border-red-500/20">{passwordError}</div>}
                       {[
                         { label: "Current Password", value: currentPassword, setter: setCurrentPassword, show: showCurrent, toggleShow: () => setShowCurrent(!showCurrent) },
                         { label: "New Password", value: newPassword, setter: setNewPassword, show: showNew, toggleShow: () => setShowNew(!showNew) },
                         { label: "Confirm New Password", value: confirmPassword, setter: setConfirmPassword, show: showNew, toggleShow: () => setShowNew(!showNew) },
                       ].map((field) => (
                         <div key={field.label}>
-                          <label className="block text-xs font-black text-muted-foreground uppercase tracking-wider mb-2">{field.label}</label>
+                          <label className="block text-xs font-black text-white/45 uppercase tracking-wider mb-2">{field.label}</label>
                           <div className="relative">
-                            <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                            <input type={field.show ? "text" : "password"} value={field.value} onChange={(e) => field.setter(e.target.value)} className="w-full bg-background border border-border/50 focus:border-primary text-foreground pl-10 pr-10 py-3 rounded-xl text-sm font-semibold focus:outline-none transition-all" />
-                            <button type="button" onClick={field.toggleShow} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                            <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-white/35" />
+                            <input type={field.show ? "text" : "password"} value={field.value} onChange={(e) => field.setter(e.target.value)} className="w-full bg-black/40 border border-white/10 focus:border-amber-400/50 text-white pl-10 pr-10 py-3 rounded-xl text-sm font-semibold focus:outline-none transition-all" />
+                            <button type="button" onClick={field.toggleShow} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-white/35 hover:text-white">
                               {field.show ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                             </button>
                           </div>
                         </div>
                       ))}
-                      <button onClick={handleChangePassword} disabled={passwordSaving} className="w-full py-3 bg-primary text-white font-extrabold rounded-xl text-sm flex items-center justify-center gap-2 transition-all shadow-lg shadow-primary/20 disabled:opacity-50">
+                      <button onClick={handleChangePassword} disabled={passwordSaving} className="w-full py-3 bg-amber-400 hover:bg-amber-300 text-black font-extrabold rounded-xl text-sm flex items-center justify-center gap-2 transition-all shadow-lg shadow-amber-900/25 disabled:opacity-50">
                         {passwordSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Shield className="w-4 h-4" />} Update Password
                       </button>
                     </div>
                   </div>
 
-                  {/* Danger Zone */}
-                  <div className="border border-primary/20 rounded-2xl p-6 bg-primary/5">
-                    <h3 className="text-primary font-black text-sm flex items-center gap-2 mb-2"><AlertTriangle className="w-4 h-4" /> Danger Zone</h3>
-                    <p className="text-muted-foreground text-xs mb-5">Permanently delete your account. This action cannot be undone.</p>
+                  <div className="border border-red-500/20 rounded-2xl p-5 sm:p-6 bg-red-500/[0.06]">
+                    <h3 className="text-red-300 font-black text-sm flex items-center gap-2 mb-2"><AlertTriangle className="w-4 h-4" /> Danger Zone</h3>
+                    <p className="text-white/45 text-xs mb-5">Permanently delete your account. This cannot be undone.</p>
                     {!deleteConfirm ? (
-                      <button onClick={() => setDeleteConfirm(true)} className="px-5 py-2.5 bg-primary/10 text-primary hover:bg-primary/20 rounded-xl text-xs font-bold transition-all flex items-center gap-2"><Trash2 className="w-3.5 h-3.5" /> Delete Account</button>
+                      <button onClick={() => setDeleteConfirm(true)} className="px-5 py-2.5 bg-red-500/15 text-red-300 hover:bg-red-500/25 rounded-xl text-xs font-bold transition-all flex items-center gap-2"><Trash2 className="w-3.5 h-3.5" /> Delete Account</button>
                     ) : (
                       <div className="space-y-3">
-                        <p className="text-primary text-xs font-bold">Are you absolutely sure?</p>
+                        <p className="text-red-300 text-xs font-bold">Are you absolutely sure?</p>
                         <div className="flex gap-3">
-                          <button onClick={handleDeleteAccount} disabled={deleting} className="px-5 py-2.5 bg-primary text-white rounded-xl text-xs font-bold transition-all">{deleting ? "Deleting..." : "Yes, Delete Forever"}</button>
-                          <button onClick={() => setDeleteConfirm(false)} className="px-5 py-2.5 bg-muted text-foreground rounded-xl text-xs font-bold transition-all">Cancel</button>
+                          <button onClick={handleDeleteAccount} disabled={deleting} className="px-5 py-2.5 bg-red-500 text-white rounded-xl text-xs font-bold transition-all">{deleting ? "Deleting..." : "Yes, Delete Forever"}</button>
+                          <button onClick={() => setDeleteConfirm(false)} className="px-5 py-2.5 bg-white/10 text-white rounded-xl text-xs font-bold transition-all">Cancel</button>
                         </div>
                       </div>
                     )}
@@ -834,12 +865,7 @@ export default function UserProfilePage() {
               {/* FEEDBACK TAB */}
               {activeTab === "feedback" && (
                 <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-                  <div className="border-b border-border/40 pb-4 mb-6">
-                    <h3 className="text-xl font-black text-foreground flex items-center gap-2">
-                      <Star className="w-5 h-5 text-primary fill-primary animate-pulse" /> Rate Us
-                    </h3>
-                  </div>
-                  <WebsiteReviews user={user} onSignInRequired={() => setLocation("/login")} />
+                  <WebsiteReviews user={user} onSignInRequired={() => setLocation("/login")} variant="compact" />
                 </div>
               )}
 

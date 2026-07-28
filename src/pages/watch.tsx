@@ -2242,10 +2242,11 @@ export default function WatchPage() {
           )}
 
           {/* Experience Reviews & Ratings Section */}
-          <div className="px-4 sm:px-6 lg:px-10 mt-12 border-t border-zinc-900 pt-10">
-            <WebsiteReviews 
-              user={user} 
-              onSignInRequired={() => navigate("/login")} 
+          <div className="px-4 sm:px-6 lg:px-10 mt-12 border-t border-zinc-900 pt-10 pb-4">
+            <WebsiteReviews
+              user={user}
+              onSignInRequired={() => navigate("/login")}
+              variant="full"
             />
           </div>
         </div>

@@ -1048,10 +1048,12 @@ function getSectionItems(section: any, movies: any[], homeData: any) {
 }
 
 /* ─── HOME TAB ─── */
-function HomeTab({ onPlay, onSubscribeClick, isSubscribed }: {
+function HomeTab({ onPlay, onSubscribeClick, isSubscribed, user, onSignIn }: {
   onPlay: (item: ContentItem) => void;
   onSubscribeClick: () => void;
   isSubscribed?: boolean;
+  user?: any;
+  onSignIn?: () => void;
 }) {
   const [, setLocation] = useLocation();
   const { data: homeData, isLoading: isHomeLoading } = useGetWebHome();
@@ -1194,6 +1196,14 @@ function HomeTab({ onPlay, onSubscribeClick, isSubscribed }: {
 
       {/* Subscribe Banner if there are dynamic sections, to ensure it always renders at bottom if not shown in hardcoded fallback */}
       {webSections.length > 0 && !isSubscribed && <SubscribeBanner onSubscribeClick={onSubscribeClick} />}
+
+      <div className="px-4 sm:px-8 lg:px-12 pb-4 pt-2">
+        <WebsiteReviews
+          user={user}
+          onSignInRequired={() => (onSignIn ? onSignIn() : setLocation("/login"))}
+          variant="full"
+        />
+      </div>
     </div>
   );
 }
@@ -2087,7 +2097,13 @@ export default function StreamingHomePage() {
         {!hasHeroForTab && <div className="h-20" />}
 
         {activeTab === "home" && (
-          <HomeTab onPlay={handlePlay} onSubscribeClick={() => setPlansModalOpen(true)} isSubscribed={isSubscribed} />
+          <HomeTab
+            onPlay={handlePlay}
+            onSubscribeClick={() => setPlansModalOpen(true)}
+            isSubscribed={isSubscribed}
+            user={user}
+            onSignIn={() => setShowSignIn(true)}
+          />
         )}
         {activeTab === "movies" && (
           <MoviesTab onPlay={handlePlay} />
