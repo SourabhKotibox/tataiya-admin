@@ -3541,7 +3541,7 @@ export const useGetWatchProgress = (contentId?: string, episodeId?: string) => {
       return json.data as { progressSeconds: number; durationSeconds: number; progressPercent: number } | null;
     },
     enabled: !!contentId && !!token,
-    staleTime: 0,
+    staleTime: 60_000,
   });
 };
 

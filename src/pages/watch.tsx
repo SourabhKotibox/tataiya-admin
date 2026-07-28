@@ -1,5 +1,4 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { createPortal } from "react-dom";
 import { useParams, useLocation } from "wouter";
 import {
   ChevronLeft, ChevronRight, Heart, Star, Share2, Lock, Unlock,
@@ -143,6 +142,10 @@ function VideoPlayer({
   const saveProgressMutation = useSaveWatchProgress();
   const lastSavedTimeRef = useRef(0);
   const resumeAppliedRef = useRef(false);
+  const playingRef = useRef(false);
+  const autoPlayRef = useRef(autoPlay);
+  playingRef.current = playing;
+  autoPlayRef.current = autoPlay;
 
   const recordViewMutation = useRecordView();
   const viewRecordedRef = useRef(false);
@@ -161,21 +164,43 @@ function VideoPlayer({
     }
   }, [resumeFrom]);
 
+  // Throttle progress saves — avoid hammering API on every seek / timeupdate
   useEffect(() => {
-    if (!contentId || !duration) return;
+    if (!contentId || !duration || duration <= 20) return;
     const token = localStorage.getItem("appAccessToken");
     if (!token) return;
 
     const diff = Math.abs(currentTime - lastSavedTimeRef.current);
-    if (duration > 20 && (diff >= 10 || (!playing && currentTime > 2 && diff > 1))) {
-      lastSavedTimeRef.current = currentTime;
-      saveProgressMutation.mutate({
-        contentId,
-        progressSeconds: Math.round(currentTime),
-        durationSeconds: Math.round(duration),
-      });
-    }
+    // While playing: save every ~30s. On pause: save once if moved >2s.
+    const shouldSave = playing
+      ? diff >= 30
+      : currentTime > 2 && diff > 2;
+    if (!shouldSave) return;
+
+    lastSavedTimeRef.current = currentTime;
+    saveProgressMutation.mutate({
+      contentId,
+      progressSeconds: Math.round(currentTime),
+      durationSeconds: Math.round(duration),
+    });
   }, [currentTime, duration, contentId, playing]);
+
+  // Flush progress once on unmount
+  useEffect(() => {
+    return () => {
+      const v = videoRef.current;
+      if (!contentId || !v || !localStorage.getItem("appAccessToken")) return;
+      const t = v.currentTime || 0;
+      const d = v.duration || 0;
+      if (d > 20 && t > 2 && Math.abs(t - lastSavedTimeRef.current) > 1) {
+        saveProgressMutation.mutate({
+          contentId,
+          progressSeconds: Math.round(t),
+          durationSeconds: Math.round(d),
+        });
+      }
+    };
+  }, [contentId]);
 
   const settingsOpenRef = useRef(settingsOpen);
   settingsOpenRef.current = settingsOpen;
@@ -345,24 +370,40 @@ function VideoPlayer({
     revealControls();
   };
 
-  /* seek */
-  const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
+  /* seek — keep playing; nudge HLS to load (no full reload) */
+  const seekTo = useCallback((t: number, resumeIfWasPlaying = true) => {
     const v = videoRef.current;
     if (!v) return;
-    const t = Number(e.target.value);
-    v.currentTime = t;
-    setCurrentTime(t);
+    const wasPlaying = !v.paused || playingRef.current;
+    const next = Math.max(0, Math.min(isFinite(v.duration) ? v.duration : t, t));
+    try {
+      v.currentTime = next;
+    } catch {
+      /* ignore */
+    }
+    setCurrentTime(next);
+    const hls = hlsRef.current;
+    if (hls) {
+      try { hls.startLoad(-1); } catch { /* ignore */ }
+    }
+    if (resumeIfWasPlaying && wasPlaying) {
+      v.play().catch(() => {});
+    }
+  }, []);
+
+  const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
+    seekTo(Number(e.target.value));
     revealControls();
   };
 
   const skip = useCallback((sec: number) => {
     const v = videoRef.current;
     if (!v) return;
-    v.currentTime = Math.max(0, Math.min(v.duration || 0, v.currentTime + sec));
+    seekTo(v.currentTime + sec);
     setSkipAnim(sec > 0 ? "right" : "left");
     setTimeout(() => setSkipAnim(null), 600);
     revealControls();
-  }, [revealControls]);
+  }, [revealControls, seekTo]);
 
   /* volume */
   const handleVolume = (val: number) => {
@@ -401,7 +442,7 @@ function VideoPlayer({
     (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) ||
       (navigator.maxTouchPoints > 1 && /Mac/.test(navigator.userAgent)));
 
-  /* fullscreen — prefer CSS FS (works on mobile); try native when available */
+  /* fullscreen — CSS FS in-place (NO remount/portal). Native FS on desktop when available. */
   const toggleFullscreen = useCallback(() => {
     const c = containerRef.current as any;
     const v = videoRef.current;
@@ -424,7 +465,12 @@ function VideoPlayer({
       setCssFullscreen(false);
       setIsFullscreen(false);
       try { (screen.orientation as any)?.unlock?.(); } catch { /* ignore */ }
-      revealControls();
+      // Resume without seeking (same media element)
+      window.setTimeout(() => {
+        const vid = videoRef.current;
+        if (vid && fsWasPlayingRef.current && vid.paused) vid.play().catch(() => {});
+        revealControls();
+      }, 40);
       return;
     }
 
@@ -436,6 +482,10 @@ function VideoPlayer({
       setIsFullscreen(true);
       revealControls();
       try { (screen.orientation as any)?.lock?.("landscape").catch(() => {}); } catch { /* ignore */ }
+      window.setTimeout(() => {
+        const vid = videoRef.current;
+        if (vid && fsWasPlayingRef.current && vid.paused) vid.play().catch(() => {});
+      }, 40);
     };
 
     if (preferCss) {
@@ -450,6 +500,10 @@ function VideoPlayer({
           setIsFullscreen(true);
           revealControls();
           try { (screen.orientation as any)?.lock?.("landscape").catch(() => {}); } catch { /* ignore */ }
+          window.setTimeout(() => {
+            const vid = videoRef.current;
+            if (vid && fsWasPlayingRef.current && vid.paused) vid.play().catch(() => {});
+          }, 40);
         })
         .catch(() => enterCss());
     } else {
@@ -530,12 +584,13 @@ function VideoPlayer({
     return () => window.removeEventListener('force-play-fullscreen', handleForcePlay);
   }, []);
 
-  // Load source with HLS support — start ASAP (don't block on offline lookup)
+  // Load source with HLS support — only when URL changes (never remount on play/FS)
   useEffect(() => {
     const v = videoRef.current;
     if (!v) return;
 
     let cancelled = false;
+    let stallTimer: ReturnType<typeof setTimeout> | null = null;
     setLoading(true);
     if (hlsRef.current) {
       hlsRef.current.destroy();
@@ -564,7 +619,7 @@ function VideoPlayer({
           resumeAppliedRef.current = true;
         }
         v.playbackRate = speed;
-        const shouldPlay = playing || autoPlay;
+        const shouldPlay = playingRef.current || autoPlayRef.current;
         if (shouldPlay) v.play().catch(() => {});
       };
 
@@ -576,13 +631,13 @@ function VideoPlayer({
         const hls = new Hls({
           enableWorker: true,
           lowLatencyMode: false,
-          // Start on a lower rung so first frame appears quickly, then ABR climbs
           startLevel: 0,
           abrEwmaDefaultEstimate: 500000,
-          maxBufferLength: 20,
-          maxMaxBufferLength: 40,
-          maxBufferSize: 30 * 1000 * 1000,
-          maxBufferHole: 0.5,
+          maxBufferLength: 30,
+          maxMaxBufferLength: 60,
+          maxBufferSize: 60 * 1000 * 1000,
+          maxBufferHole: 1.5,
+          nudgeMaxRetry: 5,
           startFragPrefetch: true,
           testBandwidth: true,
         });
@@ -591,21 +646,24 @@ function VideoPlayer({
         hls.attachMedia(v);
         hls.on(Hls.Events.MANIFEST_PARSED, () => {
           if (currentQuality === "auto") {
-            // Keep startLevel 0 briefly, then free ABR
             window.setTimeout(() => {
               if (hlsRef.current === hls) hls.currentLevel = -1;
             }, 2500);
           }
           onReady();
         });
-        // Unblock UI as soon as first fragment can play
         hls.on(Hls.Events.FRAG_BUFFERED, () => {
-          if (v.paused && (playing || autoPlay)) v.play().catch(() => {});
+          if (v.paused && (playingRef.current || autoPlayRef.current)) v.play().catch(() => {});
           setLoading(false);
         });
         hls.on(Hls.Events.ERROR, (_e, data) => {
-          if (data.fatal) {
-            console.error("HLS fatal error", data);
+          if (!data.fatal) return;
+          console.error("HLS fatal error", data);
+          if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+            try { hls.startLoad(); } catch { setLoading(false); }
+          } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+            try { hls.recoverMediaError(); } catch { setLoading(false); }
+          } else {
             setLoading(false);
           }
         });
@@ -626,17 +684,16 @@ function VideoPlayer({
       }
     };
 
-    // Start network stream immediately
     const networkSrc = getImageUrl(currentSrc);
     attachAndPlay(networkSrc, false);
 
-    // If an offline copy exists, swap in without blocking first paint
+    // Offline swap only if a local copy exists — preserve time, no full page reload
     if (contentId) {
       getOfflineVideoUrl(contentId).then((offlineUrl) => {
         if (cancelled || !offlineUrl || !videoRef.current) return;
         const v2 = videoRef.current;
         const t = v2.currentTime || pendingSeekRef.current || 0;
-        const wasPlaying = !v2.paused || autoPlay;
+        const wasPlaying = !v2.paused || autoPlayRef.current || playingRef.current;
         if (hlsRef.current) {
           hlsRef.current.destroy();
           hlsRef.current = null;
@@ -656,24 +713,44 @@ function VideoPlayer({
       }).catch(() => {});
     }
 
+    const onWaiting = () => {
+      setLoading(true);
+      if (stallTimer) clearTimeout(stallTimer);
+      stallTimer = setTimeout(() => {
+        const hls = hlsRef.current;
+        const vid = videoRef.current;
+        if (!vid || cancelled) return;
+        if (hls) {
+          try { hls.startLoad(-1); } catch { /* ignore */ }
+        }
+        // Tiny nudge can unblock stuck buffer holes after seek
+        try {
+          const t = vid.currentTime;
+          if (t > 0.25) vid.currentTime = t + 0.01;
+        } catch { /* ignore */ }
+        if (playingRef.current || autoPlayRef.current) vid.play().catch(() => {});
+      }, 4000);
+    };
+    const onPlayingClear = () => {
+      setLoading(false);
+      if (stallTimer) clearTimeout(stallTimer);
+    };
+    v.addEventListener("waiting", onWaiting);
+    v.addEventListener("playing", onPlayingClear);
+    v.addEventListener("canplay", onPlayingClear);
+
     return () => {
       cancelled = true;
-      const el = videoRef.current;
-      if (el) {
-        try {
-          el.pause();
-          el.removeAttribute("src");
-          el.load();
-        } catch {
-          /* ignore */
-        }
-      }
+      if (stallTimer) clearTimeout(stallTimer);
+      v.removeEventListener("waiting", onWaiting);
+      v.removeEventListener("playing", onPlayingClear);
+      v.removeEventListener("canplay", onPlayingClear);
       if (hlsRef.current) {
         hlsRef.current.destroy();
         hlsRef.current = null;
       }
     };
-  }, [currentSrc, autoPlay, contentId]);
+  }, [currentSrc, contentId]);
 
   // Keep parent informed for mini-player handoff
   useEffect(() => {
@@ -747,19 +824,11 @@ function VideoPlayer({
     if (v) v.volume = volume;
   }, []);
 
-  /* fullscreen change — restore exact time + play state */
+  /* fullscreen change — keep same media; only resume play (do NOT seek/reload) */
   useEffect(() => {
-    const restoreAfterFs = () => {
+    const restorePlay = () => {
       const v = videoRef.current;
       if (!v) return;
-      const t = fsTimeRef.current;
-      if (t != null && Math.abs((v.currentTime || 0) - t) > 0.75) {
-        try {
-          v.currentTime = t;
-        } catch {
-          /* ignore */
-        }
-      }
       if (fsWasPlayingRef.current && v.paused) {
         v.play().catch(() => {});
       }
@@ -769,9 +838,8 @@ function VideoPlayer({
     const onChange = () => {
       const isFull = isNativeFullscreen() || cssFullscreen;
       setIsFullscreen(isFull);
-      // Give the browser a tick after FS transition, then restore
-      window.setTimeout(restoreAfterFs, 50);
-      window.setTimeout(restoreAfterFs, 250);
+      window.setTimeout(restorePlay, 30);
+      window.setTimeout(restorePlay, 200);
     };
     document.addEventListener("fullscreenchange", onChange);
     document.addEventListener("webkitfullscreenchange", onChange);
@@ -822,30 +890,37 @@ function VideoPlayer({
     return () => document.removeEventListener("keydown", onKey);
   }, [togglePlay, toggleMute, toggleFullscreen, revealControls, onNext, skip, cssFullscreen]);
 
-  // Keep playback continuous when entering/leaving CSS fullscreen
+  // Keep playback continuous when entering/leaving CSS fullscreen (same <video> element)
   useEffect(() => {
-    if (!cssFullscreen) return;
     const v = videoRef.current;
     if (!v) return;
-    const t = fsTimeRef.current;
-    if (t != null && Math.abs(v.currentTime - t) > 0.75) {
-      try { v.currentTime = t; } catch { /* ignore */ }
-    }
+    setIsFullscreen(cssFullscreen || isNativeFullscreen());
     if (fsWasPlayingRef.current && v.paused) v.play().catch(() => {});
-    setIsFullscreen(true);
     revealControls();
   }, [cssFullscreen, revealControls]);
 
   // CSS fullscreen must escape overflow:hidden ancestors (clips fixed on iOS)
   useEffect(() => {
     if (!cssFullscreen) return;
-    const restored: { el: HTMLElement; overflow: string }[] = [];
+    const restored: { el: HTMLElement; overflow: string; position: string; zIndex: string }[] = [];
     let el: HTMLElement | null | undefined = containerRef.current?.parentElement;
     while (el && el !== document.documentElement) {
       const style = getComputedStyle(el);
-      if (style.overflow !== "visible" || style.overflowX !== "visible" || style.overflowY !== "visible") {
-        restored.push({ el, overflow: el.style.overflow });
+      if (
+        style.overflow !== "visible" ||
+        style.overflowX !== "visible" ||
+        style.overflowY !== "visible" ||
+        style.transform !== "none"
+      ) {
+        restored.push({
+          el,
+          overflow: el.style.overflow,
+          position: el.style.position,
+          zIndex: el.style.zIndex,
+        });
         el.style.overflow = "visible";
+        // transform creates a containing block for fixed — clear it while FS
+        if (style.transform !== "none") el.style.transform = "none";
       }
       el = el.parentElement;
     }
@@ -854,8 +929,11 @@ function VideoPlayer({
     document.documentElement.style.overflow = "hidden";
     document.body.style.overflow = "hidden";
     return () => {
-      restored.forEach(({ el: node, overflow }) => {
+      restored.forEach(({ el: node, overflow, position, zIndex }) => {
         node.style.overflow = overflow;
+        node.style.position = position;
+        node.style.zIndex = zIndex;
+        node.style.transform = "";
       });
       document.documentElement.style.overflow = prevHtml;
       document.body.style.overflow = prevBody;
@@ -926,22 +1004,12 @@ function VideoPlayer({
   const playerShell = (
     <div
       ref={containerRef}
-      className={`relative bg-black overflow-hidden w-full h-full select-none ${
-        cssFullscreen ? "rounded-none" : ""
-      }`}
-      style={
+      className={`bg-black select-none ${
         cssFullscreen
-          ? {
-              position: "fixed",
-              inset: 0,
-              width: "100vw",
-              height: "100dvh",
-              zIndex: 99999,
-              touchAction: "manipulation",
-              background: "#000",
-            }
-          : { touchAction: "manipulation" }
-      }
+          ? "fixed inset-0 z-[99999] w-screen h-[100dvh] rounded-none overflow-hidden"
+          : "absolute inset-0 w-full h-full rounded-xl sm:rounded-2xl overflow-hidden"
+      }`}
+      style={{ touchAction: "manipulation", background: "#000" }}
       onMouseMove={() => { if (!uiLocked) revealControls(); }}
       onMouseLeave={() => {
         if (playing && !uiLocked && !settingsOpen && !cssFullscreen) {
@@ -1014,7 +1082,7 @@ function VideoPlayer({
             pendingSeekRef.current = null;
           }
           v.playbackRate = speed;
-          const shouldPlay = playing || autoPlay;
+          const shouldPlay = playingRef.current || autoPlayRef.current;
           if (shouldPlay) {
             v.play().catch(() => {});
           }
@@ -1476,9 +1544,8 @@ function VideoPlayer({
     </div>
   );
 
-  if (cssFullscreen && typeof document !== "undefined") {
-    return createPortal(playerShell, document.body);
-  }
+  // Always keep the same DOM tree — remounting via portal destroyed the video
+  // and forced a full HLS reload (black screen / missing controls after fullscreen).
   return playerShell;
 }
 
@@ -1957,10 +2024,10 @@ export default function WatchPage() {
             </button>
           </div>
 
-          {/* Player Container */}
+          {/* Player Container — overflow visible so CSS fullscreen isn't clipped */}
           <div
             key={`${title}-ep-${currentEp}`}
-            className="relative overflow-hidden bg-black shadow-2xl rounded-xl sm:rounded-2xl border border-zinc-900 mb-4 w-full min-h-[200px] sm:min-h-0"
+            className="relative bg-black shadow-2xl rounded-xl sm:rounded-2xl border border-zinc-900 mb-4 w-full min-h-[200px] sm:min-h-0 overflow-visible"
             style={{ aspectRatio: "16 / 9" }}
             onClick={() => !playerStarted && setPlayerStarted(true)}
           >
