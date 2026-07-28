@@ -1823,23 +1823,30 @@ export default function WatchPage() {
           const dlUrl = data?.data?.downloadUrl || data?.downloadUrl;
           if (dlUrl) {
             setDlProgress(0);
-            const ok = await cacheDownloadedVideo(dlUrl, contentId, undefined, setDlProgress);
+            const ok = await cacheDownloadedVideo(dlUrl, contentId, undefined, setDlProgress, {
+              trailerUrl: showData?.trailerUrl,
+            });
             setDlProgress(null);
             setIsOfflineHere(ok);
             toast({
-              title: ok ? "Saved offline on this device" : "Added to Downloads list",
+              title: ok ? "Saved offline on this device" : "Could not save full movie offline",
               description: ok
                 ? "Play without internet here. Other devices need their own download."
-                : "List synced, but offline file is not on this device yet.",
+                : "Trailer cannot be used for offline — the full movie MP4 is required.",
+              variant: ok ? "default" : "destructive",
             });
           } else {
-            toast({ title: "Added to downloads" });
+            toast({
+              title: "Full movie file not available",
+              description: "Offline needs the movie MP4, not the trailer.",
+              variant: "destructive",
+            });
           }
         },
         onError: (err: any) => toast({ title: "Download failed", description: err?.message || "Please try again.", variant: "destructive" }),
       }
     );
-  }, [user, navigate, downloadItems, contentId, isOfflineHere, removeDownloadMutation, requestDownloadMutation, toast]);
+  }, [user, navigate, downloadItems, contentId, isOfflineHere, removeDownloadMutation, requestDownloadMutation, toast, showData?.trailerUrl]);
 
   const getPlanLevel = (plan?: string) => {
     switch (plan?.toLowerCase()) {
@@ -1963,7 +1970,7 @@ export default function WatchPage() {
               autoPlay={autoPlay}
               onNext={currentEp === 0 && hasMovie ? skipToMovie : undefined}
               videoSettings={currentEp === 0 ? undefined : showData?.videoSettings}
-              contentId={contentId}
+              contentId={currentEp === 1 ? contentId : undefined}
               resumeFrom={
                 miniResume && miniResume > 5
                   ? miniResume

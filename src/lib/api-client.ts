@@ -3628,18 +3628,37 @@ export const hasOfflineVideo = async (contentId: string, episodeId?: string): Pr
 /**
  * Download video into private browser storage (OPFS preferred).
  * Does NOT save to the system Downloads folder — only playable inside Tataiya.
+ * Pass trailerUrl to refuse caching the trailer by mistake.
  */
 export const cacheDownloadedVideo = async (
   url: string,
   contentId: string,
   episodeId?: string,
-  onProgress?: (pct: number) => void
+  onProgress?: (pct: number) => void,
+  opts?: { trailerUrl?: string | null }
 ): Promise<boolean> => {
   const cleanUrl = String(url || '').trim();
   if (!cleanUrl || cleanUrl.startsWith('blob:')) return false;
   // HLS playlists cannot be offline-cached as a single file
   if (/\.m3u8(\?|#|$)/i.test(cleanUrl)) {
     console.warn('Offline cache skipped — HLS playlist cannot be stored as one file');
+    return false;
+  }
+
+  const trailer = String(opts?.trailerUrl || '').trim();
+  if (trailer) {
+    const norm = (u: string) => u.replace(/[?#].*$/, '').replace(/\/+$/, '').toLowerCase();
+    const a = norm(cleanUrl);
+    const b = norm(trailer);
+    const aLeaf = a.split('/').pop() || '';
+    const bLeaf = b.split('/').pop() || '';
+    if (a === b || (aLeaf && bLeaf && aLeaf === bLeaf)) {
+      console.warn('Offline cache skipped — URL matches trailer, not full movie');
+      return false;
+    }
+  }
+  if (/(\/|^)(trailer|teaser|preview)s?([\/._-]|$)/i.test(cleanUrl) || /[._-](trailer|teaser|preview)(\.|$)/i.test(cleanUrl)) {
+    console.warn('Offline cache skipped — URL looks like a trailer');
     return false;
   }
 

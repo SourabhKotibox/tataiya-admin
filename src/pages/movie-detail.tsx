@@ -341,17 +341,24 @@ export default function MovieDetailPage() {
                         const downloadUrl = data?.data?.downloadUrl || data?.downloadUrl;
                         if (downloadUrl) {
                           setDlProgress(0);
-                          const ok = await cacheDownloadedVideo(downloadUrl, id!, undefined, setDlProgress);
+                          const ok = await cacheDownloadedVideo(downloadUrl, id!, undefined, setDlProgress, {
+                            trailerUrl: item?.trailerUrl,
+                          });
                           setDlProgress(null);
                           setIsOfflineHere(ok);
                           toast({
-                            title: ok ? "Saved offline on this device" : "Added to Downloads list",
+                            title: ok ? "Saved offline on this device" : "Could not save full movie offline",
                             description: ok
                               ? "Play without internet here in Tataiya."
-                              : "Could not cache offline on this device — try again on Wi‑Fi.",
+                              : "Trailer cannot be saved as offline — need the full movie MP4. Try again after the movie finishes processing.",
+                            variant: ok ? "default" : "destructive",
                           });
                         } else {
-                          toast({ title: "Added to downloads" });
+                          toast({
+                            title: "Full movie file not available",
+                            description: "Offline needs the movie MP4, not the trailer.",
+                            variant: "destructive",
+                          });
                         }
                       },
                       onError: (err: any) =>
