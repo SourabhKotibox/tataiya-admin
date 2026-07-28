@@ -260,6 +260,7 @@ export default function Settings() {
     socialLogin: ctxSettings.socialLogin ?? true,
     twoFactorAuth: ctxSettings.twoFactorAuth ?? false,
     emailVerification: ctxSettings.emailVerification ?? true,
+    showReviews: ctxSettings.showReviews ?? true,
     googleClientId: ctxSettings.googleClientId || '',
     appleClientId: ctxSettings.appleClientId || '',
     appleTeamId: ctxSettings.appleTeamId || '',
@@ -273,6 +274,7 @@ export default function Settings() {
       socialLogin: ctxSettings.socialLogin ?? true,
       twoFactorAuth: ctxSettings.twoFactorAuth ?? false,
       emailVerification: ctxSettings.emailVerification ?? true,
+      showReviews: ctxSettings.showReviews ?? true,
       googleClientId: ctxSettings.googleClientId || '',
       appleClientId: ctxSettings.appleClientId || '',
       appleTeamId: ctxSettings.appleTeamId || '',
@@ -284,6 +286,7 @@ export default function Settings() {
     ctxSettings.socialLogin,
     ctxSettings.twoFactorAuth,
     ctxSettings.emailVerification,
+    ctxSettings.showReviews,
     ctxSettings.googleClientId,
     ctxSettings.appleClientId,
     ctxSettings.appleTeamId,
@@ -299,6 +302,7 @@ export default function Settings() {
         socialLogin: misc.socialLogin,
         twoFactorAuth: misc.twoFactorAuth,
         emailVerification: misc.emailVerification,
+        showReviews: misc.showReviews,
         googleClientId: misc.googleClientId.trim(),
         appleClientId: misc.appleClientId.trim(),
         appleTeamId: misc.appleTeamId.trim(),
@@ -310,6 +314,7 @@ export default function Settings() {
         socialLogin: misc.socialLogin,
         twoFactorAuth: misc.twoFactorAuth,
         emailVerification: misc.emailVerification,
+        showReviews: misc.showReviews,
         googleClientId: misc.googleClientId.trim(),
         appleClientId: misc.appleClientId.trim(),
         appleTeamId: misc.appleTeamId.trim(),
@@ -873,6 +878,7 @@ export default function Settings() {
           { key: "socialLogin", label: "Social Login", desc: "Show Google / Apple sign-in buttons on the web auth page" },
           { key: "twoFactorAuth", label: "Two Factor Authentication", desc: "Enable 2FA for extra security (coming soon)" },
           { key: "emailVerification", label: "Email Verification", desc: "Require email verification for new users" },
+          { key: "showReviews", label: "Show Reviews Section", desc: "Display the community reviews section on the website (home, watch, profile)" },
         ] as const).map(({ key, label, desc }) => (
           <div key={key} className="flex items-center justify-between p-4 rounded-lg border border-border bg-card">
             <div>

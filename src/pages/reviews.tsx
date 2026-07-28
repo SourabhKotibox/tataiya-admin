@@ -3,11 +3,12 @@ import {
   useGetAdminReviewsList,
   updateAdminReviewStatus,
   deleteAdminReview,
+  useUpdateSettings,
 } from "../lib/api-client";
 import { useQueryClient } from "@tanstack/react-query";
-import { Search, Eye, EyeOff, Trash2, Star, CheckCircle, XCircle } from "lucide-react";
+import { Eye, EyeOff, Trash2, Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import {
   Table,
   TableBody,
@@ -40,9 +41,14 @@ import { useSettings } from "@/contexts/SettingsContext";
 export default function Reviews() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { settings, updateSettings } = useSettings();
+  const updateSettingsMutation = useUpdateSettings();
   const [page, setPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState("all");
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [togglingVisibility, setTogglingVisibility] = useState(false);
+
+  const showReviews = settings.showReviews !== false;
 
   const { data, isLoading } = useGetAdminReviewsList({
     page,
@@ -52,6 +58,24 @@ export default function Reviews() {
 
   const reviews = data?.data || [];
   const pagination = data?.pagination;
+
+  const handleToggleSiteReviews = async (enabled: boolean) => {
+    setTogglingVisibility(true);
+    try {
+      await updateSettingsMutation.mutateAsync({ showReviews: enabled });
+      updateSettings({ showReviews: enabled });
+      toast({
+        title: enabled ? "Reviews section visible" : "Reviews section hidden",
+        description: enabled
+          ? "Users can see and post reviews on the website."
+          : "The reviews section is hidden from users site-wide.",
+      });
+    } catch (err: any) {
+      toast({ title: "Failed to update", description: err.message, variant: "destructive" });
+    } finally {
+      setTogglingVisibility(false);
+    }
+  };
 
   const handleStatusToggle = async (id: string, currentStatus: string) => {
     try {
@@ -98,6 +122,24 @@ export default function Reviews() {
             </SelectContent>
           </Select>
         </div>
+      </div>
+
+      <div className="flex items-center justify-between gap-4 p-4 rounded-xl border border-border bg-card">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-foreground flex items-center gap-2">
+            {showReviews ? <Eye className="w-4 h-4 text-emerald-500" /> : <EyeOff className="w-4 h-4 text-muted-foreground" />}
+            Show reviews on website
+          </p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            When off, the reviews section is hidden on home, watch, and profile pages.
+          </p>
+        </div>
+        <Switch
+          checked={showReviews}
+          disabled={togglingVisibility}
+          onCheckedChange={handleToggleSiteReviews}
+          className="data-[state=checked]:bg-primary shrink-0"
+        />
       </div>
 
       <div className="bg-card border border-border rounded-xl shadow-sm overflow-hidden">

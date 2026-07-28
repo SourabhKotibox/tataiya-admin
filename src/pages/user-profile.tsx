@@ -480,6 +480,7 @@ export default function UserProfilePage() {
   }
 
   const isSubscribed = user.subscriptionStatus === "active" && user.subscriptionPlan !== "free";
+  const showReviews = settings.showReviews !== false;
 
   const TABS: { id: ProfileTab; label: string; icon: React.ReactNode; count?: number }[] = [
     { id: "overview", label: "Overview", icon: <User className="w-4 h-4" /> },
@@ -487,8 +488,12 @@ export default function UserProfilePage() {
     { id: "downloads", label: "Downloads", icon: <Download className="w-4 h-4" />, count: downloadItems.length },
     { id: "settings", label: "Edit Profile", icon: <Settings className="w-4 h-4" /> },
     { id: "security", label: "Security", icon: <Shield className="w-4 h-4" /> },
-    { id: "feedback", label: "Reviews", icon: <Star className="w-4 h-4" /> },
+    ...(showReviews ? [{ id: "feedback" as const, label: "Reviews", icon: <Star className="w-4 h-4" /> }] : []),
   ];
+
+  useEffect(() => {
+    if (!showReviews && activeTab === "feedback") setActiveTab("overview");
+  }, [showReviews, activeTab]);
 
   return (
     <div className="dark min-h-screen bg-[#030306] text-white font-sans selection:bg-amber-400/30 pb-24 lg:pb-0 overflow-x-hidden">
@@ -714,15 +719,26 @@ export default function UserProfilePage() {
                       <p className="text-white/40 text-xs mt-1">Save movies to watch later</p>
                     </div>
                   ) : (
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                       {wishlistItems.map((item: any) => (
-                        <div key={item.id} onClick={() => handlePlayItem(item)} className="group relative rounded-xl overflow-hidden aspect-[2/3] cursor-pointer border border-white/5">
-                          <img src={getImageUrl(item.poster || item.backdrop || "")} alt={item.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                        <div
+                          key={item.id}
+                          onClick={() => handlePlayItem(item)}
+                          className="group relative rounded-xl overflow-hidden aspect-video cursor-pointer border border-white/5 bg-zinc-900"
+                        >
+                          <img
+                            src={getImageUrl(item.backdrop || item.poster || item.thumbnail || "")}
+                            alt={item.title}
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                          />
                           <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent" />
                           <div className="absolute bottom-0 left-0 right-0 p-3">
-                            <p className="text-white font-bold text-xs line-clamp-2">{item.title}</p>
+                            <p className="text-white font-bold text-xs sm:text-sm line-clamp-2">{item.title}</p>
                           </div>
-                          <button onClick={(e) => { e.stopPropagation(); handleRemoveWishlist(item); }} className="absolute top-2 right-2 w-8 h-8 rounded-lg bg-black/60 hover:bg-red-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all">
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleRemoveWishlist(item); }}
+                            className="absolute top-2 right-2 w-8 h-8 rounded-lg bg-black/60 hover:bg-red-500 text-white flex items-center justify-center opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
+                          >
                             <Trash2 className="w-4 h-4" />
                           </button>
                         </div>
@@ -752,10 +768,18 @@ export default function UserProfilePage() {
                       <p className="text-white font-bold">No downloads yet</p>
                     </div>
                   ) : (
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                       {downloadItems.map((item: any) => (
-                        <div key={item.id} onClick={() => handlePlayDownload(item)} className="group relative rounded-xl overflow-hidden aspect-[2/3] cursor-pointer border border-white/5">
-                          <img src={getImageUrl(item.poster || item.thumbnail || "")} alt={item.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                        <div
+                          key={item.id}
+                          onClick={() => handlePlayDownload(item)}
+                          className="group relative rounded-xl overflow-hidden aspect-video cursor-pointer border border-white/5 bg-zinc-900"
+                        >
+                          <img
+                            src={getImageUrl(item.backdrop || item.poster || item.thumbnail || "")}
+                            alt={item.title}
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                          />
                           {offlineCached[item.id] ? (
                             <div className="absolute top-2 left-2 flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-600/90 text-[9px] font-bold text-white z-20">
                               Offline
@@ -768,9 +792,12 @@ export default function UserProfilePage() {
                           <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent" />
                           <div className="absolute bottom-0 left-0 right-0 p-3">
                             {item.parentTitle && <p className="text-white/70 text-[10px] mb-0.5">{item.parentTitle}</p>}
-                            <p className="text-white font-bold text-xs line-clamp-2">{item.title}</p>
+                            <p className="text-white font-bold text-xs sm:text-sm line-clamp-2">{item.title}</p>
                           </div>
-                          <button onClick={(e) => { e.stopPropagation(); handleRemoveDownload(item); }} className="absolute top-2 right-2 w-8 h-8 rounded-lg bg-black/60 hover:bg-red-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all z-20">
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleRemoveDownload(item); }}
+                            className="absolute top-2 right-2 w-8 h-8 rounded-lg bg-black/60 hover:bg-red-500 text-white flex items-center justify-center opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all z-20"
+                          >
                             <Trash2 className="w-4 h-4" />
                           </button>
                         </div>

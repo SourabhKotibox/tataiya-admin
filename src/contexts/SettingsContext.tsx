@@ -40,6 +40,7 @@ export interface AppSettings {
   socialLogin: boolean;
   twoFactorAuth: boolean;
   emailVerification: boolean;
+  showReviews: boolean;
   googleClientId: string;
   appleClientId: string;
   appleTeamId: string;
@@ -162,6 +163,7 @@ const DEFAULT: AppSettings = {
   socialLogin: true,
   twoFactorAuth: false,
   emailVerification: true,
+  showReviews: true,
   googleClientId: '',
   appleClientId: '',
   appleTeamId: '',
@@ -288,6 +290,7 @@ function mapApiData(api: any): AppSettings {
     socialLogin: api.socialLogin ?? DEFAULT.socialLogin,
     twoFactorAuth: api.twoFactorAuth ?? DEFAULT.twoFactorAuth,
     emailVerification: api.emailVerification ?? DEFAULT.emailVerification,
+    showReviews: api.showReviews ?? DEFAULT.showReviews,
     googleClientId: api.googleClientId || '',
     appleClientId: api.appleClientId || "",
     appleTeamId: api.appleTeamId || "",

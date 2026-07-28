@@ -3,6 +3,7 @@ import { Star, MessageSquareQuote, Trash2, Send, Sparkles, ChevronLeft, ChevronR
 import { useGetAppReviews, createAppReview, deleteAppReview, getImageUrl } from "@/lib/api-client";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { useSettings } from "@/contexts/SettingsContext";
 
 interface WebsiteReviewsProps {
   user: any;
@@ -72,12 +73,14 @@ function userMatchesReview(review: any, user: any) {
 export function WebsiteReviews({ user, onSignInRequired, variant = "full" }: WebsiteReviewsProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { settings } = useSettings();
   const [page, setPage] = useState(1);
   const [rating, setRating] = useState(5);
   const [comment, setComment] = useState("");
   const [hoverRating, setHoverRating] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const reviewsEnabled = settings.showReviews !== false;
   const { data, isLoading } = useGetAppReviews(page);
   const reviews = data?.data || [];
   const stats = data?.stats || { averageRating: 0, totalReviews: 0, distribution: {} };
@@ -90,6 +93,8 @@ export function WebsiteReviews({ user, onSignInRequired, variant = "full" }: Web
     () => reviews.some((r: any) => userMatchesReview(r, user)),
     [reviews, user]
   );
+
+  if (!reviewsEnabled) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
