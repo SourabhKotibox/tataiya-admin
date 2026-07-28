@@ -19,7 +19,7 @@ import {
 } from "@/lib/api-client";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { WebsiteReviews } from "@/components/WebsiteReviews";
-import { LandscapeCard } from "@/components/ContentCard";
+import { LandscapeCard, PortraitCard } from "@/components/ContentCard";
 import Hls from "hls.js";
 import SubscriptionPlansModal from "@/components/SubscriptionPlansModal";
 
@@ -224,8 +224,8 @@ function FeaturedCard({ item, onPlay, size = "md" }: { item: ContentItem; onPlay
 }
 
 /* ─── PORTRAIT CONTENT CARD wrapper (delegates to PortraitCard) ─── */
-function ContentCard({ item, onPlay, size = "md" }: { item: ContentItem; onPlay: (item: ContentItem) => void; size?: "sm" | "md" | "lg" }) {
-  return <LandscapeCard item={item} onClick={() => onPlay(item)} size={size} />;
+function ContentCard({ item, onPlay, size = "md", fullWidth = false }: { item: ContentItem; onPlay: (item: ContentItem) => void; size?: "sm" | "md" | "lg"; fullWidth?: boolean }) {
+  return <PortraitCard item={item} onClick={() => onPlay(item)} size={size} fullWidth={fullWidth} />;
 }
 
 /* ─── HORIZONTAL ROWS ─── */
@@ -469,7 +469,7 @@ function Hero({ activeTab, onPlay, onSubscribeClick, isSubscribed }: { activeTab
       )}
 
       {/* Content — mobile: title + CTA only */}
-      <div className="absolute inset-x-0 bottom-0 z-10 px-3 pb-14 pt-12 sm:px-10 sm:pb-28 sm:pt-32 lg:px-14">
+      <div className="absolute inset-x-0 bottom-0 z-10 px-3 pb-12 pt-10 sm:px-10 sm:pb-28 sm:pt-32 lg:px-14">
         <div className={`max-w-2xl transition-all duration-500 ${fading ? "opacity-0 translate-y-3" : "opacity-100 translate-y-0"}`}>
           {/* Desktop badges only — keep mobile clean */}
           <div className="hidden sm:flex items-center gap-2 mb-3 flex-wrap">
@@ -483,7 +483,7 @@ function Hero({ activeTab, onPlay, onSubscribeClick, isSubscribed }: { activeTab
             ))}
           </div>
 
-          <h1 className="text-xl sm:text-5xl lg:text-6xl font-black text-white leading-tight mb-1.5 sm:mb-4 tracking-tight drop-shadow-[0_2px_16px_rgba(0,0,0,0.75)] line-clamp-1 sm:line-clamp-none">
+          <h1 className="text-lg sm:text-5xl lg:text-6xl font-black text-white leading-snug sm:leading-tight mb-1.5 sm:mb-4 tracking-tight drop-shadow-[0_2px_16px_rgba(0,0,0,0.75)] line-clamp-2 sm:line-clamp-none break-words pr-10 sm:pr-0">
             {item.title}
           </h1>
 
@@ -496,10 +496,10 @@ function Hero({ activeTab, onPlay, onSubscribeClick, isSubscribed }: { activeTab
           </div>
 
           {/* Mobile: tiny meta row */}
-          <div className="flex sm:hidden items-center gap-2 mb-2.5 text-[10px] text-white/85 font-semibold">
+          <div className="flex sm:hidden items-center gap-2 mb-2.5 text-[11px] text-white/85 font-semibold flex-wrap">
             {item.imdbRating && (
               <span className="flex items-center gap-0.5 text-amber-400">
-                <Star className="w-2.5 h-2.5 fill-amber-400" /> {item.imdbRating}
+                <Star className="w-3 h-3 fill-amber-400" /> {item.imdbRating}
               </span>
             )}
             {item.year && <span>{item.year}</span>}
@@ -513,9 +513,9 @@ function Hero({ activeTab, onPlay, onSubscribeClick, isSubscribed }: { activeTab
           <div className="flex items-center gap-2 sm:gap-3">
             <button
               onClick={() => onPlay(item)}
-              className="flex items-center gap-1.5 sm:gap-2 px-4 py-2 sm:px-8 sm:py-3.5 bg-amber-400 hover:bg-amber-300 text-black font-bold rounded-full text-[11px] sm:text-sm tracking-wide transition-all active:scale-95 shadow-lg shadow-amber-900/40"
+              className="flex items-center gap-1.5 sm:gap-2 min-h-[40px] px-5 py-2.5 sm:px-8 sm:py-3.5 bg-amber-400 hover:bg-amber-300 text-black font-bold rounded-full text-xs sm:text-sm tracking-wide transition-all active:scale-95 shadow-lg shadow-amber-900/40"
             >
-              <Play className="w-3 h-3 sm:w-4 sm:h-4 fill-black" />
+              <Play className="w-3.5 h-3.5 sm:w-4 sm:h-4 fill-black" />
               Watch Now
             </button>
             {isPremium && !isSubscribed && (
@@ -573,15 +573,19 @@ function GenreFilter({ active, onChange }: { active: string; onChange: (g: strin
   const genres: string[] = ["All", ...((genresData?.data || []).map((g: any) => g.name))];
 
   return (
-    <div className="flex gap-2 overflow-x-auto px-4 sm:px-8 lg:px-12 pb-2 mb-6" style={{ scrollbarWidth: "none" } as React.CSSProperties}>
+    <div
+      className="flex gap-2 overflow-x-auto overscroll-x-contain touch-pan-x px-3 sm:px-8 lg:px-12 pb-3 mb-5 sm:mb-6 -mx-0"
+      style={{ scrollbarWidth: "none", WebkitOverflowScrolling: "touch" } as React.CSSProperties}
+    >
       {genres.map((g) => (
         <button
           key={g}
+          type="button"
           onClick={() => onChange(g)}
-          className={`flex-shrink-0 px-4 py-1.5 rounded-full text-sm font-medium transition-all border ${
+          className={`flex-shrink-0 min-h-[40px] px-4 sm:px-5 py-2 rounded-full text-sm font-semibold transition-all border whitespace-nowrap ${
             active === g
-              ? "bg-amber-400 border-amber-400 text-white"
-              : "bg-transparent border-zinc-700 text-white/80 hover:border-zinc-500 hover:text-white"
+              ? "bg-amber-400 border-amber-400 text-black shadow-md shadow-amber-900/30"
+              : "bg-transparent border-zinc-700 text-white/80 hover:border-zinc-500 hover:text-white active:bg-white/5"
           }`}
         >
           {g}
@@ -653,18 +657,25 @@ function MoviesTab({ onPlay }: { onPlay: (item: ContentItem) => void }) {
   const filtered = browseData?.items || [];
 
   return (
-    <div className="pt-6 pb-20">
-      <div className="px-4 sm:px-8 lg:px-12 mb-6">
-        <h2 className="text-white font-bold text-2xl tracking-tight">Movies</h2>
-        <p className="text-white text-xs sm:text-sm mt-1">{isLoading ? "Loading..." : `${browseData?.pagination?.total || 0} movies available`}</p>
+    <div className="pt-4 sm:pt-6 pb-24 sm:pb-20 w-full max-w-[100vw] overflow-x-hidden">
+      <div className="px-3 sm:px-8 lg:px-12 mb-4 sm:mb-6">
+        <h2 className="text-white font-bold text-xl sm:text-2xl tracking-tight">Movies</h2>
+        <p className="text-white/60 text-sm mt-1">
+          {isLoading ? "Loading..." : `${browseData?.pagination?.total || 0} movies available`}
+        </p>
       </div>
       <GenreFilter active={activeGenre} onChange={setActiveGenre} />
       {isLoading ? (
         <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-amber-400" /></div>
+      ) : filtered.length === 0 ? (
+        <div className="px-3 sm:px-8 lg:px-12 text-center py-16">
+          <Film className="w-10 h-10 text-white/30 mx-auto mb-3" />
+          <p className="text-white/70 text-sm font-medium">No movies in this genre yet.</p>
+        </div>
       ) : (
-        <div className="px-4 sm:px-8 lg:px-12 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6">
+        <div className="px-3 sm:px-8 lg:px-12 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-x-3 gap-y-5 sm:gap-x-4 sm:gap-y-6 md:gap-5">
           {filtered.map((item: any) => (
-            <ContentCard key={item.id || item._id} item={item} onPlay={onPlay} />
+            <ContentCard key={item.id || item._id} item={item} onPlay={onPlay} fullWidth />
           ))}
         </div>
       )}
@@ -1567,12 +1578,12 @@ export function PublicHeader({ activeTab, setActiveTab, onSignIn, onSignOut, use
   return (
     <>
       <header className={`fixed top-0 left-0 right-0 z-50 transition-all duration-500 ${scrolled ? "bg-[#0a0a10]/95 backdrop-blur-md shadow-[0_2px_24px_rgba(0,0,0,0.85)] border-b border-white/5" : "bg-gradient-to-b from-[#030306]/95 via-[#030306]/40 to-transparent"}`}>
-        <div className="px-4 sm:px-6 lg:px-10 xl:px-14">
-          <div className="flex items-center justify-between h-[60px] lg:h-[68px]">
-            <div className="flex items-center gap-6 lg:gap-8">
-              <Link href="/" className="flex items-center gap-2.5 flex-shrink-0 group">
+        <div className="px-3 sm:px-6 lg:px-10 xl:px-14">
+          <div className="flex items-center justify-between h-[56px] sm:h-[60px] lg:h-[68px] gap-2">
+            <div className="flex items-center gap-4 lg:gap-8 min-w-0">
+              <Link href="/" className="flex items-center gap-2.5 flex-shrink-0 group max-w-[42vw] sm:max-w-none">
                 {logoUrl ? (
-                  <img src={logoUrl} alt={settings.platformName || "StreamIT"} className="h-8 w-auto object-contain group-hover:scale-105 transition-transform" />
+                  <img src={logoUrl} alt={settings.platformName || "StreamIT"} className="h-7 sm:h-8 w-auto max-h-8 object-contain group-hover:scale-105 transition-transform" />
                 ) : (
                   <>
                     <div className="w-8 h-8 rounded-lg bg-amber-400 flex items-center justify-center shadow-lg shadow-amber-500/50 group-hover:scale-105 transition-transform">
@@ -1600,9 +1611,9 @@ export function PublicHeader({ activeTab, setActiveTab, onSignIn, onSignOut, use
               </nav>
             </div>
 
-            <div className="flex items-center gap-1.5 sm:gap-2.5" id="public-search-container">
-              <div className="relative flex items-center">
-                <div className={`flex items-center overflow-hidden transition-all duration-300 rounded-full border ${searchOpen ? "w-44 sm:w-52 bg-black/80 border-zinc-800" : "w-9 h-9 border-transparent"}`}>
+            <div className="flex items-center gap-0.5 sm:gap-2.5 min-w-0" id="public-search-container">
+              <div className="relative flex items-center shrink-0">
+                <div className={`flex items-center overflow-hidden transition-all duration-300 rounded-full border ${searchOpen ? "w-[min(11rem,42vw)] sm:w-52 bg-black/80 border-zinc-800" : "w-9 h-9 border-transparent"}`}>
                   {searchOpen && <Search className="absolute left-3 w-3.5 h-3.5 text-white/80 pointer-events-none" />}
                   {searchOpen ? (
                     <input
@@ -1614,11 +1625,11 @@ export function PublicHeader({ activeTab, setActiveTab, onSignIn, onSignOut, use
                       className="w-full bg-transparent text-white text-xs pl-8 pr-7 py-2 focus:outline-none placeholder:text-white"
                     />
                   ) : (
-                    <button onClick={() => { setSearchOpen(true); setLocation("/browse"); }} className="w-9 h-9 flex items-center justify-center text-white hover:text-white transition-colors rounded-full hover:bg-white/5">
+                    <button onClick={() => { setSearchOpen(true); setLocation("/browse"); }} className="w-9 h-9 flex items-center justify-center text-white hover:text-white transition-colors rounded-full hover:bg-white/5" aria-label="Search">
                       <Search className="w-[17px] h-[17px]" />
                     </button>
                   )}
-                  {searchOpen && <button onMouseDown={handleClearSearch} className="absolute right-2.5 text-white hover:text-white"><X className="w-3 h-3" /></button>}
+                  {searchOpen && <button onMouseDown={handleClearSearch} className="absolute right-2.5 text-white hover:text-white" aria-label="Clear search"><X className="w-3 h-3" /></button>}
                 </div>
               </div>
 
@@ -1761,13 +1772,14 @@ export function PublicHeader({ activeTab, setActiveTab, onSignIn, onSignOut, use
           </div>
         </div>
 
-        <div className={`lg:hidden overflow-hidden transition-all duration-300 ${mobileOpen ? "max-h-80 opacity-100" : "max-h-0 opacity-0"}`}>
-          <div className="bg-[#0a0a10] border-t border-zinc-800 px-4 py-4 space-y-2">
+        <div className={`lg:hidden overflow-hidden transition-all duration-300 ${mobileOpen ? "max-h-96 opacity-100" : "max-h-0 opacity-0"}`}>
+          <div className="bg-[#0a0a10]/98 backdrop-blur-md border-t border-zinc-800 px-3 sm:px-4 py-3 space-y-1.5">
             {NAV_TABS.map(({ label, tab, icon }) => (
               <button
                 key={tab}
+                type="button"
                 onClick={() => { setActiveTab(tab); setMobileOpen(false); }}
-                className={`w-full flex items-center gap-3 px-3.5 py-3 rounded-xl text-sm font-bold transition-all ${activeTab === tab ? "bg-amber-400/15 text-white" : "text-white hover:bg-white/10"}`}
+                className={`w-full flex items-center gap-3 px-3.5 py-3.5 min-h-[48px] rounded-xl text-sm font-bold transition-all ${activeTab === tab ? "bg-amber-400/15 text-white" : "text-white hover:bg-white/10"}`}
               >
                 {activeTab === tab && <span className="w-1.5 h-1.5 rounded-full bg-amber-400 flex-shrink-0" />}
                 {icon}
@@ -1776,8 +1788,9 @@ export function PublicHeader({ activeTab, setActiveTab, onSignIn, onSignOut, use
             ))}
             {!isSubscribed && (
               <button
+                type="button"
                 onClick={onSubscribeClick || (() => { setLocation("/browse"); setMobileOpen(false); })}
-                className="w-full mt-2 py-3 bg-amber-400 hover:bg-amber-500 text-black font-bold rounded-xl text-sm transition-all flex items-center justify-center gap-2"
+                className="w-full mt-2 py-3.5 min-h-[48px] bg-amber-400 hover:bg-amber-500 text-black font-bold rounded-xl text-sm transition-all flex items-center justify-center gap-2"
               >
                 <Crown className="w-4 h-4" /> Subscribe Now
               </button>
@@ -2059,7 +2072,7 @@ export default function StreamingHomePage() {
   }, [pendingPlay, navigateToContent]);
 
   return (
-    <div className="min-h-screen bg-[#030306] font-sans selection:bg-amber-400/30 text-white pb-20 sm:pb-0">
+    <div className="min-h-screen bg-[#030306] font-sans selection:bg-amber-400/30 text-white pb-20 sm:pb-0 overflow-x-hidden">
       <PublicHeader
         activeTab={activeTab}
         setActiveTab={setActiveTab}
