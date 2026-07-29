@@ -633,33 +633,29 @@ function VideoPlayer({
           enableWorker: true,
           lowLatencyMode: false,
 
-          // Start on level -1 = let ABR choose from the very first segment
-          startLevel: -1,
+          // Start at lowest quality for instant first frame, then ABR climbs
+          startLevel: 0,
 
-          // ABR — aggressive: climb fast on good connections, drop fast on bad
-          abrEwmaDefaultEstimate: 3_000_000,   // assume 3 Mbps — fast start on decent connections
-          abrEwmaFastLive: 3,
-          abrEwmaSlowLive: 9,
+          // ABR — fast climb on good connections
+          abrEwmaDefaultEstimate: 2_000_000,   // 2 Mbps initial estimate
           abrEwmaFastVoD: 3,
           abrEwmaSlowVoD: 9,
-          abrBandWidthFactor: 0.9,             // use 90% of measured BW (was 0.75 — too conservative)
-          abrBandWidthUpFactor: 0.7,           // 70% to step up (was 0.55 — too slow to climb)
+          abrBandWidthFactor: 0.85,            // use 85% of measured bandwidth
+          abrBandWidthUpFactor: 0.65,          // step up when 65% of needed BW is available
 
-          // Buffer — allow more ahead so playback is smooth
-          maxBufferLength: 30,                 // 30s ahead — enough to absorb hiccups
+          // Buffer — 30s ahead so hiccups don't interrupt playback
+          maxBufferLength: 30,
           maxMaxBufferLength: 60,
-          maxBufferSize: 60 * 1024 * 1024,     // 60 MB
+          maxBufferSize: 60 * 1024 * 1024,
           maxBufferHole: 0.5,
           nudgeMaxRetry: 5,
+          nudgeOffset: 0.2,
 
           // Stall recovery
           highBufferWatchdogPeriod: 2,
-          nudgeOffset: 0.2,
 
-          // Prefetch and parallel downloads
           startFragPrefetch: true,
           testBandwidth: true,
-          progressive: true,                   // start playback before segment fully downloaded
         });
         hlsRef.current = hls;
         hls.loadSource(activeSrc);
@@ -667,7 +663,12 @@ function VideoPlayer({
         hls.on(Hls.Events.MANIFEST_PARSED, () => {
           onReady();
         });
-        // ABR is active from start (startLevel: -1), no manual override needed
+        // After first segment loads at startLevel:0, unlock ABR to climb quality
+        hls.on(Hls.Events.FRAG_LOADED, (_e, data) => {
+          if (currentQuality === "auto" && data.frag.sn === 0 && hlsRef.current === hls) {
+            hls.currentLevel = -1; // full ABR from 2nd segment onwards
+          }
+        });
         hls.on(Hls.Events.FRAG_BUFFERED, () => {
           if (v.paused && (playingRef.current || autoPlayRef.current)) v.play().catch(() => {});
           setLoading(false);
@@ -746,9 +747,8 @@ function VideoPlayer({
         const vid = videoRef.current;
         if (!vid || cancelled) return;
         if (hls) {
-          // On stall, just restart loading — ABR will naturally drop quality
           try {
-            hls.startLoad(-1);
+            hls.startLoad(-1); // resume from current position, ABR picks quality
           } catch { /* ignore */ }
         }
         // Tiny nudge to unblock buffer hole
@@ -1110,11 +1110,10 @@ function VideoPlayer({
       <video
         ref={videoRef}
         poster={thumbnail}
-        className={`absolute inset-0 w-full h-full ${cssFullscreen ? "object-contain" : "object-contain"}`}
+        className={`absolute inset-0 w-full h-full object-contain`}
         preload="auto"
         playsInline
         style={{ outline: "none", background: "#000" }}
-        crossOrigin="anonymous"
         onLoadedMetadata={() => {
           const v = videoRef.current;
           if (!v) return;
