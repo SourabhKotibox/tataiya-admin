@@ -473,6 +473,7 @@ function VideoPlayer({
         const exit = doc.exitFullscreen || doc.webkitExitFullscreen || doc.mozCancelFullScreen || doc.msExitFullscreen;
         try { exit?.call(doc); } catch { /* ignore */ }
       }
+      try { (screen.orientation as any)?.unlock?.(); } catch { /* ignore */ }
       setCssFullscreen(false);
       setIsFullscreen(false);
       keepPlaying(); // sync — still inside click gesture
@@ -485,9 +486,6 @@ function VideoPlayer({
       revealControls();
       return;
     }
-
-    // Enter — CSS first on touch devices (reliable); native on desktop
-    const preferCss = isMobileBrowser() || !c.requestFullscreen;
 
     const enterCss = () => {
       // Resume BEFORE layout change while gesture is still valid
@@ -505,11 +503,20 @@ function VideoPlayer({
       revealControls();
     };
 
-    if (preferCss) {
-      enterCss();
-      return;
+    // iPhone: no element-fullscreen API. The ONLY way to hide Safari's bars
+    // is the native video fullscreen player — it also auto-rotates.
+    const vAny = v as any;
+    const isIphone = /iPhone|iPod/.test(navigator.userAgent);
+    if (isIphone && typeof vAny?.webkitEnterFullscreen === "function") {
+      try {
+        keepPlaying(); // must play before entering; iOS blocks FS on idle video
+        vAny.webkitEnterFullscreen();
+        setIsFullscreen(true);
+        return;
+      } catch { /* fall through to CSS overlay */ }
     }
 
+    // Android + desktop: native element fullscreen hides ALL browser chrome
     const req = c.requestFullscreen || c.webkitRequestFullscreen || c.mozRequestFullScreen || c.msRequestFullscreen;
     if (req) {
       keepPlaying();
@@ -519,6 +526,11 @@ function VideoPlayer({
           keepPlaying();
           window.setTimeout(keepPlaying, 80);
           window.setTimeout(keepPlaying, 250);
+          // Auto-rotate to landscape (works inside native fullscreen on Android)
+          if (isMobileBrowser()) {
+            try { (screen.orientation as any)?.lock?.("landscape").catch(() => {}); } catch { /* ignore */ }
+            window.setTimeout(keepPlaying, 500); // orientation change can fire a pause
+          }
           revealControls();
         })
         .catch(() => enterCss());
@@ -586,6 +598,27 @@ function VideoPlayer({
       v.removeEventListener("playing",        onCanPlay);
     };
   }, [scheduleHide, onNext]);
+
+  // iPhone native fullscreen player closed → sync state and keep playing inline
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    const onBegin = () => setIsFullscreen(true);
+    const onEnd = () => {
+      setIsFullscreen(false);
+      setCssFullscreen(false);
+      window.setTimeout(() => {
+        const vid = videoRef.current;
+        if (vid && fsWasPlayingRef.current && vid.paused) vid.play().catch(() => {});
+      }, 60);
+    };
+    v.addEventListener("webkitbeginfullscreen", onBegin as any);
+    v.addEventListener("webkitendfullscreen", onEnd as any);
+    return () => {
+      v.removeEventListener("webkitbeginfullscreen", onBegin as any);
+      v.removeEventListener("webkitendfullscreen", onEnd as any);
+    };
+  }, []);
 
   // Listen to watch now triggers to play in fullscreen
   useEffect(() => {
@@ -1067,11 +1100,13 @@ function VideoPlayer({
         }
       }}
     >
-      {/* Real video element — object-cover fills the screen in landscape fullscreen */}
+      {/* Real video element — object-cover fills the screen (no black gaps) in mobile fullscreen */}
       <video
         ref={videoRef}
         poster={thumbnail}
-        className={`absolute inset-0 w-full h-full object-contain`}
+        className={`absolute inset-0 w-full h-full ${
+          (cssFullscreen || isFullscreen) && isMobileBrowser() ? "object-cover" : "object-contain"
+        }`}
         preload="auto"
         playsInline
         style={{ outline: "none", background: "#000" }}
