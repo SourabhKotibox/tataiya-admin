@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { useParams, useLocation } from "wouter";
 import {
   ChevronLeft, ChevronRight, Heart, Star, Share2, Lock, Unlock,
@@ -464,7 +465,6 @@ function VideoPlayer({
       }
       setCssFullscreen(false);
       setIsFullscreen(false);
-      try { (screen.orientation as any)?.unlock?.(); } catch { /* ignore */ }
       // Resume without seeking (same media element)
       window.setTimeout(() => {
         const vid = videoRef.current;
@@ -481,7 +481,6 @@ function VideoPlayer({
       setCssFullscreen(true);
       setIsFullscreen(true);
       revealControls();
-      try { (screen.orientation as any)?.lock?.("landscape").catch(() => {}); } catch { /* ignore */ }
       window.setTimeout(() => {
         const vid = videoRef.current;
         if (vid && fsWasPlayingRef.current && vid.paused) vid.play().catch(() => {});
@@ -499,7 +498,6 @@ function VideoPlayer({
         .then(() => {
           setIsFullscreen(true);
           revealControls();
-          try { (screen.orientation as any)?.lock?.("landscape").catch(() => {}); } catch { /* ignore */ }
           window.setTimeout(() => {
             const vid = videoRef.current;
             if (vid && fsWasPlayingRef.current && vid.paused) vid.play().catch(() => {});
@@ -925,44 +923,21 @@ function VideoPlayer({
     revealControls();
   }, [cssFullscreen, revealControls]);
 
-  // CSS fullscreen must escape overflow:hidden ancestors (clips fixed on iOS)
+  // When CSS fullscreen is active, prevent body scroll and lock landscape orientation
   useEffect(() => {
     if (!cssFullscreen) return;
-    const restored: { el: HTMLElement; overflow: string; position: string; zIndex: string }[] = [];
-    let el: HTMLElement | null | undefined = containerRef.current?.parentElement;
-    while (el && el !== document.documentElement) {
-      const style = getComputedStyle(el);
-      if (
-        style.overflow !== "visible" ||
-        style.overflowX !== "visible" ||
-        style.overflowY !== "visible" ||
-        style.transform !== "none"
-      ) {
-        restored.push({
-          el,
-          overflow: el.style.overflow,
-          position: el.style.position,
-          zIndex: el.style.zIndex,
-        });
-        el.style.overflow = "visible";
-        // transform creates a containing block for fixed — clear it while FS
-        if (style.transform !== "none") el.style.transform = "none";
-      }
-      el = el.parentElement;
-    }
     const prevHtml = document.documentElement.style.overflow;
     const prevBody = document.body.style.overflow;
     document.documentElement.style.overflow = "hidden";
     document.body.style.overflow = "hidden";
+    // Lock landscape so rotating the phone fills the screen properly
+    try {
+      (screen.orientation as any)?.lock?.("landscape").catch(() => {});
+    } catch { /* ignore — not supported on all browsers */ }
     return () => {
-      restored.forEach(({ el: node, overflow, position, zIndex }) => {
-        node.style.overflow = overflow;
-        node.style.position = position;
-        node.style.zIndex = zIndex;
-        node.style.transform = "";
-      });
       document.documentElement.style.overflow = prevHtml;
       document.body.style.overflow = prevBody;
+      try { (screen.orientation as any)?.unlock?.(); } catch { /* ignore */ }
     };
   }, [cssFullscreen]);
 
@@ -1032,21 +1007,25 @@ function VideoPlayer({
       ref={containerRef}
       className={`bg-black select-none ${
         cssFullscreen
-          ? "fixed inset-0 z-[99999] rounded-none overflow-hidden"
+          ? "rounded-none overflow-hidden"
           : "absolute inset-0 w-full h-full rounded-xl sm:rounded-2xl overflow-hidden"
       }`}
       style={
         cssFullscreen
           ? {
+              // True full-viewport fixed overlay — works in both portrait and landscape
+              position: "fixed",
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              width: "100%",
+              height: "100%",
+              maxWidth: "100vw",
+              maxHeight: "100vh",
+              zIndex: 99999,
               touchAction: "manipulation",
               background: "#000",
-              width: "100vw",
-              height: "100vh",
-              // Covers the safe-area / notch on all orientations
-              paddingTop: "env(safe-area-inset-top)",
-              paddingBottom: "env(safe-area-inset-bottom)",
-              paddingLeft: "env(safe-area-inset-left)",
-              paddingRight: "env(safe-area-inset-right)",
             }
           : { touchAction: "manipulation" }
       }
@@ -1584,8 +1563,12 @@ function VideoPlayer({
     </div>
   );
 
-  // Always keep the same DOM tree — remounting via portal destroyed the video
-  // and forced a full HLS reload (black screen / missing controls after fullscreen).
+  // In CSS fullscreen, portal the shell to document.body so it escapes ALL
+  // parent overflow:hidden / transform / stacking contexts.
+  // createPortal does NOT unmount — the same <video> ref stays alive, HLS keeps running.
+  if (cssFullscreen && typeof document !== "undefined") {
+    return createPortal(playerShell, document.body);
+  }
   return playerShell;
 }
 
