@@ -118,6 +118,8 @@ function VideoPlayer({
   const gestureMovedRef = useRef(false);
   const fsTimeRef = useRef<number | null>(null);
   const fsWasPlayingRef = useRef(false);
+  /** Guard: ignore accidental pause events while layout switches to/from fullscreen */
+  const fsTransitionRef = useRef(false);
   const gestureRef = useRef<{
     active: boolean;
     mode: "volume" | "brightness" | null;
@@ -448,10 +450,28 @@ function VideoPlayer({
     const v = videoRef.current;
     if (!c) return;
 
+    const wasPlaying = !!(v && !v.paused);
     if (v) {
       fsTimeRef.current = v.currentTime;
-      fsWasPlayingRef.current = !v.paused;
+      fsWasPlayingRef.current = wasPlaying;
     }
+
+    // Mark transition so onPause doesn't clear "playing" / leave us stuck paused
+    fsTransitionRef.current = true;
+    window.setTimeout(() => { fsTransitionRef.current = false; }, 1000);
+
+    // MUST call play() in the same user-gesture stack — setTimeout play() is blocked on mobile
+    const keepPlaying = () => {
+      const vid = videoRef.current;
+      if (!vid) return;
+      if (!fsWasPlayingRef.current) return;
+      if (vid.paused) {
+        const p = vid.play();
+        if (p && typeof p.catch === "function") p.catch(() => {});
+      }
+      playingRef.current = true;
+      setPlaying(true);
+    };
 
     const doc = document as any;
     const nativeFull = isNativeFullscreen();
@@ -464,12 +484,14 @@ function VideoPlayer({
       }
       setCssFullscreen(false);
       setIsFullscreen(false);
-      // Resume without seeking (same media element)
-      window.setTimeout(() => {
-        const vid = videoRef.current;
-        if (vid && fsWasPlayingRef.current && vid.paused) vid.play().catch(() => {});
-        revealControls();
-      }, 40);
+      keepPlaying(); // sync — still inside click gesture
+      requestAnimationFrame(() => {
+        keepPlaying();
+        requestAnimationFrame(keepPlaying);
+      });
+      window.setTimeout(keepPlaying, 80);
+      window.setTimeout(keepPlaying, 250);
+      revealControls();
       return;
     }
 
@@ -477,13 +499,19 @@ function VideoPlayer({
     const preferCss = isMobileBrowser() || !c.requestFullscreen;
 
     const enterCss = () => {
+      // Resume BEFORE layout change while gesture is still valid
+      keepPlaying();
       setCssFullscreen(true);
       setIsFullscreen(true);
+      keepPlaying();
+      requestAnimationFrame(() => {
+        keepPlaying();
+        requestAnimationFrame(keepPlaying);
+      });
+      window.setTimeout(keepPlaying, 80);
+      window.setTimeout(keepPlaying, 250);
+      window.setTimeout(keepPlaying, 500);
       revealControls();
-      window.setTimeout(() => {
-        const vid = videoRef.current;
-        if (vid && fsWasPlayingRef.current && vid.paused) vid.play().catch(() => {});
-      }, 40);
     };
 
     if (preferCss) {
@@ -493,14 +521,14 @@ function VideoPlayer({
 
     const req = c.requestFullscreen || c.webkitRequestFullscreen || c.mozRequestFullScreen || c.msRequestFullscreen;
     if (req) {
+      keepPlaying();
       Promise.resolve(req.call(c))
         .then(() => {
           setIsFullscreen(true);
+          keepPlaying();
+          window.setTimeout(keepPlaying, 80);
+          window.setTimeout(keepPlaying, 250);
           revealControls();
-          window.setTimeout(() => {
-            const vid = videoRef.current;
-            if (vid && fsWasPlayingRef.current && vid.paused) vid.play().catch(() => {});
-          }, 40);
         })
         .catch(() => enterCss());
     } else {
@@ -518,6 +546,13 @@ function VideoPlayer({
       scheduleHide();
     };
     const onPause = () => {
+      // Layout change to fixed fullscreen often fires a spurious pause.
+      // Resume immediately and do not flip UI into "paused" during transition.
+      if (fsTransitionRef.current && fsWasPlayingRef.current) {
+        const vid = videoRef.current;
+        if (vid?.paused) vid.play().catch(() => {});
+        return;
+      }
       setPlaying(false);
       clearTimeout(hideTimerRef.current);
       setControlsVisible(true);
@@ -880,24 +915,25 @@ function VideoPlayer({
     const v = videoRef.current;
     if (!v) return;
     setIsFullscreen(cssFullscreen || isNativeFullscreen());
-    if (fsWasPlayingRef.current && v.paused) v.play().catch(() => {});
+    if (fsWasPlayingRef.current) {
+      if (v.paused) v.play().catch(() => {});
+      playingRef.current = true;
+      setPlaying(true);
+    }
     revealControls();
   }, [cssFullscreen, revealControls]);
 
-  // When CSS fullscreen is active, prevent body scroll and try to lock landscape
+  // When CSS fullscreen is active, prevent body scroll.
+  // Do NOT call screen.orientation.lock here — it pauses media on many mobile browsers.
   useEffect(() => {
     if (!cssFullscreen) return;
     const prevHtml = document.documentElement.style.overflow;
     const prevBody = document.body.style.overflow;
     document.documentElement.style.overflow = "hidden";
     document.body.style.overflow = "hidden";
-    try {
-      (screen.orientation as any)?.lock?.("landscape").catch(() => {});
-    } catch { /* not supported on all browsers */ }
     return () => {
       document.documentElement.style.overflow = prevHtml;
       document.body.style.overflow = prevBody;
-      try { (screen.orientation as any)?.unlock?.(); } catch { /* ignore */ }
     };
   }, [cssFullscreen]);
 
