@@ -166,19 +166,22 @@ function VideoPlayer({
     }
   }, [resumeFrom]);
 
-  // Throttle progress saves — avoid hammering API on every seek / timeupdate
+  // Throttle progress saves — max one API call per 15s wall-clock,
+  // no matter how fast currentTime changes (scrubbing, seeking, etc.)
+  const lastSaveAtRef = useRef(0);
   useEffect(() => {
     if (!contentId || !duration || duration <= 20) return;
     const token = localStorage.getItem("appAccessToken");
     if (!token) return;
 
+    const now = Date.now();
+    if (now - lastSaveAtRef.current < 15_000) return; // wall-clock gate
+
     const diff = Math.abs(currentTime - lastSavedTimeRef.current);
-    // While playing: save every ~30s. On pause: save once if moved >2s.
-    const shouldSave = playing
-      ? diff >= 30
-      : currentTime > 2 && diff > 2;
+    const shouldSave = playing ? diff >= 30 : currentTime > 2 && diff > 2;
     if (!shouldSave) return;
 
+    lastSaveAtRef.current = now;
     lastSavedTimeRef.current = currentTime;
     saveProgressMutation.mutate({
       contentId,
@@ -372,40 +375,28 @@ function VideoPlayer({
     revealControls();
   };
 
-  /* seek — keep playing; nudge HLS to load (no full reload) */
-  const seekTo = useCallback((t: number, resumeIfWasPlaying = true) => {
+  /* seek — simple like the original working code.
+     No hls.startLoad() / play() per tick: dragging fires onChange dozens of
+     times and each extra call caused repeated segment/API requests. */
+  const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
     const v = videoRef.current;
     if (!v) return;
-    const wasPlaying = !v.paused || playingRef.current;
-    const next = Math.max(0, Math.min(isFinite(v.duration) ? v.duration : t, t));
-    try {
-      v.currentTime = next;
-    } catch {
-      /* ignore */
-    }
-    setCurrentTime(next);
-    const hls = hlsRef.current;
-    if (hls) {
-      try { hls.startLoad(-1); } catch { /* ignore */ }
-    }
-    if (resumeIfWasPlaying && wasPlaying) {
-      v.play().catch(() => {});
-    }
-  }, []);
-
-  const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
-    seekTo(Number(e.target.value));
+    const t = Number(e.target.value);
+    try { v.currentTime = t; } catch { /* ignore */ }
+    setCurrentTime(t);
     revealControls();
   };
 
   const skip = useCallback((sec: number) => {
     const v = videoRef.current;
     if (!v) return;
-    seekTo(v.currentTime + sec);
+    try {
+      v.currentTime = Math.max(0, Math.min(v.duration || 0, v.currentTime + sec));
+    } catch { /* ignore */ }
     setSkipAnim(sec > 0 ? "right" : "left");
     setTimeout(() => setSkipAnim(null), 600);
     revealControls();
-  }, [revealControls, seekTo]);
+  }, [revealControls]);
 
   /* volume */
   const handleVolume = (val: number) => {
