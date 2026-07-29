@@ -258,13 +258,8 @@ function VideoPlayer({
   const togglePlay = useCallback(async () => {
     const v = videoRef.current;
     if (!v) return;
-    if (v.paused) {
-      // On iOS Safari, readyState 0 means src is set but load() was never called
-      if (v.readyState === 0 && v.src) { v.load(); }
-      await v.play().catch(() => {});
-    } else {
-      v.pause();
-    }
+    if (v.paused) { await v.play().catch(() => {}); }
+    else          { v.pause(); }
     if (!uiLocked) revealControls();
   }, [revealControls, uiLocked]);
 
@@ -596,7 +591,6 @@ function VideoPlayer({
     if (!v) return;
 
     let cancelled = false;
-    let stallTimer: ReturnType<typeof setTimeout> | null = null;
     setLoading(true);
     if (hlsRef.current) {
       hlsRef.current.destroy();
@@ -605,10 +599,7 @@ function VideoPlayer({
 
     const attachAndPlay = (activeSrc: string, fromOffline: boolean) => {
       if (cancelled || !v) return;
-      if (!activeSrc) {
-        setLoading(false);
-        return;
-      }
+      if (!activeSrc) { setLoading(false); return; }
 
       const isM3u8 = activeSrc.includes(".m3u8") && !fromOffline;
 
@@ -616,49 +607,25 @@ function VideoPlayer({
         if (cancelled) return;
         setLoading(false);
         if (pendingSeekRef.current !== null) {
-          try {
-            v.currentTime = pendingSeekRef.current;
-          } catch {
-            /* ignore */
-          }
+          try { v.currentTime = pendingSeekRef.current; } catch { /* ignore */ }
           pendingSeekRef.current = null;
           resumeAppliedRef.current = true;
         }
         v.playbackRate = speed;
-        const shouldPlay = playingRef.current || autoPlayRef.current;
-        if (shouldPlay) v.play().catch(() => {});
+        if (playing || autoPlay) v.play().catch(() => {});
       };
 
       if (isM3u8 && Hls.isSupported()) {
-        if (hlsRef.current) {
-          hlsRef.current.destroy();
-          hlsRef.current = null;
-        }
+        if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; }
         const hls = new Hls({
           enableWorker: true,
           lowLatencyMode: false,
-
-          // Start at lowest quality for instant first frame, then ABR climbs
           startLevel: 0,
-
-          // ABR — fast climb on good connections
-          abrEwmaDefaultEstimate: 2_000_000,   // 2 Mbps initial estimate
-          abrEwmaFastVoD: 3,
-          abrEwmaSlowVoD: 9,
-          abrBandWidthFactor: 0.85,            // use 85% of measured bandwidth
-          abrBandWidthUpFactor: 0.65,          // step up when 65% of needed BW is available
-
-          // Buffer — 30s ahead so hiccups don't interrupt playback
-          maxBufferLength: 30,
-          maxMaxBufferLength: 60,
-          maxBufferSize: 60 * 1024 * 1024,
+          abrEwmaDefaultEstimate: 500_000,
+          maxBufferLength: 20,
+          maxMaxBufferLength: 40,
+          maxBufferSize: 30 * 1000 * 1000,
           maxBufferHole: 0.5,
-          nudgeMaxRetry: 5,
-          nudgeOffset: 0.2,
-
-          // Stall recovery
-          highBufferWatchdogPeriod: 2,
-
           startFragPrefetch: true,
           testBandwidth: true,
         });
@@ -666,54 +633,36 @@ function VideoPlayer({
         hls.loadSource(activeSrc);
         hls.attachMedia(v);
         hls.on(Hls.Events.MANIFEST_PARSED, () => {
+          if (currentQuality === "auto") {
+            // Start at level 0 for instant first frame, then hand to ABR
+            window.setTimeout(() => {
+              if (hlsRef.current === hls) hls.currentLevel = -1;
+            }, 2500);
+          }
           onReady();
         });
-        // After first segment loads at startLevel:0, unlock ABR to climb quality
-        hls.on(Hls.Events.FRAG_LOADED, (_e, data) => {
-          if (currentQuality === "auto" && data.frag.sn === 0 && hlsRef.current === hls) {
-            hls.currentLevel = -1; // full ABR from 2nd segment onwards
-          }
-        });
         hls.on(Hls.Events.FRAG_BUFFERED, () => {
-          if (v.paused && (playingRef.current || autoPlayRef.current)) v.play().catch(() => {});
+          if (v.paused && (playing || autoPlay)) v.play().catch(() => {});
           setLoading(false);
         });
-        let networkRetries = 0;
         hls.on(Hls.Events.ERROR, (_e, data) => {
-          if (!data.fatal) return;
-          console.error("HLS fatal error", data);
-          if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
-            // Retry up to 5 times with increasing delay
-            if (networkRetries < 5) {
-              networkRetries++;
-              setTimeout(() => {
-                try { hls.startLoad(); } catch { setLoading(false); }
-              }, networkRetries * 1000);
-            } else {
-              setLoading(false);
-            }
-          } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
-            try { hls.recoverMediaError(); } catch { setLoading(false); }
-          } else {
+          if (data.fatal) {
+            console.error("HLS fatal error", data);
             setLoading(false);
           }
         });
       } else if (isM3u8 && v.canPlayType("application/vnd.apple.mpegurl")) {
-        // iOS Safari native HLS — must call load() explicitly
+        // iOS Safari — native HLS
         v.src = activeSrc;
         v.preload = "auto";
         v.load();
         v.addEventListener("loadedmetadata", onReady, { once: true });
         v.addEventListener("canplay", () => setLoading(false), { once: true });
-        v.addEventListener("error", () => setLoading(false), { once: true });
       } else {
         v.src = activeSrc;
         v.preload = "auto";
         v.load();
-        const onCanPlay = () => {
-          onReady();
-          v.removeEventListener("canplay", onCanPlay);
-        };
+        const onCanPlay = () => { onReady(); v.removeEventListener("canplay", onCanPlay); };
         v.addEventListener("canplay", onCanPlay);
         v.addEventListener("loadeddata", () => setLoading(false), { once: true });
       }
@@ -722,17 +671,14 @@ function VideoPlayer({
     const networkSrc = getImageUrl(currentSrc);
     attachAndPlay(networkSrc, false);
 
-    // Offline swap only if a local copy exists — preserve time, no full page reload
+    // Offline swap — preserve time, no full page reload
     if (contentId) {
       getOfflineVideoUrl(contentId).then((offlineUrl) => {
         if (cancelled || !offlineUrl || !videoRef.current) return;
         const v2 = videoRef.current;
         const t = v2.currentTime || pendingSeekRef.current || 0;
-        const wasPlaying = !v2.paused || autoPlayRef.current || playingRef.current;
-        if (hlsRef.current) {
-          hlsRef.current.destroy();
-          hlsRef.current = null;
-        }
+        const wasPlaying = !v2.paused || autoPlay;
+        if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; }
         pendingSeekRef.current = t > 1 ? t : null;
         v2.src = offlineUrl;
         v2.load();
@@ -748,47 +694,15 @@ function VideoPlayer({
       }).catch(() => {});
     }
 
-    const onWaiting = () => {
-      setLoading(true);
-      if (stallTimer) clearTimeout(stallTimer);
-      stallTimer = setTimeout(() => {
-        const hls = hlsRef.current;
-        const vid = videoRef.current;
-        if (!vid || cancelled) return;
-        if (hls) {
-          // HLS.js path (Android Chrome): restart loading, ABR picks quality
-          try { hls.startLoad(-1); } catch { /* ignore */ }
-        } else {
-          // Native HLS path (iOS Safari): reload source from current time
-          try {
-            const t = vid.currentTime;
-            vid.load();
-            vid.currentTime = t;
-          } catch { /* ignore */ }
-        }
-        if (playingRef.current || autoPlayRef.current) vid.play().catch(() => {});
-      }, 1500); // recover quickly — ABR handles quality automatically
-    };
-    const onPlayingClear = () => {
-      setLoading(false);
-      if (stallTimer) clearTimeout(stallTimer);
-    };
-    v.addEventListener("waiting", onWaiting);
-    v.addEventListener("playing", onPlayingClear);
-    v.addEventListener("canplay", onPlayingClear);
-
     return () => {
       cancelled = true;
-      if (stallTimer) clearTimeout(stallTimer);
-      v.removeEventListener("waiting", onWaiting);
-      v.removeEventListener("playing", onPlayingClear);
-      v.removeEventListener("canplay", onPlayingClear);
-      if (hlsRef.current) {
-        hlsRef.current.destroy();
-        hlsRef.current = null;
+      const el = videoRef.current;
+      if (el) {
+        try { el.pause(); el.removeAttribute("src"); el.load(); } catch { /* ignore */ }
       }
+      if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; }
     };
-  }, [currentSrc, contentId]);
+  }, [currentSrc, autoPlay, contentId]);
 
   // Keep parent informed for mini-player handoff
   useEffect(() => {
