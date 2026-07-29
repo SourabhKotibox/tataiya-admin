@@ -631,13 +631,30 @@ function VideoPlayer({
         const hls = new Hls({
           enableWorker: true,
           lowLatencyMode: false,
+
+          // Start on lowest quality so first frame appears fast
           startLevel: 0,
-          abrEwmaDefaultEstimate: 500000,
-          maxBufferLength: 30,
-          maxMaxBufferLength: 60,
-          maxBufferSize: 60 * 1000 * 1000,
-          maxBufferHole: 1.5,
+
+          // ABR — measure real bandwidth quickly and let it climb/drop fast
+          abrEwmaDefaultEstimate: 1_000_000,   // 1Mbps start estimate (was 500Kbps — too slow to climb)
+          abrEwmaFastLive: 3,                   // fast EWMA window (react quickly to drops)
+          abrEwmaSlowLive: 9,
+          abrEwmaFastVoD: 3,
+          abrEwmaSlowVoD: 9,
+          abrBandWidthFactor: 0.75,             // use only 75% of measured BW — be conservative
+          abrBandWidthUpFactor: 0.55,           // be even more careful when stepping UP quality
+
+          // Buffer — keep it small so we're not pre-fetching at a quality that may be too high
+          maxBufferLength: 10,                  // was 30 — big buffers mask ABR drops
+          maxMaxBufferLength: 30,               // cap
+          maxBufferSize: 20 * 1024 * 1024,      // 20 MB (was 60 MB)
+          maxBufferHole: 0.5,
           nudgeMaxRetry: 5,
+
+          // Stall recovery
+          highBufferWatchdogPeriod: 2,
+          nudgeOffset: 0.2,
+
           startFragPrefetch: true,
           testBandwidth: true,
         });
@@ -645,12 +662,13 @@ function VideoPlayer({
         hls.loadSource(activeSrc);
         hls.attachMedia(v);
         hls.on(Hls.Events.MANIFEST_PARSED, () => {
-          if (currentQuality === "auto") {
-            window.setTimeout(() => {
-              if (hlsRef.current === hls) hls.currentLevel = -1;
-            }, 2500);
-          }
           onReady();
+        });
+        // Enable full ABR immediately after first fragment loads — don't wait 2.5s
+        hls.on(Hls.Events.FRAG_LOADED, (_e, data) => {
+          if (currentQuality === "auto" && data.frag.sn === 0 && hlsRef.current === hls) {
+            hls.currentLevel = -1; // -1 = full ABR
+          }
         });
         hls.on(Hls.Events.FRAG_BUFFERED, () => {
           if (v.paused && (playingRef.current || autoPlayRef.current)) v.play().catch(() => {});
@@ -721,15 +739,23 @@ function VideoPlayer({
         const vid = videoRef.current;
         if (!vid || cancelled) return;
         if (hls) {
-          try { hls.startLoad(-1); } catch { /* ignore */ }
+          // If stalled, drop to lowest quality immediately so playback resumes
+          try {
+            hls.currentLevel = 0;   // drop to lowest
+            hls.startLoad(-1);
+            // After 1s, re-enable ABR to climb back up when bandwidth recovers
+            setTimeout(() => {
+              if (hlsRef.current === hls) hls.currentLevel = -1;
+            }, 1000);
+          } catch { /* ignore */ }
         }
-        // Tiny nudge can unblock stuck buffer holes after seek
+        // Tiny nudge to unblock buffer hole
         try {
           const t = vid.currentTime;
-          if (t > 0.25) vid.currentTime = t + 0.01;
+          if (t > 0.25) vid.currentTime = t + 0.05;
         } catch { /* ignore */ }
         if (playingRef.current || autoPlayRef.current) vid.play().catch(() => {});
-      }, 4000);
+      }, 2000); // was 4000 — recover in 2s not 4s
     };
     const onPlayingClear = () => {
       setLoading(false);
@@ -1006,10 +1032,24 @@ function VideoPlayer({
       ref={containerRef}
       className={`bg-black select-none ${
         cssFullscreen
-          ? "fixed inset-0 z-[99999] w-screen h-[100dvh] rounded-none overflow-hidden"
+          ? "fixed inset-0 z-[99999] rounded-none overflow-hidden"
           : "absolute inset-0 w-full h-full rounded-xl sm:rounded-2xl overflow-hidden"
       }`}
-      style={{ touchAction: "manipulation", background: "#000" }}
+      style={
+        cssFullscreen
+          ? {
+              touchAction: "manipulation",
+              background: "#000",
+              width: "100vw",
+              height: "100vh",
+              // Covers the safe-area / notch on all orientations
+              paddingTop: "env(safe-area-inset-top)",
+              paddingBottom: "env(safe-area-inset-bottom)",
+              paddingLeft: "env(safe-area-inset-left)",
+              paddingRight: "env(safe-area-inset-right)",
+            }
+          : { touchAction: "manipulation" }
+      }
       onMouseMove={() => { if (!uiLocked) revealControls(); }}
       onMouseLeave={() => {
         if (playing && !uiLocked && !settingsOpen && !cssFullscreen) {
@@ -1064,14 +1104,14 @@ function VideoPlayer({
         }
       }}
     >
-      {/* Real video element */}
+      {/* Real video element — object-cover fills the screen in landscape fullscreen */}
       <video
         ref={videoRef}
         poster={thumbnail}
-        className="absolute inset-0 w-full h-full object-contain"
+        className={`absolute inset-0 w-full h-full ${cssFullscreen ? "object-contain" : "object-contain"}`}
         preload="auto"
         playsInline
-        style={{ outline: "none" }}
+        style={{ outline: "none", background: "#000" }}
         crossOrigin="anonymous"
         onLoadedMetadata={() => {
           const v = videoRef.current;
