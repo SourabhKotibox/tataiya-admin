@@ -1,5 +1,4 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { createPortal } from "react-dom";
 import { useParams, useLocation } from "wouter";
 import {
   ChevronLeft, ChevronRight, Heart, Star, Share2, Lock, Unlock,
@@ -131,9 +130,6 @@ function VideoPlayer({
   }>({ active: false, mode: null, startY: 0, startX: 0, startVal: 0, width: 1, height: 1, edge: null });
   const gestureHudTimer = useRef<ReturnType<typeof setTimeout>>();
   const [cssFullscreen, setCssFullscreen] = useState(false);
-  const [isPortrait, setIsPortrait] = useState(
-    typeof window !== "undefined" ? window.innerHeight > window.innerWidth : false
-  );
 
   // Quality & Speed Settings state
   const [currentSrc,     setCurrentSrc]     = useState(() => videoSrc ? getImageUrl(videoSrc) : "");
@@ -585,100 +581,136 @@ function VideoPlayer({
     return () => window.removeEventListener('force-play-fullscreen', handleForcePlay);
   }, []);
 
-  // Load source with HLS support — only when URL changes (never remount on play/FS)
+  // Load source with HLS — ONLY when URL changes.
+  // Never depend on autoPlay/playing/fullscreen (those must not destroy the stream).
   useEffect(() => {
     const v = videoRef.current;
     if (!v) return;
 
+    const networkSrc = getImageUrl(currentSrc);
+    if (!networkSrc) {
+      setLoading(false);
+      return;
+    }
+
     let cancelled = false;
     setLoading(true);
+
+    // Tear down previous HLS instance only (keep <video> element alive)
     if (hlsRef.current) {
-      hlsRef.current.destroy();
+      try { hlsRef.current.destroy(); } catch { /* ignore */ }
       hlsRef.current = null;
     }
 
-    const attachAndPlay = (activeSrc: string, fromOffline: boolean) => {
-      if (cancelled || !v) return;
-      if (!activeSrc) { setLoading(false); return; }
+    const shouldAutoPlay = () => playingRef.current || autoPlayRef.current;
 
-      const isM3u8 = activeSrc.includes(".m3u8") && !fromOffline;
-
-      const onReady = () => {
-        if (cancelled) return;
-        setLoading(false);
-        if (pendingSeekRef.current !== null) {
-          try { v.currentTime = pendingSeekRef.current; } catch { /* ignore */ }
-          pendingSeekRef.current = null;
-          resumeAppliedRef.current = true;
-        }
-        v.playbackRate = speed;
-        if (playing || autoPlay) v.play().catch(() => {});
-      };
-
-      if (isM3u8 && Hls.isSupported()) {
-        if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; }
-        const hls = new Hls({
-          enableWorker: true,
-          lowLatencyMode: false,
-          startLevel: 0,
-          abrEwmaDefaultEstimate: 500_000,
-          maxBufferLength: 20,
-          maxMaxBufferLength: 40,
-          maxBufferSize: 30 * 1000 * 1000,
-          maxBufferHole: 0.5,
-          startFragPrefetch: true,
-          testBandwidth: true,
-        });
-        hlsRef.current = hls;
-        hls.loadSource(activeSrc);
-        hls.attachMedia(v);
-        hls.on(Hls.Events.MANIFEST_PARSED, () => {
-          if (currentQuality === "auto") {
-            // Start at level 0 for instant first frame, then hand to ABR
-            window.setTimeout(() => {
-              if (hlsRef.current === hls) hls.currentLevel = -1;
-            }, 2500);
-          }
-          onReady();
-        });
-        hls.on(Hls.Events.FRAG_BUFFERED, () => {
-          if (v.paused && (playing || autoPlay)) v.play().catch(() => {});
-          setLoading(false);
-        });
-        hls.on(Hls.Events.ERROR, (_e, data) => {
-          if (data.fatal) {
-            console.error("HLS fatal error", data);
-            setLoading(false);
-          }
-        });
-      } else if (isM3u8 && v.canPlayType("application/vnd.apple.mpegurl")) {
-        // iOS Safari — native HLS
-        v.src = activeSrc;
-        v.preload = "auto";
-        v.load();
-        v.addEventListener("loadedmetadata", onReady, { once: true });
-        v.addEventListener("canplay", () => setLoading(false), { once: true });
-      } else {
-        v.src = activeSrc;
-        v.preload = "auto";
-        v.load();
-        const onCanPlay = () => { onReady(); v.removeEventListener("canplay", onCanPlay); };
-        v.addEventListener("canplay", onCanPlay);
-        v.addEventListener("loadeddata", () => setLoading(false), { once: true });
+    const onReady = () => {
+      if (cancelled) return;
+      setLoading(false);
+      if (pendingSeekRef.current !== null) {
+        try { v.currentTime = pendingSeekRef.current; } catch { /* ignore */ }
+        pendingSeekRef.current = null;
+        resumeAppliedRef.current = true;
       }
+      v.playbackRate = speed;
+      if (shouldAutoPlay()) v.play().catch(() => {});
     };
 
-    const networkSrc = getImageUrl(currentSrc);
-    attachAndPlay(networkSrc, false);
+    const isM3u8 = /\.m3u8(\?|#|$)/i.test(networkSrc);
 
-    // Offline swap — preserve time, no full page reload
+    if (isM3u8 && Hls.isSupported()) {
+      // Estimate start bandwidth from Network Information API when available
+      const conn = (navigator as any).connection;
+      const downlinkMbps = typeof conn?.downlink === "number" ? conn.downlink : 0;
+      const startEstimate = downlinkMbps > 0
+        ? Math.max(500_000, Math.min(8_000_000, Math.round(downlinkMbps * 1_000_000 * 0.7)))
+        : 1_500_000;
+
+      const hls = new Hls({
+        enableWorker: true,
+        lowLatencyMode: false,
+        // Start low for fast first frame, then ABR climbs to match net speed
+        startLevel: 0,
+        abrEwmaDefaultEstimate: startEstimate,
+        abrEwmaFastVoD: 3,
+        abrEwmaSlowVoD: 9,
+        abrBandWidthFactor: 0.85,
+        abrBandWidthUpFactor: 0.7,
+        maxBufferLength: 30,
+        maxMaxBufferLength: 60,
+        maxBufferSize: 60 * 1024 * 1024,
+        maxBufferHole: 0.5,
+        startFragPrefetch: true,
+        testBandwidth: true,
+      });
+      hlsRef.current = hls;
+      hls.loadSource(networkSrc);
+      hls.attachMedia(v);
+
+      hls.on(Hls.Events.MANIFEST_PARSED, (_e, data) => {
+        // Prefer master playlist multi-quality when present
+        if (currentQuality === "auto" && (data.levels?.length || 0) > 1) {
+          // Unlock ABR after first fragment so first paint is fast
+          const unlock = () => {
+            if (hlsRef.current === hls && currentQuality === "auto") {
+              hls.currentLevel = -1;
+            }
+          };
+          hls.once(Hls.Events.FRAG_LOADED, unlock);
+          // Safety unlock if FRAG_LOADED never fires
+          window.setTimeout(unlock, 3000);
+        }
+        onReady();
+      });
+
+      hls.on(Hls.Events.FRAG_BUFFERED, () => {
+        if (cancelled) return;
+        setLoading(false);
+        if (v.paused && shouldAutoPlay()) v.play().catch(() => {});
+      });
+
+      hls.on(Hls.Events.ERROR, (_e, data) => {
+        if (!data.fatal) return;
+        console.error("HLS fatal error", data);
+        if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+          try { hls.startLoad(); } catch { setLoading(false); }
+        } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+          try { hls.recoverMediaError(); } catch { setLoading(false); }
+        } else {
+          setLoading(false);
+        }
+      });
+    } else if (isM3u8 && v.canPlayType("application/vnd.apple.mpegurl")) {
+      // iOS Safari native HLS — ABR is handled by the OS
+      v.src = networkSrc;
+      v.preload = "auto";
+      v.load();
+      v.addEventListener("loadedmetadata", onReady, { once: true });
+      v.addEventListener("canplay", () => setLoading(false), { once: true });
+    } else {
+      // Progressive MP4 / other
+      v.src = networkSrc;
+      v.preload = "auto";
+      v.load();
+      const onCanPlay = () => {
+        onReady();
+        v.removeEventListener("canplay", onCanPlay);
+      };
+      v.addEventListener("canplay", onCanPlay);
+      v.addEventListener("loadeddata", () => setLoading(false), { once: true });
+    }
+
+    // Offline swap only if a local copy exists — do not block network start
     if (contentId) {
       getOfflineVideoUrl(contentId).then((offlineUrl) => {
         if (cancelled || !offlineUrl || !videoRef.current) return;
         const v2 = videoRef.current;
         const t = v2.currentTime || pendingSeekRef.current || 0;
-        const wasPlaying = !v2.paused || autoPlay;
-        if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; }
+        const wasPlaying = !v2.paused || shouldAutoPlay();
+        if (hlsRef.current) {
+          try { hlsRef.current.destroy(); } catch { /* ignore */ }
+          hlsRef.current = null;
+        }
         pendingSeekRef.current = t > 1 ? t : null;
         v2.src = offlineUrl;
         v2.load();
@@ -696,13 +728,14 @@ function VideoPlayer({
 
     return () => {
       cancelled = true;
-      const el = videoRef.current;
-      if (el) {
-        try { el.pause(); el.removeAttribute("src"); el.load(); } catch { /* ignore */ }
+      if (hlsRef.current) {
+        try { hlsRef.current.destroy(); } catch { /* ignore */ }
+        hlsRef.current = null;
       }
-      if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; }
+      // Do NOT removeAttribute("src") / load() here — that kills playback on
+      // effect re-runs and when React moves the node for CSS fullscreen.
     };
-  }, [currentSrc, autoPlay, contentId]);
+  }, [currentSrc, contentId]); // intentionally NOT autoPlay / playing / cssFullscreen
 
   // Keep parent informed for mini-player handoff
   useEffect(() => {
@@ -851,19 +884,6 @@ function VideoPlayer({
     revealControls();
   }, [cssFullscreen, revealControls]);
 
-  // Track portrait vs landscape for CSS fullscreen rotation
-  useEffect(() => {
-    if (!cssFullscreen) return;
-    const onResize = () => setIsPortrait(window.innerHeight > window.innerWidth);
-    window.addEventListener("resize", onResize);
-    window.addEventListener("orientationchange", onResize);
-    onResize();
-    return () => {
-      window.removeEventListener("resize", onResize);
-      window.removeEventListener("orientationchange", onResize);
-    };
-  }, [cssFullscreen]);
-
   // When CSS fullscreen is active, prevent body scroll and try to lock landscape
   useEffect(() => {
     if (!cssFullscreen) return;
@@ -953,26 +973,16 @@ function VideoPlayer({
       style={
         cssFullscreen
           ? {
-              position: "fixed" as const,
-              top: 0,
-              left: 0,
+              // Fixed overlay in-place — never portal / remount <video>
+              position: "fixed",
+              inset: 0,
+              width: "100vw",
+              height: "100dvh",
+              maxWidth: "100vw",
+              maxHeight: "100dvh",
               zIndex: 99999,
               touchAction: "manipulation",
               background: "#000",
-              // In portrait on mobile: rotate the entire player 90° so video fills the screen
-              ...(isPortrait && isMobileBrowser()
-                ? {
-                    width: "100vh",
-                    height: "100vw",
-                    transform: "rotate(90deg)",
-                    transformOrigin: "top left",
-                    // After rotating, shift down by the viewport width to align top-left
-                    marginTop: "100vw",
-                  }
-                : {
-                    width: "100vw",
-                    height: "100vh",
-                  }),
             }
           : { touchAction: "manipulation" }
       }
@@ -1509,12 +1519,8 @@ function VideoPlayer({
     </div>
   );
 
-  // In CSS fullscreen, portal the shell to document.body so it escapes ALL
-  // parent overflow:hidden / transform / stacking contexts.
-  // createPortal does NOT unmount — the same <video> ref stays alive, HLS keeps running.
-  if (cssFullscreen && typeof document !== "undefined") {
-    return createPortal(playerShell, document.body);
-  }
+  // Always return the same DOM tree — never portal.
+  // Portaling moves <video> and breaks MediaSource / HLS (reload + endless buffer).
   return playerShell;
 }
 
@@ -1943,6 +1949,11 @@ export default function WatchPage() {
   const plotTitle = currentEp === 0 ? "About Trailer" : "Plot Synopsis";
 
   const pickPlayableUrl = (...candidates: Array<string | null | undefined>) => {
+    // Prefer HLS master playlist when available
+    for (const c of candidates) {
+      const u = String(c || "").trim();
+      if (u && !u.startsWith("blob:") && /\.m3u8(\?|#|$)/i.test(u)) return u;
+    }
     for (const c of candidates) {
       const u = String(c || "").trim();
       if (u && !u.startsWith("blob:")) return u;
@@ -1953,7 +1964,12 @@ export default function WatchPage() {
   const videoSrc =
     currentEp === 0
       ? pickPlayableUrl(showData?.trailerUrl)
-      : pickPlayableUrl(showData?.hlsUrl, showData?.videoUrl, showData?.sourceVideoUrl);
+      : pickPlayableUrl(
+          showData?.hlsUrl,
+          showData?.videoSettings?.find((q: any) => q.key === "auto")?.url,
+          showData?.videoUrl,
+          showData?.sourceVideoUrl
+        );
 
   const skipToMovie = useCallback(() => goToEpisode(1), [goToEpisode]);
   const hasTrailer = !!pickPlayableUrl(showData?.trailerUrl);
@@ -1995,7 +2011,7 @@ export default function WatchPage() {
 
           {/* Player Container — overflow visible so CSS fullscreen isn't clipped */}
           <div
-            key={`${title}-ep-${currentEp}`}
+            key={`player-ep-${currentEp}`}
             className="relative bg-black shadow-2xl rounded-xl sm:rounded-2xl border border-zinc-900 mb-4 w-full min-h-[200px] sm:min-h-0 overflow-visible"
             style={{ aspectRatio: "16 / 9" }}
             onClick={() => !playerStarted && setPlayerStarted(true)}

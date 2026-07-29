@@ -803,6 +803,8 @@ export const useGetWebDetail = (contentId: string) => {
       return res.data;
     },
     enabled: !!contentId,
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
   });
 };
 
