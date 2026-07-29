@@ -258,8 +258,13 @@ function VideoPlayer({
   const togglePlay = useCallback(async () => {
     const v = videoRef.current;
     if (!v) return;
-    if (v.paused) { await v.play().catch(() => {}); }
-    else          { v.pause(); }
+    if (v.paused) {
+      // On iOS Safari, readyState 0 means src is set but load() was never called
+      if (v.readyState === 0 && v.src) { v.load(); }
+      await v.play().catch(() => {});
+    } else {
+      v.pause();
+    }
     if (!uiLocked) revealControls();
   }, [revealControls, uiLocked]);
 
@@ -694,9 +699,13 @@ function VideoPlayer({
           }
         });
       } else if (isM3u8 && v.canPlayType("application/vnd.apple.mpegurl")) {
+        // iOS Safari native HLS — must call load() explicitly
         v.src = activeSrc;
+        v.preload = "auto";
+        v.load();
         v.addEventListener("loadedmetadata", onReady, { once: true });
         v.addEventListener("canplay", () => setLoading(false), { once: true });
+        v.addEventListener("error", () => setLoading(false), { once: true });
       } else {
         v.src = activeSrc;
         v.preload = "auto";
@@ -747,15 +756,16 @@ function VideoPlayer({
         const vid = videoRef.current;
         if (!vid || cancelled) return;
         if (hls) {
+          // HLS.js path (Android Chrome): restart loading, ABR picks quality
+          try { hls.startLoad(-1); } catch { /* ignore */ }
+        } else {
+          // Native HLS path (iOS Safari): reload source from current time
           try {
-            hls.startLoad(-1); // resume from current position, ABR picks quality
+            const t = vid.currentTime;
+            vid.load();
+            vid.currentTime = t;
           } catch { /* ignore */ }
         }
-        // Tiny nudge to unblock buffer hole
-        try {
-          const t = vid.currentTime;
-          if (t > 0.25) vid.currentTime = t + 0.05;
-        } catch { /* ignore */ }
         if (playingRef.current || autoPlayRef.current) vid.play().catch(() => {});
       }, 1500); // recover quickly — ABR handles quality automatically
     };
