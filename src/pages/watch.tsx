@@ -255,16 +255,43 @@ function VideoPlayer({
     setUiLocked(false);
   }, [videoSrc]);
 
-  /* play / pause */
+  /* play / pause — always honor user intent; never let FS-guard block pause */
   const togglePlay = useCallback(async () => {
     const v = videoRef.current;
     if (!v) return;
-    if (v.paused) { await v.play().catch(() => {}); }
-    else          { v.pause(); }
+
+    // User tapped play/pause — cancel any fullscreen auto-resume guard
+    fsTransitionRef.current = false;
+
+    if (v.paused) {
+      fsWasPlayingRef.current = true;
+      playingRef.current = true;
+      setPlaying(true);
+      setLoading(false);
+      try {
+        await v.play();
+      } catch (err) {
+        // Autoplay / MediaSource hiccup — retry once after a tick
+        console.warn("play() failed, retrying", err);
+        await new Promise((r) => setTimeout(r, 80));
+        try {
+          await v.play();
+        } catch (err2) {
+          console.warn("play() retry failed", err2);
+          playingRef.current = false;
+          setPlaying(false);
+        }
+      }
+    } else {
+      fsWasPlayingRef.current = false;
+      playingRef.current = false;
+      setPlaying(false);
+      v.pause();
+    }
     if (!uiLocked) revealControls();
   }, [revealControls, uiLocked]);
 
-  /** Single tap = always show controls for ≥5s · Double tap = play/pause */
+  /** Single tap = play/pause · Double tap also play/pause (same) · controls stay ≥5s */
   const handleScreenTap = useCallback((e?: React.SyntheticEvent) => {
     e?.stopPropagation?.();
     if (uiLocked) {
@@ -273,18 +300,10 @@ function VideoPlayer({
       hideTimerRef.current = setTimeout(() => setControlsVisible(false), 5000);
       return;
     }
-    const now = Date.now();
-    if (now - lastTapRef.current < 280) {
-      clearTimeout(tapTimerRef.current);
-      lastTapRef.current = 0;
-      void togglePlay();
-      return;
-    }
-    lastTapRef.current = now;
-    tapTimerRef.current = setTimeout(() => {
-      setControlsVisible(true);
-      scheduleHide();
-    }, 280);
+    // Always toggle play on tap (mobile users expect this). Reveal controls too.
+    void togglePlay();
+    setControlsVisible(true);
+    scheduleHide();
   }, [uiLocked, togglePlay, scheduleHide]);
 
   const toggleLock = useCallback(() => {
@@ -549,13 +568,14 @@ function VideoPlayer({
       scheduleHide();
     };
     const onPause = () => {
-      // Layout change to fixed fullscreen often fires a spurious pause.
-      // Resume immediately and do not flip UI into "paused" during transition.
+      // Only ignore spurious pauses during the brief fullscreen layout change.
+      // Never block a real user pause (togglePlay clears fsTransitionRef first).
       if (fsTransitionRef.current && fsWasPlayingRef.current) {
         const vid = videoRef.current;
         if (vid?.paused) vid.play().catch(() => {});
         return;
       }
+      playingRef.current = false;
       setPlaying(false);
       clearTimeout(hideTimerRef.current);
       setControlsVisible(true);
@@ -1229,7 +1249,7 @@ function VideoPlayer({
             type="button"
             onClick={(e) => { e.stopPropagation(); void togglePlay(); }}
             className={`w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-amber-400 hover:bg-amber-300 flex items-center justify-center shadow-lg shadow-amber-900/40 hover:scale-105 transition-all duration-200 active:scale-95 touch-manipulation ${
-              loading ? "opacity-0 pointer-events-none scale-90" : "opacity-100"
+              loading && playing ? "opacity-0 pointer-events-none scale-90" : "opacity-100"
             }`}
             aria-label={playing ? "Pause" : "Play"}
           >
