@@ -131,6 +131,9 @@ function VideoPlayer({
   }>({ active: false, mode: null, startY: 0, startX: 0, startVal: 0, width: 1, height: 1, edge: null });
   const gestureHudTimer = useRef<ReturnType<typeof setTimeout>>();
   const [cssFullscreen, setCssFullscreen] = useState(false);
+  const [isPortrait, setIsPortrait] = useState(
+    typeof window !== "undefined" ? window.innerHeight > window.innerWidth : false
+  );
 
   // Quality & Speed Settings state
   const [currentSrc,     setCurrentSrc]     = useState(() => videoSrc ? getImageUrl(videoSrc) : "");
@@ -923,17 +926,29 @@ function VideoPlayer({
     revealControls();
   }, [cssFullscreen, revealControls]);
 
-  // When CSS fullscreen is active, prevent body scroll and lock landscape orientation
+  // Track portrait vs landscape for CSS fullscreen rotation
+  useEffect(() => {
+    if (!cssFullscreen) return;
+    const onResize = () => setIsPortrait(window.innerHeight > window.innerWidth);
+    window.addEventListener("resize", onResize);
+    window.addEventListener("orientationchange", onResize);
+    onResize();
+    return () => {
+      window.removeEventListener("resize", onResize);
+      window.removeEventListener("orientationchange", onResize);
+    };
+  }, [cssFullscreen]);
+
+  // When CSS fullscreen is active, prevent body scroll and try to lock landscape
   useEffect(() => {
     if (!cssFullscreen) return;
     const prevHtml = document.documentElement.style.overflow;
     const prevBody = document.body.style.overflow;
     document.documentElement.style.overflow = "hidden";
     document.body.style.overflow = "hidden";
-    // Lock landscape so rotating the phone fills the screen properly
     try {
       (screen.orientation as any)?.lock?.("landscape").catch(() => {});
-    } catch { /* ignore — not supported on all browsers */ }
+    } catch { /* not supported on all browsers */ }
     return () => {
       document.documentElement.style.overflow = prevHtml;
       document.body.style.overflow = prevBody;
@@ -1013,19 +1028,26 @@ function VideoPlayer({
       style={
         cssFullscreen
           ? {
-              // True full-viewport fixed overlay — works in both portrait and landscape
-              position: "fixed",
+              position: "fixed" as const,
               top: 0,
               left: 0,
-              right: 0,
-              bottom: 0,
-              width: "100%",
-              height: "100%",
-              maxWidth: "100vw",
-              maxHeight: "100vh",
               zIndex: 99999,
               touchAction: "manipulation",
               background: "#000",
+              // In portrait on mobile: rotate the entire player 90° so video fills the screen
+              ...(isPortrait && isMobileBrowser()
+                ? {
+                    width: "100vh",
+                    height: "100vw",
+                    transform: "rotate(90deg)",
+                    transformOrigin: "top left",
+                    // After rotating, shift down by the viewport width to align top-left
+                    marginTop: "100vw",
+                  }
+                : {
+                    width: "100vw",
+                    height: "100vh",
+                  }),
             }
           : { touchAction: "manipulation" }
       }
