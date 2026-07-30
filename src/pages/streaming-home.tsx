@@ -1293,7 +1293,7 @@ function SignInModal({ onClose }: { onClose: () => void }) {
 
   const { settings } = useSettings();
   const { resolvedTheme } = useTheme();
-  const otpEnabled = !!settings.messageCentralEnabled;
+  const otpEnabled = true; // Always show Phone OTP; Message Central used when configured in admin
   const otpLen = Number(settings.messageCentralOtpLength || 4);
   const countryCode = String(settings.messageCentralCountryCode || "91");
 
@@ -1311,8 +1311,8 @@ function SignInModal({ onClose }: { onClose: () => void }) {
   }, []);
 
   useEffect(() => {
-    if (otpEnabled && isLogin) setUsePhone(true);
-  }, [otpEnabled, isLogin]);
+    if (isLogin) setUsePhone(true);
+  }, [isLogin]);
 
   useEffect(() => {
     if (resendIn <= 0) return;
@@ -1457,8 +1457,8 @@ function SignInModal({ onClose }: { onClose: () => void }) {
 
           {error && <div className="mb-4 p-3.5 bg-amber-400/10 border border-amber-400/20 rounded-xl text-amber-400 text-xs font-semibold leading-snug">{error}</div>}
 
-          {/* Phone OTP / Email toggle for login when Message Central is on */}
-          {isLogin && otpEnabled && (
+          {/* Phone OTP / Email toggle for login */}
+          {isLogin && (
             <div className="flex gap-1 mb-3 bg-zinc-900/60 rounded-xl p-1">
               <button
                 type="button"

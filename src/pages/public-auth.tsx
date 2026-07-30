@@ -63,7 +63,7 @@ export default function PublicAuthPage() {
   const { settings } = useSettings();
   const { resolvedTheme } = useTheme();
 
-  const otpEnabled = !!settings.messageCentralEnabled;
+  const otpEnabled = true; // Always show Phone OTP on web; API uses Message Central when configured
   const otpLen = Number(settings.messageCentralOtpLength || 4);
   const countryCode = String(settings.messageCentralCountryCode || "91");
   const showSocial = settings.socialLogin && (!!settings.googleClientId || !!settings.appleClientId);
@@ -82,9 +82,8 @@ export default function PublicAuthPage() {
   }, [settings.maintenanceMode, settings.userRegistration]);
 
   useEffect(() => {
-    if (otpEnabled) setAuthMode("phone");
-    else setAuthMode("email");
-  }, [otpEnabled]);
+    setAuthMode("phone");
+  }, []);
 
   useEffect(() => {
     if (resendIn <= 0) return;
@@ -302,31 +301,29 @@ export default function PublicAuthPage() {
           </div>
         )}
 
-        {/* Email / Phone toggle when Message Central is enabled */}
-        {otpEnabled && (
-          <div className="flex mb-5 p-1 rounded-xl bg-zinc-900 border border-zinc-800">
-            <button
-              type="button"
-              onClick={() => { setAuthMode("email"); setError(""); }}
-              className={`flex-1 py-2.5 rounded-lg text-xs font-bold transition-all ${
-                authMode === "email" ? "bg-primary text-white" : "text-white/60 hover:text-white"
-              }`}
-            >
-              Email
-            </button>
-            <button
-              type="button"
-              onClick={() => { setAuthMode("phone"); setError(""); setOtpSent(false); setOtp(""); }}
-              className={`flex-1 py-2.5 rounded-lg text-xs font-bold transition-all ${
-                authMode === "phone" ? "bg-primary text-white" : "text-white/60 hover:text-white"
-              }`}
-            >
-              Phone OTP
-            </button>
-          </div>
-        )}
+        {/* Email / Phone toggle — Phone OTP is default */}
+        <div className="flex mb-5 p-1 rounded-xl bg-zinc-900 border border-zinc-800">
+          <button
+            type="button"
+            onClick={() => { setAuthMode("phone"); setError(""); setOtpSent(false); setOtp(""); }}
+            className={`flex-1 py-2.5 rounded-lg text-xs font-bold transition-all ${
+              authMode === "phone" ? "bg-primary text-white" : "text-white/60 hover:text-white"
+            }`}
+          >
+            Phone OTP
+          </button>
+          <button
+            type="button"
+            onClick={() => { setAuthMode("email"); setError(""); }}
+            className={`flex-1 py-2.5 rounded-lg text-xs font-bold transition-all ${
+              authMode === "email" ? "bg-primary text-white" : "text-white/60 hover:text-white"
+            }`}
+          >
+            Email
+          </button>
+        </div>
 
-        {authMode === "phone" && otpEnabled ? (
+        {authMode === "phone" ? (
           <form onSubmit={handleVerifyOtp} className="flex flex-col gap-4">
             <div className="flex gap-2">
               <div className="w-16 shrink-0 flex items-center justify-center rounded-xl bg-zinc-950 border border-zinc-900 text-white/70 text-xs font-bold">
