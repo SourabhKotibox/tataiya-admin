@@ -1,5 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useLocation, useParams } from "wouter";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   ImageIcon, Plus, X, Trash2, Sparkles, Upload as UploadIcon, RefreshCw, Loader2,
 } from "lucide-react";
@@ -144,13 +145,59 @@ export default function MovieForm() {
   const createMovieMutation = useCreateMovie();
   const updateMovieMutation = useUpdateMovie();
   const reprocessHlsMutation = useReprocessMovieHls();
+  const queryClient = useQueryClient();
+  const hlsReadyAppliedRef = useRef(false);
 
   const { data: movieData } = useGetMovieById(isEdit ? id! : "");
   const movie = (movieData as any)?.data;
   const { data: hlsStatusData } = useMovieProcessingStatus(isEdit ? id! : "", !!isEdit && !!id);
-  const liveHlsStatus = (hlsStatusData as any)?.data?.processingStatus || movie?.processingStatus;
-  const liveHlsUrl = (hlsStatusData as any)?.data?.hlsUrl || movie?.hlsUrl;
-  const liveHlsError = (hlsStatusData as any)?.data?.processingError || movie?.processingError;
+  const hlsPoll = (hlsStatusData as any)?.data;
+  const liveHlsStatus = hlsPoll?.processingStatus || movie?.processingStatus;
+  const liveHlsUrl = hlsPoll?.hlsUrl || movie?.hlsUrl;
+  const liveHlsError = hlsPoll?.processingError || movie?.processingError;
+  const liveQualities = hlsPoll?.availableQualities || movie?.videoQualities || [];
+
+  // When background HLS finishes, auto-fill Video URL + Quality variants on this form
+  useEffect(() => {
+    if (!isEdit || !id) return;
+    const status = String(liveHlsStatus || "").toLowerCase();
+    const master = String(liveHlsUrl || "");
+    if (status !== "ready" || !/\.m3u8(\?|#|$)/i.test(master)) {
+      if (status === "queued" || status === "processing") hlsReadyAppliedRef.current = false;
+      return;
+    }
+    if (hlsReadyAppliedRef.current) return;
+    hlsReadyAppliedRef.current = true;
+
+    setVideoUploadType("hls");
+    setVideoUrl(master);
+    setVideoFilePath("");
+
+    const quals = Array.isArray(liveQualities) ? liveQualities : [];
+    if (quals.length > 0) {
+      setQualityEnabled(true);
+      setQualityRows(
+        quals.map((q: any, i: number) => {
+          const pathOrUrl = q.url || q.filePath || "";
+          const isAbs = /^https?:\/\//i.test(pathOrUrl);
+          return {
+            id: String(i + 1),
+            type: isAbs ? "url" : "local",
+            quality: q.quality || "480p",
+            filePath: isAbs ? "" : pathOrUrl,
+            url: isAbs ? pathOrUrl : "",
+          };
+        })
+      );
+    }
+
+    queryClient.invalidateQueries({ queryKey: ["movie", id] });
+    queryClient.invalidateQueries({ queryKey: ["movies"] });
+    toast({
+      title: "HLS ready — form updated",
+      description: "Master playlist and quality variants were filled in. Click Update Movie to save them on the form if needed (DB already has them).",
+    });
+  }, [isEdit, id, liveHlsStatus, liveHlsUrl, liveQualities, queryClient, toast]);
 
   /* ---- Movie Details ---- */
   const [thumbnail, setThumbnail] = useState({ filePath: "", preview: "" });
