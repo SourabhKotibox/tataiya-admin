@@ -3174,6 +3174,27 @@ export const useGetTransactions = () => {
 export const loginClient = async (data: { email: string; password: string }) => { return api('/app/auth/login', { method: 'POST', body: JSON.stringify(data) }); };
 export const registerClient = async (data: { email: string; password: string; name: string; phone?: string }) => { return api('/app/auth/register', { method: 'POST', body: JSON.stringify(data) }); };
 
+/** Phone OTP — web + app (Message Central) */
+export const sendOtpClient = async (mobileNumber: string) => {
+  return api('/app/auth/send-otp', {
+    method: 'POST',
+    body: JSON.stringify({ mobileNumber }),
+  });
+};
+
+export const verifyOtpClient = async (data: {
+  mobileNumber: string;
+  otp: string;
+  verificationId?: string;
+  deviceId?: string;
+  deviceName?: string;
+}) => {
+  return api('/app/auth/verify-otp', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+};
+
 // Countries API
 export const getCountries = async (options?: { page?: number; limit?: number; admin?: boolean }) => {
   const params = new URLSearchParams();

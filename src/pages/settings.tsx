@@ -18,6 +18,7 @@ import {
   Eye,
   EyeOff,
   Crown,
+  MessageSquare,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -55,6 +56,7 @@ const SECTIONS = [
   { id: "mail", label: "Mail Settings", icon: Mail },
   { id: "currency", label: "Currency Settings", icon: DollarSign },
   { id: "payment", label: "Payment Settings", icon: CreditCard },
+  { id: "sms", label: "Message Central (OTP)", icon: MessageSquare },
   { id: "subscription", label: "Subscription Settings", icon: Crown },
   { id: "storage", label: "Storage Settings", icon: HardDrive },
   { id: "seo", label: "SEO Settings", icon: Search },
@@ -154,6 +156,7 @@ export default function Settings() {
       case "mail": return handleSaveMail();
       case "currency": return handleSaveCurrency();
       case "payment": return handleSavePayment();
+      case "sms": return handleSaveSms();
       case "subscription": return handleSaveSubscription();
       case "storage": return handleSaveStorage();
       case "seo": return handleSaveSeo();
@@ -703,6 +706,64 @@ export default function Settings() {
       });
       await refreshSettings();
       toast({ title: "Payment settings saved!" });
+    } catch (err: any) {
+      toast({ title: err?.message || "Save failed", variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // ── Message Central (SMS OTP) ──────────────────────────────────────────
+  const [sms, setSms] = useState({
+    messageCentralEnabled: ctxSettings.messageCentralEnabled ?? false,
+    messageCentralCustomerId: ctxSettings.messageCentralCustomerId || "",
+    messageCentralEmail: ctxSettings.messageCentralEmail || "",
+    messageCentralPassword: ctxSettings.messageCentralPassword || "",
+    messageCentralBaseUrl: ctxSettings.messageCentralBaseUrl || "https://cpaas.messagecentral.com",
+    messageCentralCountryCode: ctxSettings.messageCentralCountryCode || "91",
+    messageCentralOtpLength: ctxSettings.messageCentralOtpLength ?? 4,
+    messageCentralFlowType: ctxSettings.messageCentralFlowType || "SMS",
+  });
+
+  useEffect(() => {
+    setSms({
+      messageCentralEnabled: ctxSettings.messageCentralEnabled ?? false,
+      messageCentralCustomerId: ctxSettings.messageCentralCustomerId || "",
+      messageCentralEmail: ctxSettings.messageCentralEmail || "",
+      messageCentralPassword: ctxSettings.messageCentralPassword || "",
+      messageCentralBaseUrl: ctxSettings.messageCentralBaseUrl || "https://cpaas.messagecentral.com",
+      messageCentralCountryCode: ctxSettings.messageCentralCountryCode || "91",
+      messageCentralOtpLength: ctxSettings.messageCentralOtpLength ?? 4,
+      messageCentralFlowType: ctxSettings.messageCentralFlowType || "SMS",
+    });
+  }, [
+    ctxSettings.messageCentralEnabled,
+    ctxSettings.messageCentralCustomerId,
+    ctxSettings.messageCentralEmail,
+    ctxSettings.messageCentralPassword,
+    ctxSettings.messageCentralBaseUrl,
+    ctxSettings.messageCentralCountryCode,
+    ctxSettings.messageCentralOtpLength,
+    ctxSettings.messageCentralFlowType,
+  ]);
+
+  const handleSaveSms = async () => {
+    setSaving(true);
+    try {
+      const payload = {
+        messageCentralEnabled: sms.messageCentralEnabled,
+        messageCentralCustomerId: sms.messageCentralCustomerId.trim(),
+        messageCentralEmail: sms.messageCentralEmail.trim(),
+        messageCentralPassword: sms.messageCentralPassword,
+        messageCentralBaseUrl: sms.messageCentralBaseUrl.trim() || "https://cpaas.messagecentral.com",
+        messageCentralCountryCode: sms.messageCentralCountryCode.trim() || "91",
+        messageCentralOtpLength: Number(sms.messageCentralOtpLength) || 4,
+        messageCentralFlowType: sms.messageCentralFlowType || "SMS",
+      };
+      await updateSettingsMutation.mutateAsync(payload);
+      updateCtx(payload);
+      await refreshSettings();
+      toast({ title: "Message Central settings saved!" });
     } catch (err: any) {
       toast({ title: err?.message || "Save failed", variant: "destructive" });
     } finally {
@@ -1661,6 +1722,158 @@ export default function Settings() {
     </div>
   );
 
+  const renderSms = () => (
+    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <SectionTitle icon={MessageSquare} label="Message Central (OTP Login)" />
+
+      <div className="rounded-lg border border-border bg-muted/20 p-4 text-sm text-muted-foreground space-y-1">
+        <p className="text-foreground font-medium">Used for phone OTP login on <span className="text-foreground">Web</span> and <span className="text-foreground">App</span>.</p>
+        <p>Get credentials from <a className="text-primary underline" href="https://console.messagecentral.com" target="_blank" rel="noreferrer">console.messagecentral.com</a>. Password is Base64-encoded automatically when calling their API.</p>
+        <p>If disabled or keys are empty, OTP falls back to test code <span className="text-foreground font-mono">1234</span>.</p>
+      </div>
+
+      <div className="flex items-center justify-between p-4 border border-border rounded-lg bg-background/50">
+        <div className="space-y-0.5">
+          <Label className="text-base text-foreground font-semibold">Enable Message Central OTP</Label>
+          <p className="text-sm text-muted-foreground">
+            Turn on to send real SMS OTPs for web &amp; app login.
+          </p>
+        </div>
+        <Switch
+          checked={sms.messageCentralEnabled}
+          onCheckedChange={(c) => setSms({ ...sms, messageCentralEnabled: c })}
+          className="data-[state=checked]:bg-primary"
+        />
+      </div>
+
+      <div className="overflow-hidden rounded-xl border border-border">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-muted/40 border-b border-border text-left">
+              <th className="px-4 py-3 font-semibold text-foreground w-[40%]">API Key / Field</th>
+              <th className="px-4 py-3 font-semibold text-foreground">Value</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border bg-background/40">
+            <tr>
+              <td className="px-4 py-3 text-muted-foreground align-top">
+                <div className="font-medium text-foreground">Customer ID</div>
+                <div className="text-xs mt-0.5">From Message Central console</div>
+              </td>
+              <td className="px-4 py-3">
+                <Input
+                  value={sms.messageCentralCustomerId}
+                  onChange={(e) => setSms({ ...sms, messageCentralCustomerId: e.target.value })}
+                  placeholder="C-XXXXXXXX"
+                  className={inputCls}
+                />
+              </td>
+            </tr>
+            <tr>
+              <td className="px-4 py-3 text-muted-foreground align-top">
+                <div className="font-medium text-foreground">Registered Email</div>
+                <div className="text-xs mt-0.5">Account email used for token API</div>
+              </td>
+              <td className="px-4 py-3">
+                <Input
+                  type="email"
+                  value={sms.messageCentralEmail}
+                  onChange={(e) => setSms({ ...sms, messageCentralEmail: e.target.value })}
+                  placeholder="you@example.com"
+                  className={inputCls}
+                />
+              </td>
+            </tr>
+            <tr>
+              <td className="px-4 py-3 text-muted-foreground align-top">
+                <div className="font-medium text-foreground">Password / API Key</div>
+                <div className="text-xs mt-0.5">Account password (stored securely, Base64 at call time)</div>
+              </td>
+              <td className="px-4 py-3">
+                <SecretInput
+                  value={sms.messageCentralPassword}
+                  onChange={(e) => setSms({ ...sms, messageCentralPassword: e.target.value })}
+                  placeholder="Enter password"
+                  className={inputCls}
+                />
+              </td>
+            </tr>
+            <tr>
+              <td className="px-4 py-3 text-muted-foreground align-top">
+                <div className="font-medium text-foreground">Base URL</div>
+              </td>
+              <td className="px-4 py-3">
+                <Input
+                  value={sms.messageCentralBaseUrl}
+                  onChange={(e) => setSms({ ...sms, messageCentralBaseUrl: e.target.value })}
+                  placeholder="https://cpaas.messagecentral.com"
+                  className={inputCls}
+                />
+              </td>
+            </tr>
+            <tr>
+              <td className="px-4 py-3 text-muted-foreground align-top">
+                <div className="font-medium text-foreground">Country Code</div>
+                <div className="text-xs mt-0.5">India = 91, USA = 1</div>
+              </td>
+              <td className="px-4 py-3">
+                <Input
+                  value={sms.messageCentralCountryCode}
+                  onChange={(e) => setSms({ ...sms, messageCentralCountryCode: e.target.value.replace(/\D/g, "") })}
+                  placeholder="91"
+                  className={inputCls}
+                />
+              </td>
+            </tr>
+            <tr>
+              <td className="px-4 py-3 text-muted-foreground align-top">
+                <div className="font-medium text-foreground">OTP Length</div>
+                <div className="text-xs mt-0.5">4–8 digits</div>
+              </td>
+              <td className="px-4 py-3">
+                <Select
+                  value={String(sms.messageCentralOtpLength)}
+                  onValueChange={(v) => setSms({ ...sms, messageCentralOtpLength: parseInt(v, 10) })}
+                >
+                  <SelectTrigger className={inputCls}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {[4, 5, 6, 7, 8].map((n) => (
+                      <SelectItem key={n} value={String(n)}>{n} digits</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </td>
+            </tr>
+            <tr>
+              <td className="px-4 py-3 text-muted-foreground align-top">
+                <div className="font-medium text-foreground">Flow Type</div>
+              </td>
+              <td className="px-4 py-3">
+                <Select
+                  value={sms.messageCentralFlowType}
+                  onValueChange={(v) => setSms({ ...sms, messageCentralFlowType: v })}
+                >
+                  <SelectTrigger className={inputCls}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="SMS">SMS</SelectItem>
+                    <SelectItem value="WHATSAPP">WhatsApp</SelectItem>
+                    <SelectItem value="RCS">RCS</SelectItem>
+                  </SelectContent>
+                </Select>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <SaveBtn saving={saving} onClick={handleSaveSms} />
+    </div>
+  );
+
   const renderSection = () => {
     switch (activeSection) {
       case "business": return renderBusiness();
@@ -1669,6 +1882,7 @@ export default function Settings() {
       case "mail": return renderMail();
       case "currency": return renderCurrency();
       case "payment": return renderPayment();
+      case "sms": return renderSms();
       case "subscription": return renderSubscription();
       case "storage": return renderStorage();
       case "seo": return renderSeo();

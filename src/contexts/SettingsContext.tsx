@@ -123,6 +123,15 @@ export interface AppSettings {
   razorpayEnabled: boolean;
   razorpayKeyId: string;
   razorpayKeySecret: string;
+  // Message Central SMS OTP
+  messageCentralEnabled: boolean;
+  messageCentralCustomerId: string;
+  messageCentralEmail: string;
+  messageCentralPassword: string;
+  messageCentralBaseUrl: string;
+  messageCentralCountryCode: string;
+  messageCentralOtpLength: number;
+  messageCentralFlowType: string;
 }
 
 const DEFAULT: AppSettings = {
@@ -246,6 +255,14 @@ const DEFAULT: AppSettings = {
   razorpayEnabled: false,
   razorpayKeyId: "",
   razorpayKeySecret: "",
+  messageCentralEnabled: false,
+  messageCentralCustomerId: "",
+  messageCentralEmail: "",
+  messageCentralPassword: "",
+  messageCentralBaseUrl: "https://cpaas.messagecentral.com",
+  messageCentralCountryCode: "91",
+  messageCentralOtpLength: 4,
+  messageCentralFlowType: "SMS",
 };
 
 const STORAGE_KEY = "tripleMindesSettings";
@@ -373,6 +390,14 @@ function mapApiData(api: any): AppSettings {
     razorpayEnabled: api.razorpayEnabled ?? DEFAULT.razorpayEnabled,
     razorpayKeyId: api.razorpayKeyId || "",
     razorpayKeySecret: api.razorpayKeySecret || "",
+    messageCentralEnabled: api.messageCentralEnabled ?? DEFAULT.messageCentralEnabled,
+    messageCentralCustomerId: api.messageCentralCustomerId || "",
+    messageCentralEmail: api.messageCentralEmail || "",
+    messageCentralPassword: api.messageCentralPassword || "",
+    messageCentralBaseUrl: api.messageCentralBaseUrl || DEFAULT.messageCentralBaseUrl,
+    messageCentralCountryCode: api.messageCentralCountryCode || DEFAULT.messageCentralCountryCode,
+    messageCentralOtpLength: api.messageCentralOtpLength ?? DEFAULT.messageCentralOtpLength,
+    messageCentralFlowType: api.messageCentralFlowType || DEFAULT.messageCentralFlowType,
   };
 }
 

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useLocation, Link } from "wouter";
 import { Play, Eye, EyeOff, Loader2, ArrowLeft, Wrench } from "lucide-react";
-import { loginClient, registerClient, getImageUrl } from "@/lib/api-client";
+import { loginClient, registerClient, sendOtpClient, verifyOtpClient, getImageUrl } from "@/lib/api-client";
 import { useSettings } from "@/contexts/SettingsContext";
 import { useTheme } from "next-themes";
 
@@ -12,7 +12,6 @@ declare global {
   }
 }
 
-// Load script once and call back
 function loadScript(src: string, id: string): Promise<void> {
   return new Promise((resolve) => {
     if (document.getElementById(id)) { resolve(); return; }
@@ -39,13 +38,22 @@ async function socialAuthRequest(provider: "google" | "apple", idToken: string, 
   return json;
 }
 
+const inputCls =
+  "w-full bg-zinc-950 border border-zinc-900 text-white placeholder:text-white/70 px-4 py-3.5 rounded-xl text-xs font-semibold focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all";
+
 export default function PublicAuthPage() {
   const [location, setLocation] = useLocation();
   const isLogin = location === "/login";
+  const [authMode, setAuthMode] = useState<"email" | "phone">("email");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [otp, setOtp] = useState("");
+  const [verificationId, setVerificationId] = useState("");
+  const [otpSent, setOtpSent] = useState(false);
+  const [resendIn, setResendIn] = useState(0);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [socialLoading, setSocialLoading] = useState<"google" | "apple" | null>(null);
@@ -55,6 +63,9 @@ export default function PublicAuthPage() {
   const { settings } = useSettings();
   const { resolvedTheme } = useTheme();
 
+  const otpEnabled = !!settings.messageCentralEnabled;
+  const otpLen = Number(settings.messageCentralOtpLength || 4);
+  const countryCode = String(settings.messageCentralCountryCode || "91");
   const showSocial = settings.socialLogin && (!!settings.googleClientId || !!settings.appleClientId);
 
   const getLogoUrl = () => {
@@ -65,13 +76,21 @@ export default function PublicAuthPage() {
   };
   const logoUrl = getLogoUrl();
 
-  // Reflect settings changes from context
   useEffect(() => {
     setMaintenance(settings.maintenanceMode ?? false);
     setRegistrationDisabled(!(settings.userRegistration ?? true));
   }, [settings.maintenanceMode, settings.userRegistration]);
 
-  // ── Helpers ───────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!otpEnabled && authMode === "phone") setAuthMode("email");
+  }, [otpEnabled, authMode]);
+
+  useEffect(() => {
+    if (resendIn <= 0) return;
+    const t = window.setTimeout(() => setResendIn((n) => n - 1), 1000);
+    return () => window.clearTimeout(t);
+  }, [resendIn]);
+
   const handleAuthSuccess = useCallback((res: any) => {
     localStorage.setItem("appAccessToken", res.accessToken);
     localStorage.setItem("appUser", JSON.stringify({
@@ -98,7 +117,6 @@ export default function PublicAuthPage() {
     setError(err?.message || "An error occurred. Please try again.");
   }, []);
 
-  // ── Email/Password Submit ─────────────────────────────────────────────────
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
@@ -118,43 +136,83 @@ export default function PublicAuthPage() {
     }
   };
 
-  // ── Google Sign In ─────────────────────────────────────────────────────────
+  const handleSendOtp = async () => {
+    setError("");
+    const mobileNumber = phone.replace(/\D/g, "").slice(-10);
+    if (!/^\d{10}$/.test(mobileNumber)) {
+      setError("Enter a valid 10-digit mobile number");
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await sendOtpClient(mobileNumber);
+      if (!res?.success) throw new Error(res?.message || "Failed to send OTP");
+      setVerificationId(res.verificationId || "");
+      setOtpSent(true);
+      setResendIn(45);
+      setOtp("");
+    } catch (err: any) {
+      handleAuthError(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerifyOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    const mobileNumber = phone.replace(/\D/g, "").slice(-10);
+    if (!/^\d{10}$/.test(mobileNumber)) {
+      setError("Enter a valid 10-digit mobile number");
+      return;
+    }
+    if (!new RegExp(`^\\d{${Math.min(4, otpLen)},8}$`).test(otp.trim())) {
+      setError(`Enter the ${otpLen}-digit OTP`);
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await verifyOtpClient({
+        mobileNumber,
+        otp: otp.trim(),
+        verificationId: verificationId || undefined,
+        deviceId: "web",
+        deviceName: typeof navigator !== "undefined" ? navigator.userAgent.slice(0, 80) : "web",
+      });
+      if (!res?.success || !res?.accessToken) throw new Error(res?.message || "OTP verification failed");
+      handleAuthSuccess(res);
+    } catch (err: any) {
+      handleAuthError(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleGoogleSignIn = useCallback(async () => {
     if (!settings.googleClientId) return;
-    setSocialLoading("google");
     setError("");
+    setSocialLoading("google");
     try {
-      await loadScript("https://accounts.google.com/gsi/client", "gsi-client");
-      await new Promise<void>((resolve, reject) => {
+      await loadScript("https://accounts.google.com/gsi/client", "google-gsi");
+      const idToken: string = await new Promise((resolve, reject) => {
         const timeout = setTimeout(() => reject(new Error("Google Sign In timed out")), 10000);
-        window.google?.accounts.id.initialize({
+        window.google.accounts.id.initialize({
           client_id: settings.googleClientId,
-          callback: async (response: { credential: string }) => {
+          callback: (response: any) => {
             clearTimeout(timeout);
-            try {
-              const res = await socialAuthRequest("google", response.credential);
-              handleAuthSuccess(res);
-              resolve();
-            } catch (err: any) {
-              handleAuthError(err);
-              reject(err);
-            }
+            if (response.credential) resolve(response.credential);
+            else reject(new Error("No credential returned"));
           },
-          cancel_on_tap_outside: true,
-          use_fedcm_for_prompt: false,
         });
-        window.google?.accounts.id.prompt((notification: any) => {
+        window.google.accounts.id.prompt((notification: any) => {
           if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
             clearTimeout(timeout);
-            // Fall back to popup
-            window.google?.accounts.id.renderButton(
-              document.getElementById("google-btn-inner"),
-              { theme: "outline", size: "large", width: 300 }
-            );
-            resolve();
+            reject(new Error("Google Sign In was dismissed"));
           }
         });
       });
+      const res = await socialAuthRequest("google", idToken);
+      handleAuthSuccess(res);
     } catch (err: any) {
       if (err?.message !== "Google Sign In timed out") handleAuthError(err);
     } finally {
@@ -162,69 +220,58 @@ export default function PublicAuthPage() {
     }
   }, [settings.googleClientId, handleAuthSuccess, handleAuthError]);
 
-  // ── Apple Sign In ──────────────────────────────────────────────────────────
   const handleAppleSignIn = useCallback(async () => {
     if (!settings.appleClientId) return;
-    setSocialLoading("apple");
     setError("");
+    setSocialLoading("apple");
     try {
       await loadScript(
         "https://appleid.cdn-apple.com/appleauth/static/jsapi/appleid/1/en_US/appleid.auth.js",
-        "apple-auth-js"
+        "apple-auth"
       );
-      window.AppleID?.auth.init({
+      window.AppleID.auth.init({
         clientId: settings.appleClientId,
         scope: "name email",
         redirectURI: window.location.origin,
         usePopup: true,
       });
-      const response = await window.AppleID?.auth.signIn();
+      const response = await window.AppleID.auth.signIn();
       const idToken = response?.authorization?.id_token;
-      if (!idToken) throw new Error("Apple sign-in cancelled");
+      if (!idToken) throw new Error("No Apple ID token");
       const res = await socialAuthRequest("apple", idToken, response?.user);
       handleAuthSuccess(res);
     } catch (err: any) {
-      if (err?.error !== "popup_closed_by_user") handleAuthError(err);
+      handleAuthError(err);
     } finally {
       setSocialLoading(null);
     }
   }, [settings.appleClientId, handleAuthSuccess, handleAuthError]);
 
-  // ── Maintenance screen ───────────────────────────────────────────────────
   if (maintenance) {
     return (
-      <div className="min-h-screen bg-[#030306] flex items-center justify-center p-4">
-        <div className="w-full max-w-md text-center space-y-6">
-          <div className="w-20 h-20 rounded-2xl bg-yellow-500/10 border border-yellow-500/20 flex items-center justify-center mx-auto">
-            <Wrench className="w-10 h-10 text-yellow-400" />
-          </div>
-          <div>
-            <h1 className="text-white text-2xl font-black mb-2">Under Maintenance</h1>
-            <p className="text-white/70 text-sm">The platform is temporarily down for scheduled maintenance. Please check back shortly.</p>
-          </div>
-          <Link href="/" className="inline-flex items-center gap-2 text-sm text-white/70 hover:text-white transition-colors">
-            <ArrowLeft className="w-4 h-4" /> Back to Home
-          </Link>
-        </div>
+      <div className="min-h-screen bg-black flex flex-col items-center justify-center p-6 text-center">
+        <Wrench className="w-12 h-12 text-amber-400 mb-4" />
+        <h1 className="text-white text-2xl font-black mb-2">Under Maintenance</h1>
+        <p className="text-white/60 text-sm max-w-md">We're performing scheduled maintenance. Please check back shortly.</p>
+        <Link href="/" className="mt-6 text-primary text-sm font-bold hover:underline">Back to Home</Link>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#030306] flex items-center justify-center p-4 relative overflow-hidden font-sans selection:bg-primary/30">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,184,0,0.16),transparent_50%)] pointer-events-none" />
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_bottom_right,rgba(255,140,0,0.10),transparent_50%)] pointer-events-none" />
+    <div className="min-h-screen bg-black flex items-center justify-center p-4 relative overflow-hidden">
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-primary/20 via-black to-black pointer-events-none" />
+      <div className="absolute top-6 left-6 z-20">
+        <Link href="/" className="flex items-center gap-2 text-white/70 hover:text-white text-sm font-semibold transition-colors">
+          <ArrowLeft className="w-4 h-4" /> Back
+        </Link>
+      </div>
 
-      <Link href="/" className="absolute top-6 left-6 flex items-center gap-2 text-xs font-semibold text-white/70 hover:text-white transition-all bg-white/5 border border-zinc-900 hover:border-zinc-800 px-4 py-2.5 rounded-xl z-20">
-        <ArrowLeft className="w-3.5 h-3.5" /> Back to Home
-      </Link>
-
-      <div className="w-full max-w-[500px] bg-[#0c0c14]/90 border border-zinc-900 rounded-3xl overflow-hidden shadow-2xl p-8 sm:p-10 relative z-10 hover:border-red-950/40 transition-all duration-300">
-        {/* Branding */}
-        <div className="flex flex-col items-center text-center mb-8">
-          <Link href="/" className="flex items-center gap-2.5 mb-6 group">
-            {logoUrl ? (
-              <img src={logoUrl} alt={settings.platformName || "StreamIT"} className="h-10 w-auto object-contain group-hover:scale-105 transition-transform" />
+      <div className="w-full max-w-[420px] relative z-10 bg-zinc-950/80 backdrop-blur-xl border border-zinc-900 rounded-3xl p-6 sm:p-8 shadow-2xl">
+        <div className="mb-8 text-center">
+          <Link href="/" className="inline-flex items-center gap-2.5 mb-6 group">
+            {logoUrl && logoUrl !== "/logo.png" ? (
+              <img src={logoUrl} alt={settings.platformName || "Logo"} className="h-10 object-contain" />
             ) : (
               <>
                 <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center shadow-lg shadow-primary/50 group-hover:scale-105 transition-transform">
@@ -242,8 +289,7 @@ export default function PublicAuthPage() {
           </p>
         </div>
 
-        {/* Registration disabled notice */}
-        {!isLogin && registrationDisabled && (
+        {!isLogin && registrationDisabled && authMode === "email" && (
           <div className="mb-5 p-4 bg-amber-500/10 border border-amber-500/20 rounded-2xl text-amber-400 text-xs font-semibold">
             New registrations are currently disabled. Please try again later.
           </div>
@@ -255,45 +301,138 @@ export default function PublicAuthPage() {
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-          {!isLogin && (
-            <input
-              type="text" required value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Full Name"
-              className="w-full bg-zinc-950 border border-zinc-900 text-white placeholder:text-white/70 px-4 py-3.5 rounded-xl text-xs font-semibold focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all"
-            />
-          )}
-          <input
-            type="email" required value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="Email Address"
-            className="w-full bg-zinc-950 border border-zinc-900 text-white placeholder:text-white/70 px-4 py-3.5 rounded-xl text-xs font-semibold focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all"
-          />
-          <div className="relative">
-            <input
-              type={showPassword ? "text" : "password"} required minLength={6}
-              value={password} onChange={(e) => setPassword(e.target.value)}
-              placeholder="Password"
-              className="w-full bg-zinc-950 border border-zinc-900 text-white placeholder:text-white/70 px-4 py-3.5 rounded-xl text-xs font-semibold focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all pr-10"
-            />
-            <button type="button" onClick={() => setShowPassword(!showPassword)}
-              className="absolute right-3.5 top-1/2 -translate-y-1/2 text-white/75 hover:text-white transition-colors">
-              {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+        {/* Email / Phone toggle when Message Central is enabled */}
+        {otpEnabled && (
+          <div className="flex mb-5 p-1 rounded-xl bg-zinc-900 border border-zinc-800">
+            <button
+              type="button"
+              onClick={() => { setAuthMode("email"); setError(""); }}
+              className={`flex-1 py-2.5 rounded-lg text-xs font-bold transition-all ${
+                authMode === "email" ? "bg-primary text-white" : "text-white/60 hover:text-white"
+              }`}
+            >
+              Email
+            </button>
+            <button
+              type="button"
+              onClick={() => { setAuthMode("phone"); setError(""); setOtpSent(false); setOtp(""); }}
+              className={`flex-1 py-2.5 rounded-lg text-xs font-bold transition-all ${
+                authMode === "phone" ? "bg-primary text-white" : "text-white/60 hover:text-white"
+              }`}
+            >
+              Phone OTP
             </button>
           </div>
+        )}
 
-          <button
-            disabled={loading || (!isLogin && registrationDisabled)}
-            type="submit"
-            className="w-full mt-2 py-3.5 bg-primary hover:bg-primary/90 text-white font-extrabold rounded-xl transition-all text-xs flex justify-center items-center h-[46px] shadow-lg shadow-primary/20 hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : (isLogin ? "Log In" : "Register Now")}
-          </button>
-        </form>
+        {authMode === "phone" && otpEnabled ? (
+          <form onSubmit={handleVerifyOtp} className="flex flex-col gap-4">
+            <div className="flex gap-2">
+              <div className="w-16 shrink-0 flex items-center justify-center rounded-xl bg-zinc-950 border border-zinc-900 text-white/70 text-xs font-bold">
+                +{countryCode}
+              </div>
+              <input
+                type="tel"
+                inputMode="numeric"
+                required
+                maxLength={10}
+                value={phone}
+                onChange={(e) => setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))}
+                placeholder="10-digit mobile number"
+                className={inputCls}
+                disabled={otpSent}
+              />
+            </div>
 
-        {/* Social Login */}
-        {showSocial && (
+            {otpSent && (
+              <input
+                type="text"
+                inputMode="numeric"
+                required
+                maxLength={8}
+                value={otp}
+                onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 8))}
+                placeholder={`${otpLen}-digit OTP`}
+                className={inputCls}
+              />
+            )}
+
+            {!otpSent ? (
+              <button
+                type="button"
+                disabled={loading || phone.length !== 10}
+                onClick={handleSendOtp}
+                className="w-full mt-2 py-3.5 bg-primary hover:bg-primary/90 text-white font-extrabold rounded-xl transition-all text-xs flex justify-center items-center h-[46px] shadow-lg shadow-primary/20 disabled:opacity-50"
+              >
+                {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : "Send OTP"}
+              </button>
+            ) : (
+              <>
+                <button
+                  type="submit"
+                  disabled={loading || otp.length < 4}
+                  className="w-full mt-2 py-3.5 bg-primary hover:bg-primary/90 text-white font-extrabold rounded-xl transition-all text-xs flex justify-center items-center h-[46px] shadow-lg shadow-primary/20 disabled:opacity-50"
+                >
+                  {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : "Verify & Continue"}
+                </button>
+                <button
+                  type="button"
+                  disabled={loading || resendIn > 0}
+                  onClick={handleSendOtp}
+                  className="text-xs text-white/60 hover:text-white font-semibold disabled:opacity-40"
+                >
+                  {resendIn > 0 ? `Resend OTP in ${resendIn}s` : "Resend OTP"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setOtpSent(false); setOtp(""); setVerificationId(""); setError(""); }}
+                  className="text-xs text-white/50 hover:text-white font-medium"
+                >
+                  Change number
+                </button>
+              </>
+            )}
+          </form>
+        ) : (
+          <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+            {!isLogin && (
+              <input
+                type="text" required value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Full Name"
+                className={inputCls}
+              />
+            )}
+            <input
+              type="email" required value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="Email Address"
+              className={inputCls}
+            />
+            <div className="relative">
+              <input
+                type={showPassword ? "text" : "password"} required minLength={6}
+                value={password} onChange={(e) => setPassword(e.target.value)}
+                placeholder="Password"
+                className={`${inputCls} pr-10`}
+              />
+              <button type="button" onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-white/75 hover:text-white transition-colors">
+                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+
+            <button
+              disabled={loading || (!isLogin && registrationDisabled)}
+              type="submit"
+              className="w-full mt-2 py-3.5 bg-primary hover:bg-primary/90 text-white font-extrabold rounded-xl transition-all text-xs flex justify-center items-center h-[46px] shadow-lg shadow-primary/20 hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : (isLogin ? "Log In" : "Register Now")}
+            </button>
+          </form>
+        )}
+
+        {showSocial && authMode === "email" && (
           <>
             <div className="flex items-center gap-3 my-6">
               <div className="flex-1 h-px bg-zinc-900" />
