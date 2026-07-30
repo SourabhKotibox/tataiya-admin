@@ -374,12 +374,16 @@ export default function UserProfilePage() {
     if (!editName.trim()) return;
     setEditSaving(true);
     try {
-      await updateAppProfile({ name: editName, email: editEmail, phone: editPhone });
-      refetchProfile();
-      setToast("Profile updated successfully");
+      const res: any = await updateAppProfile({
+        name: editName.trim(),
+        email: editEmail.trim(),
+        phone: editPhone.trim(),
+      });
+      await refetchProfile();
+      setToast(res?.message || "Profile updated successfully");
       window.dispatchEvent(new Event("user-updated"));
     } catch (e: any) {
-      setToast("Failed to update profile");
+      setToast(e?.message || "Failed to update profile");
     } finally {
       setEditSaving(false);
     }
