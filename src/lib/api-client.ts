@@ -2124,6 +2124,13 @@ export const getMovieProcessingStatus = async (id: string) => {
   return api(`/movies/${id}/processing-status`);
 };
 
+export const reprocessMovieHls = async (id: string, sourceVideoUrl?: string) => {
+  return api(`/movies/${id}/reprocess-hls`, {
+    method: "POST",
+    body: JSON.stringify(sourceVideoUrl ? { sourceVideoUrl } : {}),
+  });
+};
+
 /**
  * Poll movie HLS processing status every 5 seconds.
  * Polling stops automatically once status is 'ready' or 'failed'.
@@ -2139,6 +2146,19 @@ export const useMovieProcessingStatus = (id: string, enabled = true) => {
       return 5000; // poll every 5 seconds while processing
     },
     refetchIntervalInBackground: false,
+  });
+};
+
+export const useReprocessMovieHls = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, sourceVideoUrl }: { id: string; sourceVideoUrl?: string }) =>
+      reprocessMovieHls(id, sourceVideoUrl),
+    onSuccess: (_data, vars) => {
+      queryClient.invalidateQueries({ queryKey: ["movies"] });
+      queryClient.invalidateQueries({ queryKey: ["movie", vars.id] });
+      queryClient.invalidateQueries({ queryKey: ["movie-processing-status", vars.id] });
+    },
   });
 };
 

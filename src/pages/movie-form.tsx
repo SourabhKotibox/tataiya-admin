@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useLocation, useParams } from "wouter";
 import {
-  ImageIcon, Plus, X, Trash2, Sparkles, Upload as UploadIcon,
+  ImageIcon, Plus, X, Trash2, Sparkles, Upload as UploadIcon, RefreshCw, Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,6 +18,7 @@ import {
   useGetGenres, useGetLanguagesList, useGetMovieById, useGetCategoriesList,
   useGetSections, getImageUrl, useGetCountries,
   getMediaFileById, useGetSubscriptionPlans,
+  useReprocessMovieHls, useMovieProcessingStatus,
 } from "@/lib/api-client";
 
 /** Map subscription plan display name → stored planRequired key */
@@ -142,9 +143,14 @@ export default function MovieForm() {
 
   const createMovieMutation = useCreateMovie();
   const updateMovieMutation = useUpdateMovie();
+  const reprocessHlsMutation = useReprocessMovieHls();
 
   const { data: movieData } = useGetMovieById(isEdit ? id! : "");
   const movie = (movieData as any)?.data;
+  const { data: hlsStatusData } = useMovieProcessingStatus(isEdit ? id! : "", !!isEdit && !!id);
+  const liveHlsStatus = (hlsStatusData as any)?.data?.processingStatus || movie?.processingStatus;
+  const liveHlsUrl = (hlsStatusData as any)?.data?.hlsUrl || movie?.hlsUrl;
+  const liveHlsError = (hlsStatusData as any)?.data?.processingError || movie?.processingError;
 
   /* ---- Movie Details ---- */
   const [thumbnail, setThumbnail] = useState({ filePath: "", preview: "" });
@@ -1269,6 +1275,86 @@ export default function MovieForm() {
                 Video source ready — click Update Movie to publish changes.
               </div>
             )}
+
+            {/* Generate / repair HLS for existing movies */}
+            {isEdit && id && (
+              <div className="rounded-xl border border-border bg-muted/10 p-5 space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">HLS Transcoding</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Create multi-quality HLS (360p–1080p) from the full movie file for web &amp; app playback.
+                      Make sure Movie Video is the full film, not the trailer.
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    disabled={reprocessHlsMutation.isPending || ["queued", "processing"].includes(String(liveHlsStatus || "").toLowerCase())}
+                    onClick={async () => {
+                      const source =
+                        (videoUploadType === "local" ? videoFilePath : videoUrl) ||
+                        videoFilePath ||
+                        videoUrl ||
+                        "";
+                      if (!source || source.includes(".m3u8")) {
+                        toast({
+                          title: "Set a full movie MP4 first",
+                          description: "Select the full movie file (not trailer, not .m3u8), then click Generate HLS.",
+                          variant: "destructive",
+                        });
+                        return;
+                      }
+                      if (/trailer/i.test(source)) {
+                        toast({
+                          title: "That looks like a trailer",
+                          description: "Choose the full movie MP4 in Movie Video, then Generate HLS.",
+                          variant: "destructive",
+                        });
+                        return;
+                      }
+                      try {
+                        await reprocessHlsMutation.mutateAsync({ id, sourceVideoUrl: source });
+                        toast({
+                          title: "HLS queued",
+                          description: "Transcoding started in the background. Status updates below — can take 30–60+ min.",
+                        });
+                      } catch (err: any) {
+                        toast({
+                          title: "Could not start HLS",
+                          description: err?.message || "Try again after setting the full movie MP4.",
+                          variant: "destructive",
+                        });
+                      }
+                    }}
+                    className="bg-amber-400 hover:bg-amber-300 text-black font-semibold shrink-0"
+                  >
+                    {reprocessHlsMutation.isPending || ["queued", "processing"].includes(String(liveHlsStatus || "").toLowerCase()) ? (
+                      <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Generating…</>
+                    ) : (
+                      <><RefreshCw className="w-4 h-4 mr-2" /> Generate HLS</>
+                    )}
+                  </Button>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 text-xs">
+                  <span className="text-muted-foreground">Status:</span>
+                  {/\.m3u8/i.test(String(liveHlsUrl || "")) && String(liveHlsStatus).toLowerCase() === "ready" ? (
+                    <span className="px-2 py-0.5 rounded bg-green-500/20 text-green-400 font-medium">Ready</span>
+                  ) : String(liveHlsStatus).toLowerCase() === "failed" ? (
+                    <span className="px-2 py-0.5 rounded bg-red-500/20 text-red-400 font-medium">Failed{liveHlsError ? `: ${liveHlsError}` : ""}</span>
+                  ) : ["queued", "processing"].includes(String(liveHlsStatus || "").toLowerCase()) ? (
+                    <span className="px-2 py-0.5 rounded bg-blue-500/20 text-blue-400 font-medium inline-flex items-center gap-1">
+                      <Loader2 className="w-3 h-3 animate-spin" /> {liveHlsStatus}
+                    </span>
+                  ) : (
+                    <span className="px-2 py-0.5 rounded bg-zinc-500/20 text-foreground/70 font-medium">Not generated</span>
+                  )}
+                  {/\.m3u8/i.test(String(liveHlsUrl || "")) && (
+                    <span className="text-muted-foreground truncate max-w-full">{String(liveHlsUrl)}</span>
+                  )}
+                </div>
+              </div>
+            )}
+
             <div className="rounded-xl border border-border bg-muted/10 p-5">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                 <div className="space-y-1.5">

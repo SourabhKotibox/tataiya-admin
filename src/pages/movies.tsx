@@ -3,7 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import {
   Edit2, Eye, Trash2, Search, Plus, Download, Upload,
-  SlidersHorizontal, ImageIcon, Loader2,
+  SlidersHorizontal, ImageIcon, Loader2, RefreshCw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,6 +29,7 @@ import {
   useUpdateMovieStatus,
   useGetLanguagesList,
   useGetSubscriptionPlans,
+  useReprocessMovieHls,
 } from "@/lib/api-client";
 import { getImageUrl } from "@/lib/api-client";
 
@@ -94,6 +95,8 @@ export default function MoviesPage() {
   const { data: langsData } = useGetLanguagesList();
   const languagesList = langsData?.data || [];
   const { data: plansData } = useGetSubscriptionPlans({ limit: 100 });
+  const reprocessHlsMutation = useReprocessMovieHls();
+  const [hlsBusyId, setHlsBusyId] = useState<string | null>(null);
   const subscriptionPlans = ((plansData as any)?.data || []).filter(
     (p: any) => p.status !== false && p.status !== "inactive"
   );
@@ -559,6 +562,31 @@ export default function MoviesPage() {
                             title="Edit"
                           >
                             <Edit2 className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            disabled={hlsBusyId === movie.id || ["queued", "processing"].includes(String(movie.processingStatus || "").toLowerCase())}
+                            onClick={async () => {
+                              try {
+                                setHlsBusyId(movie.id);
+                                await reprocessHlsMutation.mutateAsync({ id: movie.id });
+                                toast({
+                                  title: `HLS queued: ${movie.title}`,
+                                  description: "Transcoding in background. Watch the HLS column.",
+                                });
+                              } catch (err: any) {
+                                toast({
+                                  title: "Could not start HLS",
+                                  description: err?.message || "Open edit and set the full movie MP4 first.",
+                                  variant: "destructive",
+                                });
+                              } finally {
+                                setHlsBusyId(null);
+                              }
+                            }}
+                            className="h-8 w-8 flex items-center justify-center rounded-lg bg-emerald-600/15 text-emerald-400 hover:bg-emerald-600/30 transition-colors disabled:opacity-40"
+                            title="Generate HLS"
+                          >
+                            {hlsBusyId === movie.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
                           </button>
                           <button
                             className="h-8 w-8 flex items-center justify-center rounded-lg bg-primary/15 text-blue-400 hover:bg-primary/80/30 transition-colors"
