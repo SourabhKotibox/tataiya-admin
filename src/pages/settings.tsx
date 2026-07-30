@@ -51,12 +51,12 @@ import MediaPicker from "@/components/MediaPicker";
 
 const SECTIONS = [
   { id: "business", label: "Business Settings", icon: Building2 },
+  { id: "sms", label: "Message Gateway (OTP)", icon: MessageSquare },
   { id: "misc", label: "Misc Settings", icon: SlidersHorizontal },
   { id: "customization", label: "Customization", icon: Paintbrush },
   { id: "mail", label: "Mail Settings", icon: Mail },
   { id: "currency", label: "Currency Settings", icon: DollarSign },
   { id: "payment", label: "Payment Settings", icon: CreditCard },
-  { id: "sms", label: "Message Gateway (OTP)", icon: MessageSquare },
   { id: "subscription", label: "Subscription Settings", icon: Crown },
   { id: "storage", label: "Storage Settings", icon: HardDrive },
   { id: "seo", label: "SEO Settings", icon: Search },

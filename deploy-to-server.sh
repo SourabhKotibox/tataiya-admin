@@ -1,10 +1,29 @@
 #!/usr/bin/env bash
-# Run ON THE SERVER after copying tataiya-admin-dist.tar.gz to ~/
+# Deploy admin-panel (website + admin UI) to nginx web root on the server.
+# Run ON THE SERVER from ~/tataiya-admin (or set ADMIN_DIR).
 set -euo pipefail
-WEB_ROOT="${WEB_ROOT:-/var/www/html}"
-TAR="${1:-$HOME/tataiya-admin-dist.tar.gz}"
+
+ADMIN_DIR="${ADMIN_DIR:-$HOME/tataiya-admin}"
+WEB_ROOT="${WEB_ROOT:-/var/www/tataiya/admin-panel/dist}"
+
+cd "$ADMIN_DIR"
+echo "==> git pull"
+git pull origin main
+
+echo "==> npm run build"
+npm run build
+
+echo "==> rsync to $WEB_ROOT"
 sudo mkdir -p "$WEB_ROOT"
-sudo tar -xzf "$TAR" -C "$WEB_ROOT"
-sudo chown -R www-data:www-data "$WEB_ROOT" 2>/dev/null || sudo chown -R ubuntu:ubuntu "$WEB_ROOT"
-echo "Deployed admin to $WEB_ROOT"
-ls "$WEB_ROOT"/assets/index-*.js | tail -3
+sudo rsync -a --delete dist/ "$WEB_ROOT/"
+
+echo "==> Verify Message Gateway is in the live bundle"
+JS=$(ls "$WEB_ROOT"/assets/index-*.js | head -1)
+if grep -q "Message Gateway" "$JS"; then
+  echo "OK: Message Gateway found in $(basename "$JS")"
+else
+  echo "WARN: Message Gateway string NOT found — check build output"
+  exit 1
+fi
+
+echo "Done. Hard-refresh admin Settings (Cmd+Shift+R)."
