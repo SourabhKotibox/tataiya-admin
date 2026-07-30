@@ -639,7 +639,12 @@ export default function MovieForm() {
         await createMovieMutation.mutateAsync(payload);
       }
 
-      toast({ title: isEdit ? "Movie updated successfully!" : "Movie created successfully!" });
+      toast({
+        title: isEdit ? "Movie updated successfully!" : "Movie created successfully!",
+        description: String(payload.hlsUrl || "").includes(".m3u8")
+          ? "HLS playlist already set."
+          : "HLS is generating in the background (360p–1080p). Check the Movies list HLS column.",
+      });
       setLocation("/movies");
     } catch (error: any) {
       toast({

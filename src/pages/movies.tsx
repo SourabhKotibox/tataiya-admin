@@ -45,6 +45,8 @@ type MovieRow = {
   status: string;
   featured: boolean;
   trending: boolean;
+  processingStatus?: string;
+  hlsUrl?: string;
 };
 
 function planNameToKey(name: string): string {
@@ -453,6 +455,7 @@ export default function MoviesPage() {
                 <TableHead className="text-foreground/70 font-semibold text-xs uppercase tracking-wide">Plan</TableHead>
                 <TableHead className="text-foreground/70 font-semibold text-xs uppercase tracking-wide">Language</TableHead>
                 <TableHead className="text-foreground/70 font-semibold text-xs uppercase tracking-wide">Status</TableHead>
+                <TableHead className="text-foreground/70 font-semibold text-xs uppercase tracking-wide">HLS</TableHead>
                 <TableHead className="text-foreground/70 font-semibold text-xs uppercase tracking-wide">Featured</TableHead>
                 <TableHead className="text-foreground/70 font-semibold text-xs uppercase tracking-wide">Trending</TableHead>
                 <TableHead className="text-foreground/70 font-semibold text-xs uppercase tracking-wide">Action</TableHead>
@@ -517,6 +520,22 @@ export default function MoviesPage() {
                             {statusBadge.label}
                           </span>
                         </button>
+                      </TableCell>
+                      <TableCell>
+                        {(() => {
+                          const hlsReady = /\.m3u8(\?|#|$)/i.test(String(movie.hlsUrl || ""));
+                          const ps = String(movie.processingStatus || "").toLowerCase();
+                          if (hlsReady) {
+                            return <span className="inline-flex items-center px-2.5 py-0.5 rounded text-xs font-medium bg-green-500/20 text-green-400">Ready</span>;
+                          }
+                          if (ps === "processing" || ps === "queued") {
+                            return <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-xs font-medium bg-blue-500/20 text-blue-400"><Loader2 className="w-3 h-3 animate-spin" /> {ps}</span>;
+                          }
+                          if (ps === "failed") {
+                            return <span className="inline-flex items-center px-2.5 py-0.5 rounded text-xs font-medium bg-red-500/20 text-red-400">Failed</span>;
+                          }
+                          return <span className="inline-flex items-center px-2.5 py-0.5 rounded text-xs font-medium bg-zinc-500/20 text-foreground/60">Pending</span>;
+                        })()}
                       </TableCell>
                       <TableCell>
                         <Switch
