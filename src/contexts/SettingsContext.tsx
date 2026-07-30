@@ -128,6 +128,7 @@ export interface AppSettings {
   messageCentralCustomerId: string;
   messageCentralEmail: string;
   messageCentralPassword: string;
+  messageCentralAuthToken: string;
   messageCentralBaseUrl: string;
   messageCentralCountryCode: string;
   messageCentralOtpLength: number;
@@ -259,6 +260,7 @@ const DEFAULT: AppSettings = {
   messageCentralCustomerId: "",
   messageCentralEmail: "",
   messageCentralPassword: "",
+  messageCentralAuthToken: "",
   messageCentralBaseUrl: "https://cpaas.messagecentral.com",
   messageCentralCountryCode: "91",
   messageCentralOtpLength: 4,
@@ -394,6 +396,7 @@ function mapApiData(api: any): AppSettings {
     messageCentralCustomerId: api.messageCentralCustomerId || "",
     messageCentralEmail: api.messageCentralEmail || "",
     messageCentralPassword: api.messageCentralPassword || "",
+    messageCentralAuthToken: api.messageCentralAuthToken || "",
     messageCentralBaseUrl: api.messageCentralBaseUrl || DEFAULT.messageCentralBaseUrl,
     messageCentralCountryCode: api.messageCentralCountryCode || DEFAULT.messageCentralCountryCode,
     messageCentralOtpLength: api.messageCentralOtpLength ?? DEFAULT.messageCentralOtpLength,
