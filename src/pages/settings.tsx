@@ -56,7 +56,7 @@ const SECTIONS = [
   { id: "mail", label: "Mail Settings", icon: Mail },
   { id: "currency", label: "Currency Settings", icon: DollarSign },
   { id: "payment", label: "Payment Settings", icon: CreditCard },
-  { id: "sms", label: "Message Central (OTP)", icon: MessageSquare },
+  { id: "sms", label: "Message Gateway (OTP)", icon: MessageSquare },
   { id: "subscription", label: "Subscription Settings", icon: Crown },
   { id: "storage", label: "Storage Settings", icon: HardDrive },
   { id: "seo", label: "SEO Settings", icon: Search },
@@ -753,21 +753,30 @@ export default function Settings() {
   const handleSaveSms = async () => {
     setSaving(true);
     try {
-      const payload = {
+      const payload: Record<string, any> = {
         messageCentralEnabled: sms.messageCentralEnabled,
         messageCentralCustomerId: sms.messageCentralCustomerId.trim(),
-        messageCentralEmail: sms.messageCentralEmail.trim(),
-        messageCentralPassword: sms.messageCentralPassword,
-        messageCentralAuthToken: sms.messageCentralAuthToken.trim(),
-        messageCentralBaseUrl: sms.messageCentralBaseUrl.trim() || "https://cpaas.messagecentral.com",
+        messageCentralBaseUrl: (sms.messageCentralBaseUrl.trim() || "https://cpaas.messagecentral.com").replace(/\/$/, ""),
         messageCentralCountryCode: sms.messageCentralCountryCode.trim() || "91",
         messageCentralOtpLength: Number(sms.messageCentralOtpLength) || 4,
         messageCentralFlowType: sms.messageCentralFlowType || "SMS",
+        messageCentralEmail: sms.messageCentralEmail.trim(),
       };
+      // Only overwrite secrets when admin pastes a new value (avoid wiping stored keys)
+      if (sms.messageCentralAuthToken.trim()) {
+        payload.messageCentralAuthToken = sms.messageCentralAuthToken.trim();
+      }
+      if (sms.messageCentralPassword) {
+        payload.messageCentralPassword = sms.messageCentralPassword;
+      }
       await updateSettingsMutation.mutateAsync(payload);
-      updateCtx(payload);
+      updateCtx({
+        ...payload,
+        messageCentralAuthToken: payload.messageCentralAuthToken ?? sms.messageCentralAuthToken,
+        messageCentralPassword: payload.messageCentralPassword ?? sms.messageCentralPassword,
+      });
       await refreshSettings();
-      toast({ title: "Message Central settings saved!" });
+      toast({ title: "Message Gateway keys saved!" });
     } catch (err: any) {
       toast({ title: err?.message || "Save failed", variant: "destructive" });
     } finally {
@@ -1728,34 +1737,30 @@ export default function Settings() {
 
   const renderSms = () => (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <SectionTitle icon={MessageSquare} label="Message Central (OTP Login)" />
+      <SectionTitle icon={MessageSquare} label="Message Gateway (OTP)" />
 
       <div className="rounded-lg border border-border bg-muted/20 p-4 text-sm text-muted-foreground space-y-1">
-        <p className="text-foreground font-medium">
-          Phone OTP for <span className="text-foreground">App</span> and <span className="text-foreground">Website</span> login/register.
+        <p className="text-foreground font-medium">Paste keys from Message Central → API Credentials.</p>
+        <p>
+          Used for phone OTP on the <span className="text-foreground">app</span> and{" "}
+          <span className="text-foreground">website</span>. Admin login stays email only.
         </p>
         <p>
-          Copy values from{" "}
-          <a className="text-primary underline" href="https://console.messagecentral.com/studio/developer-guide/api-credentials" target="_blank" rel="noreferrer">
-            console.messagecentral.com → API Credentials
+          <a
+            className="text-primary underline"
+            href="https://console.messagecentral.com/studio/developer-guide/api-credentials"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Open API Credentials
           </a>
-          : Customer ID, Auth Token, Base URL.
-        </p>
-        <p>
-          Admin panel login stays <span className="text-foreground font-medium">email + password</span> only.
-          Profile extras can be added later.
-        </p>
-        <p>
-          If disabled, OTP falls back to test code <span className="text-foreground font-mono">1234</span> (dev only).
         </p>
       </div>
 
       <div className="flex items-center justify-between p-4 border border-border rounded-lg bg-background/50">
         <div className="space-y-0.5">
-          <Label className="text-base text-foreground font-semibold">Enable Message Central OTP</Label>
-          <p className="text-sm text-muted-foreground">
-            Turn on to send real SMS OTPs for web &amp; app login/register.
-          </p>
+          <Label className="text-base text-foreground font-semibold">Enable OTP gateway</Label>
+          <p className="text-sm text-muted-foreground">Send real SMS OTPs when keys below are saved.</p>
         </div>
         <Switch
           checked={sms.messageCentralEnabled}
@@ -1768,15 +1773,15 @@ export default function Settings() {
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-muted/40 border-b border-border text-left">
-              <th className="px-4 py-3 font-semibold text-foreground w-[40%]">API Credentials</th>
+              <th className="px-4 py-3 font-semibold text-foreground w-[36%]">Key</th>
               <th className="px-4 py-3 font-semibold text-foreground">Value</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border bg-background/40">
             <tr>
-              <td className="px-4 py-3 text-muted-foreground align-top">
+              <td className="px-4 py-3 align-top">
                 <div className="font-medium text-foreground">Customer ID</div>
-                <div className="text-xs mt-0.5">e.g. C-XXXX… from API Credentials</div>
+                <div className="text-xs text-muted-foreground mt-0.5">Starts with C-</div>
               </td>
               <td className="px-4 py-3">
                 <Input
@@ -1784,27 +1789,28 @@ export default function Settings() {
                   onChange={(e) => setSms({ ...sms, messageCentralCustomerId: e.target.value })}
                   placeholder="C-XXXXXXXX"
                   className={inputCls}
+                  autoComplete="off"
                 />
               </td>
             </tr>
             <tr>
-              <td className="px-4 py-3 text-muted-foreground align-top">
+              <td className="px-4 py-3 align-top">
                 <div className="font-medium text-foreground">Auth Token</div>
-                <div className="text-xs mt-0.5">Paste the JWT from console (starts with eyJ…)</div>
+                <div className="text-xs text-muted-foreground mt-0.5">Paste JWT from console (eyJ…)</div>
               </td>
               <td className="px-4 py-3">
-                <SecretInput
+                <Textarea
                   value={sms.messageCentralAuthToken}
                   onChange={(e) => setSms({ ...sms, messageCentralAuthToken: e.target.value })}
                   placeholder="eyJhbGciOiJIUzI1NiJ9..."
-                  className={inputCls}
+                  className={`${inputCls} min-h-[88px] font-mono text-xs`}
+                  autoComplete="off"
                 />
               </td>
             </tr>
             <tr>
-              <td className="px-4 py-3 text-muted-foreground align-top">
+              <td className="px-4 py-3 align-top">
                 <div className="font-medium text-foreground">Base URL</div>
-                <div className="text-xs mt-0.5">Production: https://cpaas.messagecentral.com</div>
               </td>
               <td className="px-4 py-3">
                 <Input
@@ -1812,13 +1818,13 @@ export default function Settings() {
                   onChange={(e) => setSms({ ...sms, messageCentralBaseUrl: e.target.value })}
                   placeholder="https://cpaas.messagecentral.com"
                   className={inputCls}
+                  autoComplete="off"
                 />
               </td>
             </tr>
             <tr>
-              <td className="px-4 py-3 text-muted-foreground align-top">
+              <td className="px-4 py-3 align-top">
                 <div className="font-medium text-foreground">Country Code</div>
-                <div className="text-xs mt-0.5">India = 91</div>
               </td>
               <td className="px-4 py-3">
                 <Input
@@ -1830,9 +1836,8 @@ export default function Settings() {
               </td>
             </tr>
             <tr>
-              <td className="px-4 py-3 text-muted-foreground align-top">
+              <td className="px-4 py-3 align-top">
                 <div className="font-medium text-foreground">OTP Length</div>
-                <div className="text-xs mt-0.5">4–8 digits (match your VerifyNow setup)</div>
               </td>
               <td className="px-4 py-3">
                 <Select
@@ -1851,8 +1856,8 @@ export default function Settings() {
               </td>
             </tr>
             <tr>
-              <td className="px-4 py-3 text-muted-foreground align-top">
-                <div className="font-medium text-foreground">Flow Type</div>
+              <td className="px-4 py-3 align-top">
+                <div className="font-medium text-foreground">Flow</div>
               </td>
               <td className="px-4 py-3">
                 <Select
@@ -1868,35 +1873,6 @@ export default function Settings() {
                     <SelectItem value="RCS">RCS</SelectItem>
                   </SelectContent>
                 </Select>
-              </td>
-            </tr>
-            <tr>
-              <td className="px-4 py-3 text-muted-foreground align-top">
-                <div className="font-medium text-foreground">Registered Email (optional)</div>
-                <div className="text-xs mt-0.5">Only needed if Auth Token is empty (token API fallback)</div>
-              </td>
-              <td className="px-4 py-3">
-                <Input
-                  type="email"
-                  value={sms.messageCentralEmail}
-                  onChange={(e) => setSms({ ...sms, messageCentralEmail: e.target.value })}
-                  placeholder="tophillmovies@…"
-                  className={inputCls}
-                />
-              </td>
-            </tr>
-            <tr>
-              <td className="px-4 py-3 text-muted-foreground align-top">
-                <div className="font-medium text-foreground">Password (optional)</div>
-                <div className="text-xs mt-0.5">Fallback if Auth Token is not pasted</div>
-              </td>
-              <td className="px-4 py-3">
-                <SecretInput
-                  value={sms.messageCentralPassword}
-                  onChange={(e) => setSms({ ...sms, messageCentralPassword: e.target.value })}
-                  placeholder="Account password (optional)"
-                  className={inputCls}
-                />
               </td>
             </tr>
           </tbody>
