@@ -101,11 +101,12 @@ function VideoPlayer({
   const [currentTime,    setCurrentTime]    = useState(0);
   const [duration,       setDuration]       = useState(0);
   const [volume,         setVolume]         = useState(0.8);
-  const [muted,          setMuted]          = useState(false);
+  const [muted,          setMuted]          = useState(true);
   const [buffered,       setBuffered]       = useState(0);
   const [controlsVisible, setControlsVisible] = useState(true);
   const [isFullscreen,   setIsFullscreen]   = useState(false);
   const [loading,        setLoading]        = useState(true);
+  const [mediaError,     setMediaError]     = useState<string | null>(null);
   const [skipAnim,       setSkipAnim]       = useState<"left"|"right"|null>(null);
   const [uiLocked, setUiLocked] = useState(false);
   const [brightness, setBrightness] = useState(1); // 0.2–1 screen overlay
@@ -268,18 +269,23 @@ function VideoPlayer({
       playingRef.current = true;
       setPlaying(true);
       setLoading(false);
+      setMediaError(null);
+      // User gesture — prefer unmuted; fall back to muted if browser blocks
       try {
+        v.muted = false;
+        setMuted(false);
         await v.play();
       } catch (err) {
-        // Autoplay / MediaSource hiccup — retry once after a tick
-        console.warn("play() failed, retrying", err);
-        await new Promise((r) => setTimeout(r, 80));
+        console.warn("play() unmuted failed, trying muted", err);
         try {
+          v.muted = true;
+          setMuted(true);
           await v.play();
         } catch (err2) {
           console.warn("play() retry failed", err2);
           playingRef.current = false;
           setPlaying(false);
+          setMediaError("Playback blocked — tap Retry or check your connection.");
         }
       }
     } else {
@@ -674,6 +680,7 @@ function VideoPlayer({
 
     let cancelled = false;
     setLoading(true);
+    setMediaError(null);
 
     // Tear down previous HLS instance only (keep <video> element alive)
     if (hlsRef.current) {
@@ -686,6 +693,7 @@ function VideoPlayer({
     const onReady = () => {
       if (cancelled) return;
       setLoading(false);
+      setMediaError(null);
       if (pendingSeekRef.current !== null) {
         try { v.currentTime = pendingSeekRef.current; } catch { /* ignore */ }
         pendingSeekRef.current = null;
@@ -694,6 +702,20 @@ function VideoPlayer({
       v.playbackRate = speed;
       if (shouldAutoPlay()) v.play().catch(() => {});
     };
+
+    const onMediaError = () => {
+      if (cancelled) return;
+      setLoading(false);
+      const code = v.error?.code;
+      const msg =
+        code === 2 ? "Network error loading video." :
+        code === 3 ? "Video format not supported." :
+        code === 4 ? "Video source not found or blocked." :
+        "Could not play this video.";
+      setMediaError(msg);
+      console.error("Video element error", v.error, networkSrc);
+    };
+    v.addEventListener("error", onMediaError);
 
     const isM3u8 = /\.m3u8(\?|#|$)/i.test(networkSrc);
 
@@ -783,6 +805,8 @@ function VideoPlayer({
     if (contentId) {
       getOfflineVideoUrl(contentId).then((offlineUrl) => {
         if (cancelled || !offlineUrl || !videoRef.current) return;
+        // Never replace a working network stream with an empty/invalid offline URL
+        if (!/^blob:|^https?:\/\//i.test(offlineUrl)) return;
         const v2 = videoRef.current;
         const t = v2.currentTime || pendingSeekRef.current || 0;
         const wasPlaying = !v2.paused || shouldAutoPlay();
@@ -807,6 +831,7 @@ function VideoPlayer({
 
     return () => {
       cancelled = true;
+      v.removeEventListener("error", onMediaError);
       if (hlsRef.current) {
         try { hlsRef.current.destroy(); } catch { /* ignore */ }
         hlsRef.current = null;
@@ -1129,6 +1154,7 @@ function VideoPlayer({
         }`}
         preload="auto"
         playsInline
+        muted={muted}
         style={{ outline: "none", background: "#000" }}
         onLoadedMetadata={() => {
           const v = videoRef.current;
@@ -1138,6 +1164,8 @@ function VideoPlayer({
             v.currentTime = pendingSeekRef.current;
             pendingSeekRef.current = null;
           }
+          v.muted = muted;
+          v.volume = volume;
           v.playbackRate = speed;
           const shouldPlay = playingRef.current || autoPlayRef.current;
           if (shouldPlay) {
@@ -1170,9 +1198,32 @@ function VideoPlayer({
       <div className={`absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-black/25 pointer-events-none z-10 transition-opacity ${ctrlShow || lockChromeShow ? "opacity-100" : "opacity-0"}`} />
 
       {/* Buffering spinner */}
-      {loading && (
+      {loading && !mediaError && (
         <div className="absolute inset-0 flex items-center justify-center z-20 pointer-events-none">
           <Loader2 className="w-10 h-10 text-amber-400 animate-spin" />
+        </div>
+      )}
+
+      {mediaError && (
+        <div className="absolute inset-0 flex items-center justify-center z-30 bg-black/70 px-6">
+          <div className="max-w-sm text-center space-y-3">
+            <p className="text-sm font-semibold text-white">{mediaError}</p>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setMediaError(null);
+                setLoading(true);
+                const v = videoRef.current;
+                if (!v) return;
+                try { v.load(); } catch { /* ignore */ }
+                v.play().catch(() => {});
+              }}
+              className="px-4 py-2 rounded-lg bg-amber-400 text-black text-xs font-bold"
+            >
+              Retry
+            </button>
+          </div>
         </div>
       )}
 
@@ -1757,16 +1808,29 @@ export default function WatchPage() {
   const activeAds: any[] = adsData?.data || [];
   const currentAd = !adDismissed && playerStarted && activeAds.length > 0 ? activeAds[0] : null;
 
-  const [showPreroll, setShowPreroll] = useState(() => {
+  const [showPreroll, setShowPreroll] = useState(false);
+
+  // Only show preroll when a real Player ad (or VAST URL) exists — never block on empty ads fetch
+  useEffect(() => {
     try {
-      const storedUser = localStorage.getItem("appUser");
+      const storedUser = localStorage.getItem("appUser") || localStorage.getItem("user");
       if (storedUser) {
         const u = JSON.parse(storedUser);
-        return u.subscriptionStatus !== "active";
+        if (u.subscriptionStatus === "active" || u.subscription === true) {
+          setShowPreroll(false);
+          return;
+        }
       }
-    } catch(e) {}
-    return true; // Default to showing preroll if no user
-  });
+    } catch { /* ignore */ }
+    if (activeAds.length > 0) setShowPreroll(true);
+  }, [activeAds.length]);
+
+  // Safety: never leave preroll covering the player forever
+  useEffect(() => {
+    if (!showPreroll) return;
+    const t = window.setTimeout(() => setShowPreroll(false), 12000);
+    return () => window.clearTimeout(t);
+  }, [showPreroll]);
 
   useEffect(() => {
     try {
@@ -1874,7 +1938,7 @@ export default function WatchPage() {
   }, []);
 
   const [currentEp, setCurrentEp]       = useState(() => parseInt(params.epNum || "1", 10));
-  const [autoPlay,  setAutoPlay]        = useState(false);
+  const [autoPlay,  setAutoPlay]        = useState(true);
   const [expanded,  setExpanded]        = useState(false);
   const [lockPopupOpen, setLockPopupOpen] = useState(false);
 
