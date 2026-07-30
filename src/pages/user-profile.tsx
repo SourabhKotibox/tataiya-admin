@@ -363,11 +363,9 @@ export default function UserProfilePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [downloadItems.map((d: any) => `${d.id}:${d.contentId}`).join("|")]);
 
-  const handleSignOut = () => {
-    localStorage.removeItem("appUser");
-    localStorage.removeItem("appAccessToken");
-    localStorage.removeItem("refreshToken");
-    localStorage.removeItem("ott_active_profile");
+  const handleSignOut = async () => {
+    const { logoutAppUser } = await import("@/lib/api-client");
+    await logoutAppUser();
     setLocation("/");
     window.location.reload();
   };

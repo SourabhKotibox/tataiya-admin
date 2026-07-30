@@ -55,9 +55,9 @@ export default function PublicPagePage() {
     }
   }, [page]);
 
-  const handleSignOut = () => {
-    localStorage.removeItem("appUser");
-    localStorage.removeItem("appAccessToken");
+  const handleSignOut = async () => {
+    const { logoutAppUser } = await import("@/lib/api-client");
+    await logoutAppUser();
     setUser(null);
     setLocation("/");
   };

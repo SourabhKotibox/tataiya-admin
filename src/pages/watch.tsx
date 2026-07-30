@@ -1845,11 +1845,9 @@ export default function WatchPage() {
     } catch (e) {}
   }, []);
 
-  const handleSignOut = () => {
-    localStorage.removeItem("appUser");
-    localStorage.removeItem("appAccessToken");
-    localStorage.removeItem("user");
-    localStorage.removeItem("accessToken");
+  const handleSignOut = async () => {
+    const { logoutAppUser } = await import("@/lib/api-client");
+    await logoutAppUser();
     setUser(null);
     window.location.reload();
   };

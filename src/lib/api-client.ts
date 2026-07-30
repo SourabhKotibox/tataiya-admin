@@ -3195,6 +3195,29 @@ export const verifyOtpClient = async (data: {
   });
 };
 
+/** End-user (web/app) logout — clears devices server-side */
+export const logoutClient = async () => {
+  try {
+    await api('/app/auth/logout', { method: 'POST', body: JSON.stringify({}) });
+  } catch {
+    // still clear local session even if API fails
+  }
+};
+
+export const clearAppSession = () => {
+  localStorage.removeItem('appAccessToken');
+  localStorage.removeItem('appUser');
+  localStorage.removeItem('accessToken');
+  localStorage.removeItem('user');
+  localStorage.removeItem('refreshToken');
+  localStorage.removeItem('ott_active_profile');
+};
+
+export const logoutAppUser = async () => {
+  await logoutClient();
+  clearAppSession();
+};
+
 // Countries API
 export const getCountries = async (options?: { page?: number; limit?: number; admin?: boolean }) => {
   const params = new URLSearchParams();

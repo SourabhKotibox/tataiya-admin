@@ -1729,7 +1729,7 @@ export default function Settings() {
       <div className="rounded-lg border border-border bg-muted/20 p-4 text-sm text-muted-foreground space-y-1">
         <p className="text-foreground font-medium">Used for phone OTP login on <span className="text-foreground">Web</span> and <span className="text-foreground">App</span>.</p>
         <p>Get credentials from <a className="text-primary underline" href="https://console.messagecentral.com" target="_blank" rel="noreferrer">console.messagecentral.com</a>. Password is Base64-encoded automatically when calling their API.</p>
-        <p>If disabled or keys are empty, OTP falls back to test code <span className="text-foreground font-mono">1234</span>.</p>
+        <p>If disabled, OTP falls back to test code <span className="text-foreground font-mono">1234</span> (dev only). When enabled, all phone login on web + app uses Message Central only.</p>
       </div>
 
       <div className="flex items-center justify-between p-4 border border-border rounded-lg bg-background/50">

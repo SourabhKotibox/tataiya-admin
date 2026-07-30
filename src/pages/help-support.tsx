@@ -26,11 +26,9 @@ export default function HelpSupportPage() {
       faq.answer.toLowerCase().includes(search.toLowerCase())
   );
 
-  const handleSignOut = () => {
-    localStorage.removeItem("appUser");
-    localStorage.removeItem("appAccessToken");
-    localStorage.removeItem("refreshToken");
-    localStorage.removeItem("ott_active_profile");
+  const handleSignOut = async () => {
+    const { logoutAppUser } = await import("@/lib/api-client");
+    await logoutAppUser();
     setLocation("/login");
     window.location.reload();
   };

@@ -44,7 +44,7 @@ const inputCls =
 export default function PublicAuthPage() {
   const [location, setLocation] = useLocation();
   const isLogin = location === "/login";
-  const [authMode, setAuthMode] = useState<"email" | "phone">("email");
+  const [authMode, setAuthMode] = useState<"email" | "phone">("phone");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -82,8 +82,9 @@ export default function PublicAuthPage() {
   }, [settings.maintenanceMode, settings.userRegistration]);
 
   useEffect(() => {
-    if (!otpEnabled && authMode === "phone") setAuthMode("email");
-  }, [otpEnabled, authMode]);
+    if (otpEnabled) setAuthMode("phone");
+    else setAuthMode("email");
+  }, [otpEnabled]);
 
   useEffect(() => {
     if (resendIn <= 0) return;

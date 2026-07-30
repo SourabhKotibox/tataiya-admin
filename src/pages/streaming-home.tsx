@@ -12,7 +12,7 @@ import {
   Volume2, VolumeX, ExternalLink, SkipForward,
 } from "lucide-react";
 import {
-  useGetWebHome, useGetWebBrowse, loginClient, registerClient, useGetPages,
+  useGetWebHome, useGetWebBrowse, loginClient, registerClient, sendOtpClient, verifyOtpClient, logoutAppUser, useGetPages,
   useGetGenres, useGetPublicNotifications, useGetWebSubscriptionPlans,
   useGetWatchHistory, useGetSections, useGetWebAllContent, getAppProfile,
   useGetWishlist, useToggleWishlist,
@@ -1284,11 +1284,18 @@ function SignInModal({ onClose }: { onClose: () => void }) {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [usePhone, setUsePhone] = useState(false);
+  const [otp, setOtp] = useState("");
+  const [verificationId, setVerificationId] = useState("");
+  const [otpSent, setOtpSent] = useState(false);
+  const [resendIn, setResendIn] = useState(0);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
   const { settings } = useSettings();
   const { resolvedTheme } = useTheme();
+  const otpEnabled = !!settings.messageCentralEnabled;
+  const otpLen = Number(settings.messageCentralOtpLength || 4);
+  const countryCode = String(settings.messageCentralCountryCode || "91");
 
   const getLogoUrl = () => {
     if (resolvedTheme === "dark" && settings.darkLogoUrl) return getImageUrl(settings.darkLogoUrl);
@@ -1303,46 +1310,46 @@ function SignInModal({ onClose }: { onClose: () => void }) {
     return () => { document.body.style.overflow = ""; };
   }, []);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  useEffect(() => {
+    if (otpEnabled && isLogin) setUsePhone(true);
+  }, [otpEnabled, isLogin]);
+
+  useEffect(() => {
+    if (resendIn <= 0) return;
+    const t = window.setTimeout(() => setResendIn((n) => n - 1), 1000);
+    return () => window.clearTimeout(t);
+  }, [resendIn]);
+
+  const persistSession = (res: any, fallbackName?: string) => {
+    localStorage.setItem("appAccessToken", res.accessToken);
+    localStorage.setItem("accessToken", res.accessToken);
+    const loggedIn = {
+      id: res.userId,
+      name: res.name || fallbackName || "User",
+      avatar: res.avatar || null,
+      email: res.email || null,
+      phone: res.phone || null,
+      subscriptionPlan: res.subscriptionPlan || "free",
+      subscriptionStatus: res.subscriptionStatus || "inactive",
+      subscriptionExpiry: res.subscriptionExpiry || null,
+      subscription: !!res.subscription || (res.subscriptionStatus === "active" && res.subscriptionPlan && res.subscriptionPlan !== "free"),
+    };
+    localStorage.setItem("appUser", JSON.stringify(loggedIn));
+    localStorage.setItem("user", JSON.stringify(loggedIn));
+    window.location.reload();
+  };
+
+  const handleEmailSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setLoading(true);
     try {
       if (isLogin) {
-        // Phone login: pass phone number as the email field — server handles phone vs email
-        const loginIdentifier = usePhone ? phone : email;
-        const res = await loginClient({ email: loginIdentifier, password });
-        localStorage.setItem("appAccessToken", res.accessToken);
-        localStorage.setItem("accessToken", res.accessToken); // legacy compat
-        const loggedIn = {
-          id: res.userId,
-          name: res.name || email.split("@")[0],
-          avatar: res.avatar || null,
-          email: res.email || null,
-          subscriptionPlan: res.subscriptionPlan || "free",
-          subscriptionStatus: res.subscriptionStatus || "inactive",
-          subscriptionExpiry: res.subscriptionExpiry || null,
-          subscription: !!res.subscription || (res.subscriptionStatus === "active" && res.subscriptionPlan && res.subscriptionPlan !== "free"),
-        };
-        localStorage.setItem("appUser", JSON.stringify(loggedIn));
-        localStorage.setItem("user", JSON.stringify(loggedIn));
-        window.location.reload();
+        const res = await loginClient({ email, password });
+        persistSession(res, email.split("@")[0]);
       } else {
-        const res = await registerClient({ email, password, name, phone: phone || undefined });
-        localStorage.setItem("appAccessToken", res.accessToken);
-        localStorage.setItem("accessToken", res.accessToken); // legacy compat
-        const registered = {
-          id: res.userId,
-          name,
-          avatar: res.avatar || null,
-          subscriptionPlan: res.subscriptionPlan || "free",
-          subscriptionStatus: res.subscriptionStatus || "inactive",
-          subscriptionExpiry: res.subscriptionExpiry || null,
-          subscription: false,
-        };
-        localStorage.setItem("appUser", JSON.stringify(registered));
-        localStorage.setItem("user", JSON.stringify(registered));
-        window.location.reload();
+        const res = await registerClient({ email, password, name, phone: phone.replace(/\D/g, "").slice(-10) || undefined });
+        persistSession(res, name);
       }
     } catch (err: any) {
       setError(err.message || "An error occurred");
@@ -1350,6 +1357,60 @@ function SignInModal({ onClose }: { onClose: () => void }) {
       setLoading(false);
     }
   };
+
+  const handleSendOtp = async () => {
+    setError("");
+    const mobileNumber = phone.replace(/\D/g, "").slice(-10);
+    if (!/^\d{10}$/.test(mobileNumber)) {
+      setError("Enter a valid 10-digit mobile number");
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await sendOtpClient(mobileNumber);
+      if (!res?.success) throw new Error(res?.message || "Failed to send OTP");
+      setVerificationId(res.verificationId || "");
+      setOtpSent(true);
+      setResendIn(45);
+      setOtp("");
+    } catch (err: any) {
+      setError(err.message || "Failed to send OTP");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerifyOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    const mobileNumber = phone.replace(/\D/g, "").slice(-10);
+    if (!/^\d{10}$/.test(mobileNumber)) {
+      setError("Enter a valid 10-digit mobile number");
+      return;
+    }
+    if (otp.trim().length < 4) {
+      setError(`Enter the ${otpLen}-digit OTP`);
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await verifyOtpClient({
+        mobileNumber,
+        otp: otp.trim(),
+        verificationId: verificationId || undefined,
+        deviceId: "web",
+        deviceName: typeof navigator !== "undefined" ? navigator.userAgent.slice(0, 80) : "web",
+      });
+      if (!res?.success || !res?.accessToken) throw new Error(res?.message || "OTP verification failed");
+      persistSession(res, mobileNumber);
+    } catch (err: any) {
+      setError(err.message || "OTP verification failed");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const phoneOtpMode = isLogin && usePhone && otpEnabled;
 
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 animate-in fade-in duration-200">
@@ -1381,106 +1442,161 @@ function SignInModal({ onClose }: { onClose: () => void }) {
           <h2 className="text-white font-bold text-xl sm:text-2xl tracking-tight mb-1 pr-6">{isLogin ? "Welcome Back" : "Create Account"}</h2>
           <p className="text-white text-xs sm:text-sm mb-6 font-medium">
             {isLogin ? "New to the platform? " : "Already have an account? "}
-            <button onClick={() => setIsLogin(!isLogin)} className="text-amber-400 hover:underline font-bold transition-all">
+            <button
+              onClick={() => {
+                setIsLogin(!isLogin);
+                setError("");
+                setOtpSent(false);
+                setUsePhone(false);
+              }}
+              className="text-amber-400 hover:underline font-bold transition-all"
+            >
               {isLogin ? "Sign Up Free" : "Log In"}
             </button>
           </p>
 
           {error && <div className="mb-4 p-3.5 bg-amber-400/10 border border-amber-400/20 rounded-xl text-amber-400 text-xs font-semibold leading-snug">{error}</div>}
 
-          {/* Phone / Email toggle for login */}
-          {isLogin && (
-            <div className="flex gap-1 mb-1 bg-zinc-900/60 rounded-xl p-1">
+          {/* Phone OTP / Email toggle for login when Message Central is on */}
+          {isLogin && otpEnabled && (
+            <div className="flex gap-1 mb-3 bg-zinc-900/60 rounded-xl p-1">
               <button
                 type="button"
-                onClick={() => setUsePhone(false)}
-                className={`flex-1 py-1.5 rounded-lg text-[11px] font-bold transition-all ${!usePhone ? "bg-amber-400 text-white" : "text-white hover:text-white"}`}
+                onClick={() => { setUsePhone(true); setError(""); setOtpSent(false); }}
+                className={`flex-1 py-1.5 rounded-lg text-[11px] font-bold transition-all ${usePhone ? "bg-amber-400 text-black" : "text-white hover:text-white"}`}
+              >Phone OTP</button>
+              <button
+                type="button"
+                onClick={() => { setUsePhone(false); setError(""); setOtpSent(false); }}
+                className={`flex-1 py-1.5 rounded-lg text-[11px] font-bold transition-all ${!usePhone ? "bg-amber-400 text-black" : "text-white hover:text-white"}`}
               >Email</button>
-              <button
-                type="button"
-                onClick={() => setUsePhone(true)}
-                className={`flex-1 py-1.5 rounded-lg text-[11px] font-bold transition-all ${usePhone ? "bg-amber-400 text-white" : "text-white hover:text-white"}`}
-              >Phone</button>
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="flex flex-col gap-3.5">
-            {!isLogin && (
-              <input
-                type="text"
-                required
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Full Name"
-                className="w-full bg-zinc-900 border border-zinc-800 text-white placeholder:text-white/80 px-4 py-3 rounded-xl text-xs font-semibold focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400 transition-all"
-              />
-            )}
+          {phoneOtpMode ? (
+            <form onSubmit={handleVerifyOtp} className="flex flex-col gap-3.5">
+              <div className="flex gap-2">
+                <div className="w-14 shrink-0 flex items-center justify-center rounded-xl bg-zinc-900 border border-zinc-800 text-white/70 text-[11px] font-bold">
+                  +{countryCode}
+                </div>
+                <input
+                  type="tel"
+                  inputMode="numeric"
+                  required
+                  maxLength={10}
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))}
+                  placeholder="10-digit mobile"
+                  disabled={otpSent}
+                  className="w-full bg-zinc-900 border border-zinc-800 text-white placeholder:text-white/80 px-4 py-3 rounded-xl text-xs font-semibold focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400 transition-all"
+                />
+              </div>
+              {otpSent && (
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  required
+                  maxLength={8}
+                  value={otp}
+                  onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 8))}
+                  placeholder={`${otpLen}-digit OTP`}
+                  className="w-full bg-zinc-900 border border-zinc-800 text-white placeholder:text-white/80 px-4 py-3 rounded-xl text-xs font-semibold focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400 transition-all"
+                />
+              )}
+              {!otpSent ? (
+                <button
+                  type="button"
+                  disabled={loading || phone.length !== 10}
+                  onClick={handleSendOtp}
+                  className="w-full mt-2 py-3 bg-amber-400 hover:bg-amber-500 text-black font-bold rounded-xl transition-all text-xs flex justify-center items-center h-[44px] disabled:opacity-50"
+                >
+                  {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : "Send OTP"}
+                </button>
+              ) : (
+                <>
+                  <button
+                    type="submit"
+                    disabled={loading || otp.length < 4}
+                    className="w-full mt-2 py-3 bg-amber-400 hover:bg-amber-500 text-black font-bold rounded-xl transition-all text-xs flex justify-center items-center h-[44px] disabled:opacity-50"
+                  >
+                    {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : "Verify & Continue"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={loading || resendIn > 0}
+                    onClick={handleSendOtp}
+                    className="text-[11px] text-white/60 hover:text-white font-semibold disabled:opacity-40"
+                  >
+                    {resendIn > 0 ? `Resend OTP in ${resendIn}s` : "Resend OTP"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setOtpSent(false); setOtp(""); setVerificationId(""); setError(""); }}
+                    className="text-[11px] text-white/50 hover:text-white font-medium"
+                  >
+                    Change number
+                  </button>
+                </>
+              )}
+            </form>
+          ) : (
+            <form onSubmit={handleEmailSubmit} className="flex flex-col gap-3.5">
+              {!isLogin && (
+                <input
+                  type="text"
+                  required
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Full Name"
+                  className="w-full bg-zinc-900 border border-zinc-800 text-white placeholder:text-white/80 px-4 py-3 rounded-xl text-xs font-semibold focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400 transition-all"
+                />
+              )}
 
-            {/* Email field — shown in register, or in login when not using phone */}
-            {(!isLogin || !usePhone) && (
               <input
                 type={isLogin ? "text" : "email"}
-                required={!usePhone}
+                required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="Email Address"
                 className="w-full bg-zinc-900 border border-zinc-800 text-white placeholder:text-white/80 px-4 py-3 rounded-xl text-xs font-semibold focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400 transition-all"
               />
-            )}
 
-            {/* Phone field — always shown in register (optional), or in login when phone tab active */}
-            {(usePhone || !isLogin) && (
-              <input
-                type="tel"
-                required={usePhone && isLogin}
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                placeholder={isLogin ? "Phone Number" : "Phone Number (optional — links app account)"}
-                className="w-full bg-zinc-900 border border-zinc-800 text-white placeholder:text-white/80 px-4 py-3 rounded-xl text-xs font-semibold focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400 transition-all"
-              />
-            )}
+              {!isLogin && (
+                <input
+                  type="tel"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))}
+                  placeholder="Phone Number (optional — links app account)"
+                  className="w-full bg-zinc-900 border border-zinc-800 text-white placeholder:text-white/80 px-4 py-3 rounded-xl text-xs font-semibold focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400 transition-all"
+                />
+              )}
 
-            <div className="relative">
-              <input
-                type={showPassword ? "text" : "password"}
-                required
-                minLength={6}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Password"
-                className="w-full bg-zinc-900 border border-zinc-800 text-white placeholder:text-white/80 px-4 py-3 rounded-xl text-xs font-semibold focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400 transition-all pr-10"
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-white hover:text-white transition-colors"
-              >
-                {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+              <div className="relative">
+                <input
+                  type={showPassword ? "text" : "password"}
+                  required
+                  minLength={6}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Password"
+                  className="w-full bg-zinc-900 border border-zinc-800 text-white placeholder:text-white/80 px-4 py-3 rounded-xl text-xs font-semibold focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400 transition-all pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-white hover:text-white transition-colors"
+                >
+                  {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                </button>
+              </div>
+              <button disabled={loading} type="submit" className="w-full mt-2 py-3 bg-amber-400 hover:bg-amber-500 text-black font-bold rounded-xl transition-all text-xs flex justify-center items-center h-[44px] shadow-lg shadow-amber-900/20 hover:-translate-y-0.5 active:translate-y-0">
+                {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : (isLogin ? "Log In" : "Register")}
               </button>
-            </div>
-            <button disabled={loading} type="submit" className="w-full mt-2 py-3 bg-amber-400 hover:bg-amber-500 text-black font-bold rounded-xl transition-all text-xs flex justify-center items-center h-[44px] shadow-lg shadow-amber-900/20 hover:-translate-y-0.5 active:translate-y-0">
-              {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : (isLogin ? "Log In" : "Register")}
-            </button>
-          </form>
-
-          <div className="mt-6 space-y-4">
-            <div className="flex items-center gap-3 text-white/80 text-[10px] font-bold uppercase tracking-widest">
-              <div className="flex-1 h-px bg-zinc-800" />
-              <span>Or connect with</span>
-              <div className="flex-1 h-px bg-zinc-800" />
-            </div>
-            <div className="flex items-center gap-2">
-              <button className="flex-1 py-2 bg-zinc-950 border border-zinc-800 text-white/80 hover:text-white rounded-xl text-[11px] font-bold transition-all hover:bg-zinc-900 flex items-center justify-center gap-1.5">
-                Google
-              </button>
-              <button className="flex-1 py-2 bg-zinc-950 border border-zinc-800 text-white/80 hover:text-white rounded-xl text-[11px] font-bold transition-all hover:bg-zinc-900 flex items-center justify-center gap-1.5">
-                Apple
-              </button>
-            </div>
-          </div>
+            </form>
+          )}
 
           <p className="text-white/80 text-[10px] text-center leading-relaxed mt-6 font-medium">
-            By continuing, you accept our <a href="#" className="text-white/80 hover:underline">Terms of Service</a> & <a href="#" className="text-white/80 hover:underline">Privacy Policy</a>.
+            By continuing, you accept our <a href="/page/terms" className="text-white/80 hover:underline">Terms of Service</a> & <a href="/page/privacy" className="text-white/80 hover:underline">Privacy Policy</a>.
           </p>
         </div>
       </div>
@@ -2040,11 +2156,8 @@ export default function StreamingHomePage() {
     document.title = `${titleName} | ${appName}`;
   }, [activeTab, settings?.platformName]);
 
-  const handleSignOut = () => {
-    localStorage.removeItem("appUser");
-    localStorage.removeItem("appAccessToken");
-    localStorage.removeItem("user");
-    localStorage.removeItem("accessToken");
+  const handleSignOut = async () => {
+    await logoutAppUser();
     setUser(null);
     window.location.reload();
   };
