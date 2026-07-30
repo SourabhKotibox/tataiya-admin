@@ -157,7 +157,7 @@ export default function MovieForm() {
   const liveHlsError = hlsPoll?.processingError || movie?.processingError;
   const liveQualities = hlsPoll?.availableQualities || movie?.videoQualities || [];
 
-  // When background HLS finishes, auto-fill Video URL + Quality variants on this form
+  // When background HLS finishes, refresh list — keep form MP4 source; chips use liveQualities
   useEffect(() => {
     if (!isEdit || !id) return;
     const status = String(liveHlsStatus || "").toLowerCase();
@@ -169,13 +169,9 @@ export default function MovieForm() {
     if (hlsReadyAppliedRef.current) return;
     hlsReadyAppliedRef.current = true;
 
-    setVideoUploadType("hls");
-    setVideoUrl(master);
-    setVideoFilePath("");
-
+    // Keep Step 1 as the full-movie MP4 (source). Master playlist is shown in status chips only.
     const quals = Array.isArray(liveQualities) ? liveQualities : [];
     if (quals.length > 0) {
-      setQualityEnabled(true);
       setQualityRows(
         quals.map((q: any, i: number) => {
           const pathOrUrl = q.url || q.filePath || "";
@@ -194,8 +190,8 @@ export default function MovieForm() {
     queryClient.invalidateQueries({ queryKey: ["movie", id] });
     queryClient.invalidateQueries({ queryKey: ["movies"] });
     toast({
-      title: "HLS ready — form updated",
-      description: "Master playlist and quality variants were filled in. Click Update Movie to save them on the form if needed (DB already has them).",
+      title: "HLS ready",
+      description: "360p–1080p are ready for Auto playback. No need to fill quality rows manually.",
     });
   }, [isEdit, id, liveHlsStatus, liveHlsUrl, liveQualities, queryClient, toast]);
 
@@ -319,12 +315,12 @@ export default function MovieForm() {
     const isReady = media.isHls || media.hlsStatus === "completed" || !!masterPath;
 
     if (isReady && masterPath) {
-      setVideoUploadType("hls");
-      setVideoUrl(masterPath);
-      setVideoFilePath(media.filePath || masterPath);
+      // Keep form on the MP4 source; HLS master is tracked via movie processing status
+      setVideoUploadType("local");
+      setVideoFilePath(media.filePath || media.url || "");
+      setVideoUrl("");
       const qualities = Array.isArray(media.hlsQualities) ? media.hlsQualities : [];
       if (qualities.length > 0) {
-        setQualityEnabled(true);
         setQualityRows(
           qualities.map((q: any, i: number) => {
             const pathOrUrl = q.filePath || q.url || "";
@@ -507,33 +503,39 @@ export default function MovieForm() {
       );
     }
 
-    if (movie.hlsUrl) {
-      const isHttp = movie.hlsUrl.startsWith("http://") || movie.hlsUrl.startsWith("https://");
-      if (movie.hlsUrl.endsWith(".m3u8") && isHttp) {
-        setVideoUploadType("hls");
-        setVideoUrl(movie.hlsUrl);
-      } else if (isHttp) {
+    // Step 1 always shows the full-movie MP4 source — never the .m3u8 master
+    const sourceMp4 = [movie.sourceVideoUrl, movie.videoUrl, movie.hlsUrl]
+      .map((u: any) => String(u || "").trim())
+      .find((u: string) => u && !/\.m3u8(\?|#|$)/i.test(u) && !/trailer/i.test(u));
+    if (sourceMp4) {
+      const isHttp = /^https?:\/\//i.test(sourceMp4);
+      if (isHttp) {
         setVideoUploadType("url");
-        setVideoUrl(movie.hlsUrl);
+        setVideoUrl(sourceMp4);
+        setVideoFilePath("");
       } else {
         setVideoUploadType("local");
-        setVideoFilePath(movie.hlsUrl);
+        setVideoFilePath(sourceMp4);
+        setVideoUrl("");
       }
     }
+    // Manual quality rows only when real URLs exist (avoid empty 480p boxes)
     if (Array.isArray(movie.videoQualities) && movie.videoQualities.length > 0) {
-      setQualityEnabled(true);
-      setQualityRows(
-        movie.videoQualities.map((q: any, i: number) => {
-          const isUrl = q.url && (q.url.startsWith("http://") || q.url.startsWith("https://"));
-          return {
-            id: String(i + 1),
-            type: isUrl ? "url" : "local",
-            quality: q.quality || "480p",
-            filePath: isUrl ? "" : (q.url || ""),
-            url: isUrl ? q.url : "",
-          };
-        })
-      );
+      const filled = movie.videoQualities.filter((q: any) => q?.url);
+      if (filled.length > 0) {
+        setQualityRows(
+          filled.map((q: any, i: number) => {
+            const isUrl = q.url && (q.url.startsWith("http://") || q.url.startsWith("https://"));
+            return {
+              id: String(i + 1),
+              type: isUrl ? "url" : "local",
+              quality: q.quality || "480p",
+              filePath: isUrl ? "" : (q.url || ""),
+              url: isUrl ? q.url : "",
+            };
+          })
+        );
+      }
     }
 
     if (Array.isArray(movie.subtitles) && movie.subtitles.length > 0) {
@@ -647,16 +649,6 @@ export default function MovieForm() {
         crew: crewItems
           .filter((c) => c.directorId)
           .map((c) => ({ director: c.directorId, role: c.role })),
-        hlsUrl: videoUploadType === "local" ? videoFilePath : (videoUrl || videoFilePath),
-        videoQualities: qualityEnabled
-          ? qualityRows
-              .filter((q) => q.url || q.filePath)
-              .map((q) => ({
-                quality: q.quality as any,
-                url: q.type === "local" ? q.filePath : q.url,
-                size: 0,
-              }))
-          : [],
         subtitles: subtitleRows
           .filter((r) => r.filePath && r.language)
           .map((r) => ({ language: r.language, filePath: r.filePath })),
@@ -664,7 +656,35 @@ export default function MovieForm() {
         metaTitle: metaTitle.trim(),
         metaDescription: metaDescription.trim(),
         seoImage: seoImage.filePath,
-      };
+      } as any;
+
+      // Full-movie MP4 from Step 1 (never put .m3u8 in this field)
+      const formMp4 = [videoUploadType === "local" ? videoFilePath : videoUrl, videoFilePath, videoUrl]
+        .map((u) => String(u || "").trim())
+        .find((u) => u && !/\.m3u8(\?|#|$)/i.test(u));
+      const existingMaster = String(movie?.hlsUrl || liveHlsUrl || "");
+      const hasMaster = /\.m3u8(\?|#|$)/i.test(existingMaster);
+      const existingSource = String(movie?.sourceVideoUrl || movie?.videoUrl || "").trim();
+
+      // If HLS master already exists and source MP4 did not change, keep master so Update does not re-queue.
+      if (formMp4) {
+        payload.hlsUrl = hasMaster && formMp4 === existingSource ? existingMaster : formMp4;
+      } else if (hasMaster) {
+        payload.hlsUrl = existingMaster;
+      } else {
+        payload.hlsUrl = "";
+      }
+
+      // Only overwrite videoQualities when admin explicitly uses Advanced manual rows
+      if (qualityEnabled) {
+        payload.videoQualities = qualityRows
+          .filter((q) => q.url || q.filePath)
+          .map((q) => ({
+            quality: q.quality as any,
+            url: q.type === "local" ? q.filePath : q.url,
+            size: 0,
+          }));
+      }
 
       const isBlob = (v: unknown) => typeof v === "string" && v.startsWith("blob:");
       if (isBlob(payload.hlsUrl) || isBlob(payload.trailerUrl) || isBlob(payload.thumbnail) || isBlob(payload.posterImage) || isBlob(payload.bannerImage)) {
@@ -1311,50 +1331,100 @@ export default function MovieForm() {
         {/* =========== QUALITY INFO =========== */}
         {activeTab === "Quality Info" && (
           <div className="p-6 space-y-6">
-            <SectionHeading title="Video Source" />
+            {/* STEP FLOW */}
+            <div className="rounded-xl border border-amber-400/30 bg-amber-400/5 p-4 text-sm space-y-2">
+              <p className="font-semibold text-foreground">How HLS works (simple)</p>
+              <ol className="list-decimal list-inside text-muted-foreground space-y-1 text-xs sm:text-sm">
+                <li><span className="text-foreground font-medium">Step 1</span> — Attach the <span className="text-foreground">full movie MP4</span> below (not the trailer).</li>
+                <li><span className="text-foreground font-medium">Step 2</span> — Click <span className="text-foreground">Update Movie</span> to save, then <span className="text-foreground">Generate HLS</span>.</li>
+                <li><span className="text-foreground font-medium">Step 3</span> — Wait until status is <span className="text-green-400">Ready</span>. Qualities (360p–1080p) fill automatically. Player uses <span className="text-foreground">Auto</span>.</li>
+              </ol>
+              <p className="text-xs text-muted-foreground pt-1">
+                You do <span className="text-foreground font-medium">not</span> need to manually add 480p/720p rows — the server creates them.
+              </p>
+            </div>
+
+            <SectionHeading title="1. Full movie file (MP4)" />
             {processingMediaId && (
               <div className="rounded-lg border border-amber-400/40 bg-amber-400/10 px-4 py-3 text-sm text-foreground">
-                Video is attached — you can save the movie now. Transcoding continues in the background; HLS qualities will auto-fill when ready.
-              </div>
-            )}
-            {(videoFilePath || videoUrl) && !processingMediaId && (
-              <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-foreground">
-                Video source ready — click Update Movie to publish changes.
+                Video is attached — you can save now. HLS continues in the background.
               </div>
             )}
 
-            {/* Generate / repair HLS for existing movies */}
-            {isEdit && id && (
-              <div className="rounded-xl border border-border bg-muted/10 p-5 space-y-3">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-semibold text-foreground">HLS Transcoding</p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Create multi-quality HLS (360p–1080p) from the full movie file for web &amp; app playback.
-                      Make sure Movie Video is the full film, not the trailer.
-                    </p>
-                  </div>
+            <div className="rounded-xl border border-border bg-muted/10 p-5">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                <div className="space-y-1.5">
+                  <Label className="text-foreground text-sm font-medium">Source type</Label>
+                  <Select
+                    value={videoUploadType === "hls" ? "local" : videoUploadType}
+                    onValueChange={setVideoUploadType}
+                  >
+                    <SelectTrigger className="bg-muted border-border text-foreground h-10 rounded-lg text-sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-popover border-border text-foreground">
+                      <SelectItem value="local">Media Library (recommended)</SelectItem>
+                      <SelectItem value="url">External MP4 URL</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-[11px] text-muted-foreground">
+                    Pick the full movie only. Trailer stays on the Movie Details tab.
+                  </p>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-foreground text-sm font-medium">Movie file</Label>
+                  {videoUploadType === "url" ? (
+                    <Input
+                      placeholder="https://….mp4"
+                      value={videoUrl}
+                      onChange={(e) => setVideoUrl(e.target.value)}
+                      className="bg-muted border-border text-foreground placeholder:text-muted-foreground h-10 rounded-lg text-sm"
+                    />
+                  ) : (
+                    <div
+                      onClick={() => setVideoPickerOpen(true)}
+                      className="border-2 border-dashed border-border rounded-lg min-h-10 flex items-center justify-center cursor-pointer hover:border-primary/40 bg-muted/20 transition-colors overflow-hidden w-full py-2"
+                    >
+                      {(videoFilePath || (videoUrl && !/\.m3u8/i.test(videoUrl) ? videoUrl : "")) ? (
+                        <span
+                          className="text-sm text-foreground truncate px-3 w-full text-center block"
+                          title={getImageUrl(videoFilePath || videoUrl)}
+                        >
+                          {getImageUrl(videoFilePath || videoUrl)}
+                        </span>
+                      ) : (
+                        <span className="text-sm text-muted-foreground">Click to select full movie MP4</span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <SectionHeading title="2. Generate HLS (auto qualities)" />
+            <div className="rounded-xl border border-border bg-muted/10 p-5 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-foreground">Server creates 360p · 480p · 720p · 1080p</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {isEdit
+                      ? "Click Generate HLS after the MP4 is saved. Takes 30–60+ minutes on the server."
+                      : "Save the movie first, then open edit and click Generate HLS."}
+                  </p>
+                </div>
+                {isEdit && id ? (
                   <Button
                     type="button"
                     disabled={reprocessHlsMutation.isPending || ["queued", "processing"].includes(String(liveHlsStatus || "").toLowerCase())}
                     onClick={async () => {
                       const source =
-                        (videoUploadType === "local" ? videoFilePath : videoUrl) ||
-                        videoFilePath ||
-                        videoUrl ||
-                        "";
-                      if (!source || source.includes(".m3u8")) {
+                        [videoFilePath, videoUrl, movie?.sourceVideoUrl, movie?.videoUrl]
+                          .map((u) => String(u || "").trim())
+                          .find((u) => u && !/\.m3u8(\?|#|$)/i.test(u) && !/trailer/i.test(u)) || "";
+                      if (!source) {
                         toast({
                           title: "Set a full movie MP4 first",
-                          description: "Select the full movie file (not trailer, not .m3u8), then click Generate HLS.",
-                          variant: "destructive",
-                        });
-                        return;
-                      }
-                      if (/trailer/i.test(source)) {
-                        toast({
-                          title: "That looks like a trailer",
-                          description: "Choose the full movie MP4 in Movie Video, then Generate HLS.",
+                          description: "Select the full movie (not trailer), Update Movie, then Generate HLS.",
                           variant: "destructive",
                         });
                         return;
@@ -1363,12 +1433,12 @@ export default function MovieForm() {
                         await reprocessHlsMutation.mutateAsync({ id, sourceVideoUrl: source });
                         toast({
                           title: "HLS queued",
-                          description: "Transcoding started in the background. Status updates below — can take 30–60+ min.",
+                          description: "Qualities will appear here when Ready.",
                         });
                       } catch (err: any) {
                         toast({
                           title: "Could not start HLS",
-                          description: err?.message || "Try again after setting the full movie MP4.",
+                          description: err?.message || "Try again.",
                           variant: "destructive",
                         });
                       }
@@ -1381,167 +1451,148 @@ export default function MovieForm() {
                       <><RefreshCw className="w-4 h-4 mr-2" /> Generate HLS</>
                     )}
                   </Button>
-                </div>
-                <div className="flex flex-wrap items-center gap-2 text-xs">
-                  <span className="text-muted-foreground">Status:</span>
-                  {/\.m3u8/i.test(String(liveHlsUrl || "")) && String(liveHlsStatus).toLowerCase() === "ready" ? (
-                    <span className="px-2 py-0.5 rounded bg-green-500/20 text-green-400 font-medium">Ready</span>
-                  ) : String(liveHlsStatus).toLowerCase() === "failed" ? (
-                    <span className="px-2 py-0.5 rounded bg-red-500/20 text-red-400 font-medium">Failed{liveHlsError ? `: ${liveHlsError}` : ""}</span>
-                  ) : ["queued", "processing"].includes(String(liveHlsStatus || "").toLowerCase()) ? (
-                    <span className="px-2 py-0.5 rounded bg-blue-500/20 text-blue-400 font-medium inline-flex items-center gap-1">
-                      <Loader2 className="w-3 h-3 animate-spin" /> {liveHlsStatus}
-                    </span>
-                  ) : (
-                    <span className="px-2 py-0.5 rounded bg-zinc-500/20 text-foreground/70 font-medium">Not generated</span>
-                  )}
-                  {/\.m3u8/i.test(String(liveHlsUrl || "")) && (
-                    <span className="text-muted-foreground truncate max-w-full">{String(liveHlsUrl)}</span>
-                  )}
-                </div>
+                ) : (
+                  <p className="text-xs text-amber-500">Save movie first to unlock Generate HLS.</p>
+                )}
               </div>
-            )}
 
-            <div className="rounded-xl border border-border bg-muted/10 p-5">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                <div className="space-y-1.5">
-                  <Label className="text-foreground text-sm font-medium">Video Upload Type</Label>
-                  <Select value={videoUploadType === "hls" ? "hls" : videoUploadType} onValueChange={setVideoUploadType}>
-                    <SelectTrigger className="bg-muted border-border text-foreground h-10 rounded-lg text-sm">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="bg-popover border-border text-foreground">
-                      <SelectItem value="url">External URL</SelectItem>
-                      <SelectItem value="local">Local (Media Library)</SelectItem>
-                      <SelectItem value="hls">HLS (multi-quality)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-foreground text-sm font-medium">Video</Label>
-                  {videoUploadType === "local" || videoUploadType === "hls" ? (
-                    <div className="space-y-1.5">
-                      <div
-                        onClick={() => setVideoPickerOpen(true)}
-                        className="border-2 border-dashed border-border rounded-lg min-h-10 flex items-center justify-center cursor-pointer hover:border-primary/40 bg-muted/20 transition-colors overflow-hidden w-full py-2"
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                <span className="text-muted-foreground">Status:</span>
+                {/\.m3u8/i.test(String(liveHlsUrl || "")) && String(liveHlsStatus).toLowerCase() === "ready" ? (
+                  <span className="px-2 py-0.5 rounded bg-green-500/20 text-green-400 font-medium">Ready</span>
+                ) : String(liveHlsStatus).toLowerCase() === "failed" ? (
+                  <span className="px-2 py-0.5 rounded bg-red-500/20 text-red-400 font-medium">
+                    Failed{liveHlsError ? `: ${liveHlsError}` : ""}
+                  </span>
+                ) : ["queued", "processing"].includes(String(liveHlsStatus || "").toLowerCase()) ? (
+                  <span className="px-2 py-0.5 rounded bg-blue-500/20 text-blue-400 font-medium inline-flex items-center gap-1">
+                    <Loader2 className="w-3 h-3 animate-spin" /> {liveHlsStatus}
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded bg-zinc-500/20 text-foreground/70 font-medium">Not generated yet</span>
+                )}
+              </div>
+
+              {/* Auto quality chips — this is what you were looking for */}
+              {(/\.m3u8/i.test(String(liveHlsUrl || "")) || qualityRows.some((q) => q.url || q.filePath)) && (
+                <div className="space-y-2">
+                  <p className="text-xs font-medium text-foreground">Available qualities</p>
+                  <div className="flex flex-wrap gap-2">
+                    {(Array.isArray(liveQualities) && liveQualities.length > 0
+                      ? liveQualities
+                      : qualityRows.filter((q) => q.url || q.filePath)
+                    ).map((q: any, i: number) => (
+                      <span
+                        key={`${q.quality || q.id || i}`}
+                        className="inline-flex items-center px-2.5 py-1 rounded-lg bg-emerald-500/15 text-emerald-400 text-xs font-semibold border border-emerald-500/30"
                       >
-                        {(videoUploadType === "hls" ? videoUrl : videoFilePath) ? (
-                          <span
-                            className="text-sm text-foreground truncate px-3 w-full text-center block"
-                            title={getImageUrl(videoUploadType === "hls" ? videoUrl : videoFilePath)}
-                          >
-                            {getImageUrl(videoUploadType === "hls" ? videoUrl : videoFilePath)}
-                          </span>
-                        ) : (
-                          <span className="text-sm text-muted-foreground">Click to select from media library</span>
-                        )}
-                      </div>
-                      {videoUploadType === "hls" && qualityEnabled && qualityRows.some((q) => q.url || q.filePath) && (
-                        <p className="text-[11px] text-amber-500 font-medium">
-                          HLS ready · {qualityRows.filter((q) => q.url || q.filePath).map((q) => q.quality).join(", ")} auto-filled
-                        </p>
-                      )}
-                    </div>
-                  ) : (
-                    <Input
-                      placeholder="https://cdn.example.com/video.m3u8"
-                      value={videoUrl}
-                      onChange={(e) => setVideoUrl(e.target.value)}
-                      className="bg-muted border-border text-foreground placeholder:text-muted-foreground h-10 rounded-lg text-sm"
-                    />
-                  )}
-                </div>
-              </div>
-            </div>
-
-            <SectionHeading title="Quality Variants" />
-            <div className="rounded-xl border border-border bg-muted/10 p-5 space-y-5">
-              <div className="flex items-center justify-between gap-4">
-                <div>
-                  <p className="text-sm text-foreground">Enable quality-specific video files</p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Auto-filled from media library HLS, or generated in the background when you upload a local video.
-                  </p>
-                </div>
-                <Switch checked={qualityEnabled} onCheckedChange={setQualityEnabled} className="data-[state=checked]:bg-primary" />
-              </div>
-
-              {qualityEnabled && (
-                <div className="space-y-4">
-                  {qualityRows.map((row) => (
-                    <div key={row.id} className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
-                      <div className="space-y-1.5">
-                        <Label className="text-foreground text-sm font-medium">Upload Type</Label>
-                        <Select value={row.type} onValueChange={(v) => updateQualityRow(row.id, "type", v)}>
-                          <SelectTrigger className="bg-muted border-border text-foreground h-10 rounded-lg text-sm">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent className="bg-popover border-border text-foreground">
-                            <SelectItem value="url">External URL</SelectItem>
-                            <SelectItem value="local">Local</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label className="text-foreground text-sm font-medium">Quality</Label>
-                        <Select value={row.quality} onValueChange={(v) => updateQualityRow(row.id, "quality", v)}>
-                          <SelectTrigger className="bg-muted border-border text-foreground h-10 rounded-lg text-sm">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent className="bg-popover border-border text-foreground">
-                            <SelectItem value="144p">144p</SelectItem>
-                            <SelectItem value="240p">240p</SelectItem>
-                            <SelectItem value="360p">360p</SelectItem>
-                            <SelectItem value="480p">480p</SelectItem>
-                            <SelectItem value="720p">720p</SelectItem>
-                            <SelectItem value="1080p">1080p</SelectItem>
-                            <SelectItem value="4k">4K</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="flex gap-2 items-end min-w-0">
-                        <div className="flex-1 space-y-1.5 min-w-0">
-                          <Label className="text-foreground text-sm font-medium">Video File / URL</Label>
-                          {row.type === "local" ? (
-                            <div
-                              onClick={() => { setCurrentQualityRowId(row.id); setQualityPickerOpen(true); }}
-                              className="border-2 border-dashed border-border rounded-lg h-10 flex items-center justify-center cursor-pointer hover:border-primary/40 bg-muted/20 transition-colors overflow-hidden w-full"
-                            >
-                              {row.filePath ? (
-                                <span className="text-sm text-foreground truncate px-3 w-full text-center block" title={getImageUrl(row.filePath)}>
-                                  {getImageUrl(row.filePath)}
-                                </span>
-                              ) : (
-                                <span className="text-sm text-muted-foreground">Click to select</span>
-                              )}
-                            </div>
-                          ) : (
-                            <Input
-                              placeholder="https://..."
-                              value={row.url}
-                              onChange={(e) => updateQualityRow(row.id, "url", e.target.value)}
-                              className="bg-muted border-border text-foreground placeholder:text-muted-foreground h-10 rounded-lg text-sm"
-                            />
-                          )}
-                        </div>
-                        {qualityRows.length > 1 && (
-                          <button type="button" onClick={() => removeQualityRow(row.id)}
-                            className="h-10 w-10 flex items-center justify-center rounded-lg bg-primary/15 text-primary hover:bg-primary/80/30 shrink-0">
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                  <div className="flex justify-end">
-                    <Button type="button" onClick={addQualityRow}
-                      className="bg-primary hover:bg-primary/90 text-white h-9 gap-2 rounded-lg px-4 text-sm font-semibold">
-                      <Plus className="h-4 w-4" /> Add Quality
-                    </Button>
+                        {q.quality || "auto"}
+                      </span>
+                    ))}
+                    <span className="inline-flex items-center px-2.5 py-1 rounded-lg bg-amber-400/15 text-amber-400 text-xs font-semibold border border-amber-400/30">
+                      Auto (player)
+                    </span>
                   </div>
+                  {/\.m3u8/i.test(String(liveHlsUrl || "")) && (
+                    <p className="text-[11px] text-muted-foreground break-all">Master: {String(liveHlsUrl)}</p>
+                  )}
                 </div>
               )}
+
+              {!/\.m3u8/i.test(String(liveHlsUrl || "")) && !qualityRows.some((q) => q.url || q.filePath) && (
+                <p className="text-xs text-muted-foreground">
+                  No qualities yet — expected until Generate HLS finishes. Then chips for 360p–1080p appear here.
+                </p>
+              )}
             </div>
+
+            {/* Advanced manual override — collapsed by default */}
+            <details className="rounded-xl border border-border bg-muted/5 p-4">
+              <summary className="cursor-pointer text-sm font-medium text-foreground select-none">
+                Advanced: manual quality URLs (optional)
+              </summary>
+              <div className="mt-4 space-y-4">
+                <p className="text-xs text-muted-foreground">
+                  Only use this if you upload each quality yourself. Normal flow does not need this.
+                </p>
+                <div className="flex items-center justify-between gap-4">
+                  <p className="text-sm text-foreground">Enable manual quality rows</p>
+                  <Switch checked={qualityEnabled} onCheckedChange={setQualityEnabled} className="data-[state=checked]:bg-primary" />
+                </div>
+                {qualityEnabled && (
+                  <div className="space-y-4">
+                    {qualityRows.map((row) => (
+                      <div key={row.id} className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+                        <div className="space-y-1.5">
+                          <Label className="text-foreground text-sm font-medium">Upload Type</Label>
+                          <Select value={row.type} onValueChange={(v) => updateQualityRow(row.id, "type", v)}>
+                            <SelectTrigger className="bg-muted border-border text-foreground h-10 rounded-lg text-sm">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent className="bg-popover border-border text-foreground">
+                              <SelectItem value="url">External URL</SelectItem>
+                              <SelectItem value="local">Local</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label className="text-foreground text-sm font-medium">Quality</Label>
+                          <Select value={row.quality} onValueChange={(v) => updateQualityRow(row.id, "quality", v)}>
+                            <SelectTrigger className="bg-muted border-border text-foreground h-10 rounded-lg text-sm">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent className="bg-popover border-border text-foreground">
+                              <SelectItem value="360p">360p</SelectItem>
+                              <SelectItem value="480p">480p</SelectItem>
+                              <SelectItem value="720p">720p</SelectItem>
+                              <SelectItem value="1080p">1080p</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="flex gap-2 items-end min-w-0">
+                          <div className="flex-1 space-y-1.5 min-w-0">
+                            <Label className="text-foreground text-sm font-medium">Video File / URL</Label>
+                            {row.type === "local" ? (
+                              <div
+                                onClick={() => { setCurrentQualityRowId(row.id); setQualityPickerOpen(true); }}
+                                className="border-2 border-dashed border-border rounded-lg h-10 flex items-center justify-center cursor-pointer hover:border-primary/40 bg-muted/20 transition-colors overflow-hidden w-full"
+                              >
+                                {row.filePath ? (
+                                  <span className="text-sm text-foreground truncate px-3 w-full text-center block" title={getImageUrl(row.filePath)}>
+                                    {getImageUrl(row.filePath)}
+                                  </span>
+                                ) : (
+                                  <span className="text-sm text-muted-foreground">Click to select</span>
+                                )}
+                              </div>
+                            ) : (
+                              <Input
+                                placeholder="https://..."
+                                value={row.url}
+                                onChange={(e) => updateQualityRow(row.id, "url", e.target.value)}
+                                className="bg-muted border-border text-foreground placeholder:text-muted-foreground h-10 rounded-lg text-sm"
+                              />
+                            )}
+                          </div>
+                          {qualityRows.length > 1 && (
+                            <button type="button" onClick={() => removeQualityRow(row.id)}
+                              className="h-10 w-10 flex items-center justify-center rounded-lg bg-primary/15 text-primary hover:bg-primary/80/30 shrink-0">
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                    <div className="flex justify-end">
+                      <Button type="button" onClick={addQualityRow}
+                        className="bg-primary hover:bg-primary/90 text-white h-9 gap-2 rounded-lg px-4 text-sm font-semibold">
+                        <Plus className="h-4 w-4" /> Add Quality
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </details>
           </div>
         )}
 
