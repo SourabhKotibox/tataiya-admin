@@ -753,30 +753,49 @@ export default function Settings() {
   const handleSaveSms = async () => {
     setSaving(true);
     try {
+      const customerId = sms.messageCentralCustomerId.trim();
+      const authToken = sms.messageCentralAuthToken.trim();
+      const baseUrl = (sms.messageCentralBaseUrl.trim() || "https://cpaas.messagecentral.com").replace(/\/$/, "");
+
+      if (!customerId) {
+        toast({ title: "Customer ID is required", variant: "destructive" });
+        return;
+      }
+      // Must paste Auth Token at least once (field may look empty after reload if not returned)
+      if (!authToken && !sms.messageCentralPassword) {
+        toast({
+          title: "Paste Auth Token from Message Central console",
+          description: "API Credentials → Auth Token (starts with eyJ…)",
+          variant: "destructive",
+        });
+        return;
+      }
+
       const payload: Record<string, any> = {
-        messageCentralEnabled: sms.messageCentralEnabled,
-        messageCentralCustomerId: sms.messageCentralCustomerId.trim(),
-        messageCentralBaseUrl: (sms.messageCentralBaseUrl.trim() || "https://cpaas.messagecentral.com").replace(/\/$/, ""),
+        // Auto-enable when keys are saved so OTP never falls back to 1234
+        messageCentralEnabled: true,
+        messageCentralCustomerId: customerId,
+        messageCentralBaseUrl: baseUrl,
         messageCentralCountryCode: sms.messageCentralCountryCode.trim() || "91",
         messageCentralOtpLength: Number(sms.messageCentralOtpLength) || 4,
         messageCentralFlowType: sms.messageCentralFlowType || "SMS",
         messageCentralEmail: sms.messageCentralEmail.trim(),
       };
-      // Only overwrite secrets when admin pastes a new value (avoid wiping stored keys)
-      if (sms.messageCentralAuthToken.trim()) {
-        payload.messageCentralAuthToken = sms.messageCentralAuthToken.trim();
-      }
-      if (sms.messageCentralPassword) {
-        payload.messageCentralPassword = sms.messageCentralPassword;
-      }
+      if (authToken) payload.messageCentralAuthToken = authToken;
+      if (sms.messageCentralPassword) payload.messageCentralPassword = sms.messageCentralPassword;
+
       await updateSettingsMutation.mutateAsync(payload);
+      setSms((prev) => ({ ...prev, messageCentralEnabled: true, ...payload }));
       updateCtx({
         ...payload,
         messageCentralAuthToken: payload.messageCentralAuthToken ?? sms.messageCentralAuthToken,
         messageCentralPassword: payload.messageCentralPassword ?? sms.messageCentralPassword,
       });
       await refreshSettings();
-      toast({ title: "Message Gateway keys saved!" });
+      toast({
+        title: "Message Gateway saved & enabled",
+        description: "App and website will now send real SMS OTPs (1234 disabled).",
+      });
     } catch (err: any) {
       toast({ title: err?.message || "Save failed", variant: "destructive" });
     } finally {
@@ -1740,10 +1759,10 @@ export default function Settings() {
       <SectionTitle icon={MessageSquare} label="Message Gateway (OTP)" />
 
       <div className="rounded-lg border border-border bg-muted/20 p-4 text-sm text-muted-foreground space-y-1">
-        <p className="text-foreground font-medium">Paste keys from Message Central → API Credentials.</p>
+        <p className="text-foreground font-medium">Paste keys from Message Central → API Credentials, then Save.</p>
         <p>
-          Used for phone OTP on the <span className="text-foreground">app</span> and{" "}
-          <span className="text-foreground">website</span>. Admin login stays email only.
+          Saving <span className="text-foreground">automatically enables</span> real SMS OTP for app + website.
+          Static code <span className="font-mono text-foreground">1234</span> is disabled once keys are saved.
         </p>
         <p>
           <a
