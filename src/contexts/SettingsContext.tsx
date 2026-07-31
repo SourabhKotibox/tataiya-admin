@@ -133,6 +133,10 @@ export interface AppSettings {
   messageCentralCountryCode: string;
   messageCentralOtpLength: number;
   messageCentralFlowType: string;
+  messageCentralHasCustomerId?: boolean;
+  messageCentralHasAuthToken?: boolean;
+  messageCentralHasPassword?: boolean;
+  messageCentralHasEmail?: boolean;
 }
 
 const DEFAULT: AppSettings = {
@@ -401,6 +405,10 @@ function mapApiData(api: any): AppSettings {
     messageCentralCountryCode: api.messageCentralCountryCode || DEFAULT.messageCentralCountryCode,
     messageCentralOtpLength: api.messageCentralOtpLength ?? DEFAULT.messageCentralOtpLength,
     messageCentralFlowType: api.messageCentralFlowType || DEFAULT.messageCentralFlowType,
+    messageCentralHasCustomerId: !!api.messageCentralHasCustomerId || !!api.messageCentralCustomerId,
+    messageCentralHasAuthToken: !!api.messageCentralHasAuthToken || !!api.messageCentralAuthToken,
+    messageCentralHasPassword: !!api.messageCentralHasPassword || !!api.messageCentralPassword,
+    messageCentralHasEmail: !!api.messageCentralHasEmail || !!api.messageCentralEmail,
   };
 }
 
