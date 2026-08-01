@@ -1759,6 +1759,52 @@ export const getAppSettings = async () => {
   return api('/app-settings');
 };
 
+/** Admin — get force-update / version config */
+export const getForceUpdateConfig = async () => {
+  return api('/app-settings/force-update', { useAdminToken: true });
+};
+
+/** Admin — save force-update / version config */
+export const updateForceUpdateConfig = async (data: Record<string, any>) => {
+  return api('/app-settings/force-update', {
+    method: 'PUT',
+    body: JSON.stringify(data),
+    useAdminToken: true,
+  });
+};
+
+/** App — check if force/optional update is needed */
+export const checkAppForceUpdate = async (params: {
+  platform: 'android' | 'ios';
+  version: string;
+}) => {
+  const q = new URLSearchParams({
+    platform: params.platform,
+    version: params.version,
+  });
+  return api(`/app/force-update?${q.toString()}`);
+};
+
+export const useGetForceUpdateConfig = () => {
+  return useQuery({
+    queryKey: ['forceUpdateConfig'],
+    queryFn: async () => {
+      const res = await getForceUpdateConfig();
+      return res.data;
+    },
+  });
+};
+
+export const useUpdateForceUpdateConfig = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: updateForceUpdateConfig,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['forceUpdateConfig'] });
+    },
+  });
+};
+
 export const getHomeTabsConfig = async () => {
   return api('/app-settings/home-tabs');
 };

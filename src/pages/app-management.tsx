@@ -1,5 +1,5 @@
-import { useState, useCallback } from 'react';
-import { Plus, Trash2, Edit2, X, Check, ChevronDown, GripVertical } from 'lucide-react';
+import { useState, useCallback, useEffect } from 'react';
+import { Plus, Trash2, Edit2, X, Check, ChevronDown, GripVertical, Rocket } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import {
@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import {
   DropdownMenu,
@@ -25,6 +26,8 @@ import {
   useAddAppSetting,
   useDeleteAppSetting,
   useEditAppSetting,
+  useGetForceUpdateConfig,
+  useUpdateForceUpdateConfig,
 } from '@/lib/api-client';
 import {
   DndContext,
@@ -151,6 +154,47 @@ export default function AppManagement() {
   const deleteSettingMutation = useDeleteAppSetting();
   const editSettingMutation = useEditAppSetting();
 
+  const { data: forceCfg, isLoading: forceLoading } = useGetForceUpdateConfig();
+  const updateForceMutation = useUpdateForceUpdateConfig();
+  const [forceForm, setForceForm] = useState({
+    android: { latestVersion: '1.0.0', minVersion: '1.0.0', forceUpdateEnabled: false, storeUrl: '' },
+    ios: { latestVersion: '1.0.0', minVersion: '1.0.0', forceUpdateEnabled: false, storeUrl: '' },
+    title: 'Update Required',
+    message: 'A new version of the app is available. Please update to continue.',
+    optionalUpdateTitle: 'Update Available',
+    optionalUpdateMessage: 'A newer version is available. Update for the best experience.',
+  });
+
+  useEffect(() => {
+    if (forceCfg) {
+      setForceForm({
+        android: {
+          latestVersion: forceCfg.android?.latestVersion || '1.0.0',
+          minVersion: forceCfg.android?.minVersion || '1.0.0',
+          forceUpdateEnabled: !!forceCfg.android?.forceUpdateEnabled,
+          storeUrl: forceCfg.android?.storeUrl || '',
+        },
+        ios: {
+          latestVersion: forceCfg.ios?.latestVersion || '1.0.0',
+          minVersion: forceCfg.ios?.minVersion || '1.0.0',
+          forceUpdateEnabled: !!forceCfg.ios?.forceUpdateEnabled,
+          storeUrl: forceCfg.ios?.storeUrl || '',
+        },
+        title: forceCfg.title || 'Update Required',
+        message: forceCfg.message || '',
+        optionalUpdateTitle: forceCfg.optionalUpdateTitle || 'Update Available',
+        optionalUpdateMessage: forceCfg.optionalUpdateMessage || '',
+      });
+    }
+  }, [forceCfg]);
+
+  const handleSaveForceUpdate = () => {
+    updateForceMutation.mutate(forceForm, {
+      onSuccess: () => toast({ title: 'Force update settings saved!' }),
+      onError: (e: any) => toast({ title: e?.message || 'Save failed', variant: 'destructive' }),
+    });
+  };
+
   const [editingSetting, setEditingSetting] = useState<any>(null);
   const [editingSettingMeta, setEditingSettingMeta] = useState<any>(null);
   const [tempSelectedItems, setTempSelectedItems] = useState<string[]>([]);
@@ -266,9 +310,146 @@ export default function AppManagement() {
   const currentSettings = settings.length > 0 ? settings : (appSettingsData?.data || []);
 
   return (
-    <div className="max-w-4xl mx-auto space-y-4">
+    <div className="max-w-4xl mx-auto space-y-6">
+      {/* Force Update by Version */}
+      <div className="rounded-xl border border-border bg-card p-5 space-y-5">
+        <div className="flex items-start gap-3">
+          <div className="h-10 w-10 rounded-lg bg-primary/15 flex items-center justify-center shrink-0">
+            <Rocket className="h-5 w-5 text-primary" />
+          </div>
+          <div>
+            <h2 className="text-lg font-semibold text-foreground">Force Update (by Version)</h2>
+            <p className="text-sm text-muted-foreground mt-0.5">
+              App calls{' '}
+              <code className="text-xs bg-muted px-1 rounded">
+                GET /api/app/force-update?platform=android&amp;version=1.0.0
+              </code>
+              . If app version &lt; min and Force is ON → block until update.
+            </p>
+          </div>
+        </div>
+
+        {forceLoading ? (
+          <p className="text-sm text-muted-foreground">Loading version config…</p>
+        ) : (
+          <>
+            <div className="grid md:grid-cols-2 gap-4">
+              {(['android', 'ios'] as const).map((platform) => (
+                <div key={platform} className="rounded-lg border border-border p-4 space-y-3 bg-background/40">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="font-medium text-foreground capitalize">{platform}</p>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-muted-foreground">Force</span>
+                      <Switch
+                        checked={forceForm[platform].forceUpdateEnabled}
+                        onCheckedChange={(c) =>
+                          setForceForm((p) => ({
+                            ...p,
+                            [platform]: { ...p[platform], forceUpdateEnabled: c },
+                          }))
+                        }
+                        className="data-[state=checked]:bg-primary"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <Label className="text-xs">Latest version</Label>
+                      <Input
+                        value={forceForm[platform].latestVersion}
+                        onChange={(e) =>
+                          setForceForm((p) => ({
+                            ...p,
+                            [platform]: { ...p[platform], latestVersion: e.target.value },
+                          }))
+                        }
+                        placeholder="1.3.0"
+                        className="bg-background border-border h-9"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Min version (force below)</Label>
+                      <Input
+                        value={forceForm[platform].minVersion}
+                        onChange={(e) =>
+                          setForceForm((p) => ({
+                            ...p,
+                            [platform]: { ...p[platform], minVersion: e.target.value },
+                          }))
+                        }
+                        placeholder="1.2.0"
+                        className="bg-background border-border h-9"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Store URL</Label>
+                    <Input
+                      value={forceForm[platform].storeUrl}
+                      onChange={(e) =>
+                        setForceForm((p) => ({
+                          ...p,
+                          [platform]: { ...p[platform], storeUrl: e.target.value },
+                        }))
+                      }
+                      placeholder={
+                        platform === 'android'
+                          ? 'https://play.google.com/store/apps/details?id=...'
+                          : 'https://apps.apple.com/app/id...'
+                      }
+                      className="bg-background border-border h-9"
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="grid md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Force update title</Label>
+                <Input
+                  value={forceForm.title}
+                  onChange={(e) => setForceForm((p) => ({ ...p, title: e.target.value }))}
+                  className="bg-background border-border"
+                />
+                <Label>Force update message</Label>
+                <Textarea
+                  value={forceForm.message}
+                  onChange={(e) => setForceForm((p) => ({ ...p, message: e.target.value }))}
+                  className="bg-background border-border min-h-[72px]"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Optional update title</Label>
+                <Input
+                  value={forceForm.optionalUpdateTitle}
+                  onChange={(e) => setForceForm((p) => ({ ...p, optionalUpdateTitle: e.target.value }))}
+                  className="bg-background border-border"
+                />
+                <Label>Optional update message</Label>
+                <Textarea
+                  value={forceForm.optionalUpdateMessage}
+                  onChange={(e) => setForceForm((p) => ({ ...p, optionalUpdateMessage: e.target.value }))}
+                  className="bg-background border-border min-h-[72px]"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end">
+              <Button
+                onClick={handleSaveForceUpdate}
+                disabled={updateForceMutation.isPending}
+                className="bg-primary hover:bg-primary/90 text-white"
+              >
+                {updateForceMutation.isPending ? 'Saving…' : 'Save Force Update'}
+              </Button>
+            </div>
+          </>
+        )}
+      </div>
+
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-foreground">App Management</h1>
+        <h1 className="text-2xl font-bold text-foreground">Home Layout Settings</h1>
         <Dialog open={addSettingOpen} onOpenChange={setAddSettingOpen}>
           <DialogTrigger asChild>
             <Button variant="default" className="bg-primary hover:bg-primary/90 text-white">
