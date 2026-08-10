@@ -234,7 +234,7 @@ export default function PageForm() {
                   id="metaTitle"
                   value={formData.metaTitle}
                   onChange={(e) => set("metaTitle", e.target.value)}
-                  placeholder="e.g. Privacy Policy | Triple Minds"
+                  placeholder="e.g. Privacy Policy | Tataiya"
                   className="bg-muted border-border text-foreground placeholder:text-muted-foreground/80 focus:border-primary h-11"
                 />
               </div>

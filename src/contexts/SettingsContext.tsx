@@ -194,15 +194,15 @@ const DEFAULT: AppSettings = {
   activeMenuStyle: 'left-bordered',
   footerStyle: 'default',
   // Mail
-  mailEmail: "info@tripleminds.com",
+  mailEmail: "tataiyafun@gmail.com",
   mailDriver: "smtp",
   mailHost: "smtp.gmail.com",
   mailPort: "587",
   mailEncryption: "tls",
   mailUsername: "",
   mailPassword: "",
-  mailFrom: "info@tripleminds.com",
-  mailFromName: "Triple Minds",
+  mailFrom: "tataiyafun@gmail.com",
+  mailFromName: "Tataiya",
   // Notifications
   fcmServerKey: "",
   fcmSenderId: "",

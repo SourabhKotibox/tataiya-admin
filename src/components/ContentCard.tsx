@@ -119,14 +119,16 @@ export function PortraitCard({
   onClick,
   size = "md",
   fullWidth = false,
+  hidePlayButton = false,
 }: {
   item: any;
   onClick: () => void;
   size?: "sm" | "md" | "lg";
   fullWidth?: boolean;
+  hidePlayButton?: boolean;
 }) {
   const imgSrc =
-    getImageUrl(item.poster || item.posterImage || item.thumbnail) || "";
+    getImageUrl(item.thumbnail || item.poster || item.posterImage || item.backdrop) || "";
 
   const year = item.year || item.releaseYear || "";
   const duration = formatCardDuration(item.duration);
@@ -138,8 +140,8 @@ export function PortraitCard({
     >
       {/* Image container */}
       <div
-        className="relative rounded-lg sm:rounded-xl overflow-hidden bg-zinc-900 group-hover:ring-2 group-hover:ring-amber-400/50 group-hover:shadow-[0_12px_40px_-12px_rgba(255,184,0,0.45)] transition-all duration-300"
-        style={{ aspectRatio: "2/3" }}
+        className="relative rounded-xl sm:rounded-2xl overflow-hidden bg-zinc-900 group-hover:ring-1 group-hover:ring-amber-400/60 transition-all duration-300"
+        style={{ aspectRatio: "9/16" }}
       >
         {/* Poster image */}
         <img
@@ -154,35 +156,37 @@ export function PortraitCard({
         />
 
         {/* Gradient overlay */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent pointer-events-none" />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/10 to-transparent pointer-events-none" />
 
         {/* Top-left: badge */}
-        <div className="absolute top-1.5 left-1.5 sm:top-2 sm:left-2 z-10">
+        <div className="absolute top-1 left-1 sm:top-2 sm:left-2 z-10">
           <BadgeTop item={item} />
         </div>
 
         {/* Top-right: IMDB */}
         {item.imdbRating && (
-          <div className="absolute top-1.5 right-1.5 sm:top-2 sm:right-2 z-10">
+          <div className="absolute top-1 right-1 sm:top-2 sm:right-2 z-10">
             <ImdbBadge rating={item.imdbRating} />
           </div>
         )}
 
-        {/* Play button — always visible on touch, hover-reveal on desktop */}
-        <button
-          className="absolute bottom-2 right-2 sm:bottom-2.5 sm:right-2.5 z-20 w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-amber-400 text-black flex items-center justify-center opacity-90 sm:opacity-0 sm:group-hover:opacity-100 scale-100 sm:scale-90 sm:group-hover:scale-100 transition-all duration-200 shadow-lg pointer-events-auto"
-          onClick={(e) => {
-            e.stopPropagation();
-            onClick();
-          }}
-          aria-label="Play"
-        >
-          <Play className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-black fill-black ml-0.5" />
-        </button>
+        {/* Play button — hidden on mobile grid cards */}
+        {!hidePlayButton && (
+          <button
+            className="absolute bottom-2 right-2 sm:bottom-2.5 sm:right-2.5 z-20 w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-amber-400 text-black flex items-center justify-center opacity-90 sm:opacity-0 sm:group-hover:opacity-100 scale-100 sm:scale-90 sm:group-hover:scale-100 transition-all duration-200 shadow-lg pointer-events-auto"
+            onClick={(e) => {
+              e.stopPropagation();
+              onClick();
+            }}
+            aria-label="Play"
+          >
+            <Play className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-black fill-black ml-0.5" />
+          </button>
+        )}
       </div>
 
-      {/* Title below image — avoids double text when poster already has title art */}
-      <div className="mt-2 px-0.5 min-w-0">
+      {/* Title below image */}
+      <div className="mt-1 px-0.5 min-w-0">
         <p className="text-foreground font-bold text-[11px] sm:text-xs md:text-sm truncate leading-snug">{item.title}</p>
         {(year || duration) && (
           <p className="text-foreground/60 text-[10px] sm:text-[11px] mt-0.5 truncate">

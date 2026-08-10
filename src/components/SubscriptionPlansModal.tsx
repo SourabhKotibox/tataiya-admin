@@ -201,7 +201,7 @@ export default function SubscriptionPlansModal({ isOpen, onClose, onSubscribed }
         {/* Content */}
         <div className="flex-1 overflow-y-auto px-6 py-8">
           <p className="text-foreground/70 text-sm text-center max-w-lg mx-auto mb-8 leading-relaxed">
-            Unlock unlimited access to the entire Xoto OTT library. Supercharge your streaming experience with crystal-clear 4K, Dolby Atmos, and zero ads.
+            Unlock unlimited access to the entire Tataiya library. Supercharge your streaming experience with crystal-clear 4K, Dolby Atmos, and zero ads.
           </p>
 
           {loadingPlans ? (

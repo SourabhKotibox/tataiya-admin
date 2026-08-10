@@ -200,7 +200,7 @@ function AgeBadge({ rating }: { rating?: string }) {
 /* ─── SECTION HEADER ─── */
 function SectionHeader({ title, icon, onSeeAll, count }: { title: string; icon?: React.ReactNode; onSeeAll?: () => void; count?: number }) {
   return (
-    <div className="flex items-center gap-3 mb-4 px-4 sm:px-8 lg:px-12">
+    <div className="flex items-center gap-3 mb-4 px-3 sm:px-6 lg:px-8">
       {icon && <div className="text-amber-400">{icon}</div>}
       <h2 className="text-white font-bold text-lg sm:text-xl tracking-tight">{title}</h2>
       {count !== undefined && count > 0 && (
@@ -244,16 +244,23 @@ function FeaturedRow({ title, icon, items, onPlay, size = "md", onSeeAll }: {
   const { rowRef, scroll } = useRowScroll();
   if (!items.length) return null;
   return (
-    <div className="mb-10">
+    <div className="mb-6">
       <SectionHeader title={title} icon={icon} onSeeAll={onSeeAll} count={items.length} />
-      <div className="relative group/row">
+      {/* Mobile grid: 3 columns */}
+      <div className="md:hidden px-3 sm:px-6 grid grid-cols-3 gap-1">
+        {items.map((item) => (
+          <PortraitCard key={item.id || item._id} item={item} onClick={() => onPlay(item)} fullWidth hidePlayButton />
+        ))}
+      </div>
+      {/* Desktop horizontal scroll */}
+      <div className="hidden md:block relative group/row">
         <button onClick={() => scroll("left", 1200)} className="hidden lg:flex absolute left-2 top-1/2 -translate-y-1/2 z-10 w-9 h-9 items-center justify-center rounded-full bg-black/80 border border-zinc-700/60 text-white opacity-0 group-hover/row:opacity-100 hover:bg-amber-400 hover:border-amber-400 transition-all shadow-xl">
           <ChevronLeft className="w-4 h-4" />
         </button>
         <button onClick={() => scroll("right", 1200)} className="hidden lg:flex absolute right-2 top-1/2 -translate-y-1/2 z-10 w-9 h-9 items-center justify-center rounded-full bg-black/80 border border-zinc-700/60 text-white opacity-0 group-hover/row:opacity-100 hover:bg-amber-400 hover:border-amber-400 transition-all shadow-xl">
           <ChevronRight className="w-4 h-4" />
         </button>
-        <div ref={rowRef} className="flex gap-4 overflow-x-auto px-4 sm:px-8 lg:px-12 pb-2" style={{ scrollbarWidth: "none", msOverflowStyle: "none" } as React.CSSProperties}>
+        <div ref={rowRef} className="flex gap-4 overflow-x-auto px-3 sm:px-6 lg:px-8 pb-2" style={{ scrollbarWidth: "none", msOverflowStyle: "none" } as React.CSSProperties}>
           {items.map((item) => (
             <FeaturedCard key={item.id || item._id} item={item} onPlay={onPlay} size={size} />
           ))}
@@ -269,7 +276,7 @@ function ContentRow({ title, icon, items, onPlay, size = "md", onSeeAll }: {
   const { rowRef, scroll } = useRowScroll();
   if (!items.length) return null;
   return (
-    <div className="mb-10">
+    <div className="mb-6">
       <SectionHeader title={title} icon={icon} onSeeAll={onSeeAll} count={items.length} />
       <div className="relative group/row">
         <button onClick={() => scroll("left", 900)} className="hidden lg:flex absolute left-2 top-[38%] -translate-y-1/2 z-10 w-9 h-9 items-center justify-center rounded-full bg-black/80 border border-zinc-700/60 text-white opacity-0 group-hover/row:opacity-100 hover:bg-amber-400 hover:border-amber-400 transition-all shadow-xl">
@@ -278,7 +285,7 @@ function ContentRow({ title, icon, items, onPlay, size = "md", onSeeAll }: {
         <button onClick={() => scroll("right", 900)} className="hidden lg:flex absolute right-2 top-[38%] -translate-y-1/2 z-10 w-9 h-9 items-center justify-center rounded-full bg-black/80 border border-zinc-700/60 text-white opacity-0 group-hover/row:opacity-100 hover:bg-amber-400 hover:border-amber-400 transition-all shadow-xl">
           <ChevronRight className="w-4 h-4" />
         </button>
-        <div ref={rowRef} className="flex gap-4 overflow-x-auto px-4 sm:px-8 lg:px-12 pb-2" style={{ scrollbarWidth: "none", msOverflowStyle: "none" } as React.CSSProperties}>
+        <div ref={rowRef} className="flex gap-4 overflow-x-auto px-3 sm:px-6 lg:px-8 pb-2" style={{ scrollbarWidth: "none", msOverflowStyle: "none" } as React.CSSProperties}>
           {items.map((item) => (
             <ContentCard key={item.id || item._id} item={item} onPlay={onPlay} size={size} />
           ))}
@@ -574,7 +581,7 @@ function GenreFilter({ active, onChange }: { active: string; onChange: (g: strin
 
   return (
     <div
-      className="flex gap-2 overflow-x-auto overscroll-x-contain touch-pan-x px-3 sm:px-8 lg:px-12 pb-3 mb-5 sm:mb-6 -mx-0"
+      className="flex gap-2 overflow-x-auto overscroll-x-contain touch-pan-x px-3 sm:px-6 lg:px-8 pb-3 mb-5 sm:mb-6 -mx-0"
       style={{ scrollbarWidth: "none", WebkitOverflowScrolling: "touch" } as React.CSSProperties}
     >
       {genres.map((g) => (
@@ -658,7 +665,7 @@ function MoviesTab({ onPlay }: { onPlay: (item: ContentItem) => void }) {
 
   return (
     <div className="pt-4 sm:pt-6 pb-24 sm:pb-20 w-full max-w-[100vw] overflow-x-hidden">
-      <div className="px-3 sm:px-8 lg:px-12 mb-4 sm:mb-6">
+      <div className="px-3 sm:px-6 lg:px-12 mb-4 sm:mb-6">
         <h2 className="text-white font-bold text-xl sm:text-2xl tracking-tight">Movies</h2>
         <p className="text-white/60 text-sm mt-1">
           {isLoading ? "Loading..." : `${browseData?.pagination?.total || 0} movies available`}
@@ -673,11 +680,11 @@ function MoviesTab({ onPlay }: { onPlay: (item: ContentItem) => void }) {
           <p className="text-white/70 text-sm font-medium">No movies in this genre yet.</p>
         </div>
       ) : (
-        <div className="px-3 sm:px-8 lg:px-12 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4 md:gap-5">
-          {filtered.map((item: any) => (
-            <LandscapeCard key={item.id || item._id} item={item} onClick={() => onPlay(item)} fullWidth />
-          ))}
-        </div>
+         <div className="px-3 sm:px-6 lg:px-12 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 gap-1 sm:gap-2 md:gap-3">
+           {filtered.map((item: any) => (
+             <PortraitCard key={item.id || item._id} item={item} onClick={() => onPlay(item)} fullWidth hidePlayButton />
+           ))}
+         </div>
       )}
     </div>
   );
@@ -805,7 +812,7 @@ function NewHotTab({ onPlay, showToast }: { onPlay: (item: ContentItem) => void;
         }}
       />
 
-      <div className="relative max-w-6xl mx-auto px-4 sm:px-8 lg:px-12 pt-8 sm:pt-10">
+      <div className="relative max-w-6xl mx-auto px-3 sm:px-6 lg:px-8 pt-6 sm:pt-8">
         <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 mb-8">
           <div>
             <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-amber-400/10 border border-amber-400/25 text-amber-400 text-[10px] font-bold uppercase tracking-[0.18em] mb-3">
@@ -920,7 +927,7 @@ function NewHotTab({ onPlay, showToast }: { onPlay: (item: ContentItem) => void;
                   <h4 className="text-white font-bold text-lg tracking-tight">More to watch</h4>
                   <span className="text-white/40 text-xs font-medium">{filtered.length} titles</span>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1 sm:gap-2">
                   {rest.map((item: any) => {
                     const id = String(item.id || item._id || "");
                     const inList = wishlistIds.has(id);
@@ -1068,18 +1075,56 @@ function HomeTab({ onPlay, onSubscribeClick, isSubscribed, user, onSignIn }: {
   if (isHomeLoading || isSectionsLoading || isAllContentLoading || !homeData) return <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-amber-400" /></div>;
 
   return (
-    <div className="pb-20 space-y-12 pt-8 sm:pt-12 relative z-10 bg-[#030306]">
+    <div className="pb-20 space-y-6 pt-6 sm:pt-8 relative z-10 bg-[#030306]">
       {cw.length > 0 && (
-        <section className="px-4 sm:px-8 lg:px-12">
+        <section className="px-3 sm:px-6 lg:px-8">
           <SectionHeader title="Continue Watching" icon={<Clock className="w-4 h-4" />} />
-          <div className="flex gap-4 overflow-x-auto pb-3" style={{ scrollbarWidth: "none", msOverflowStyle: "none" } as React.CSSProperties}>
+          {/* Mobile grid: 3 columns */}
+          <div className="md:hidden grid grid-cols-3 gap-1">
+            {cw.map((item: any) => (
+              <div
+                key={item.id}
+                className="group relative cursor-pointer"
+                onClick={() => onPlay(item)}
+              >
+                <div className="relative rounded-xl overflow-hidden bg-zinc-900 shadow-lg" style={{ aspectRatio: "9/16" }}>
+                  <img
+                    src={getImageUrl(item.thumbnail || item.backdrop || item.poster || item.posterImage) || ""}
+                    alt={item.title || ""}
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                    onError={(e) => { (e.target as HTMLImageElement).style.backgroundColor = "#111"; }}
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent" />
+                  {item.imdbRating && (
+                    <div className="absolute top-1.5 left-1.5 z-10">
+                      <ImdbBadge rating={item.imdbRating} />
+                    </div>
+                  )}
+                  <div className="absolute bottom-0 left-0 right-0 px-2 pb-2 pt-6">
+                    <p className="text-white font-bold text-[11px] truncate leading-tight">
+                      {item.showTitle || item.title}
+                    </p>
+                    {item.showTitle && (
+                      <p className="text-white/80 text-[10px] truncate mt-0.5">
+                        {item.title}
+                      </p>
+                    )}
+                  </div>
+                  <div className="absolute bottom-0 left-0 right-0 h-1 bg-zinc-700/60">
+                    <div className="h-full bg-amber-400 rounded-r-full transition-all" style={{ width: `${Math.min(100, Math.round(item.progressPercent || 0))}%` }} />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+          {/* Desktop horizontal scroll */}
+          <div className="hidden md:block flex gap-4 overflow-x-auto pb-3" style={{ scrollbarWidth: "none", msOverflowStyle: "none" } as React.CSSProperties}>
             {cw.map((item: any) => (
               <div
                 key={item.id}
                 className="group relative flex-shrink-0 w-[260px] sm:w-[300px] cursor-pointer"
                 onClick={() => onPlay(item)}
               >
-                {/* Card */}
                 <div className="relative rounded-xl overflow-hidden bg-zinc-900 shadow-lg" style={{ aspectRatio: "16/9" }}>
                   <img
                     src={getImageUrl(item.backdrop || item.poster || item.posterImage || item.thumbnail) || ""}
@@ -1087,15 +1132,12 @@ function HomeTab({ onPlay, onSubscribeClick, isSubscribed, user, onSignIn }: {
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                     onError={(e) => { (e.target as HTMLImageElement).style.backgroundColor = "#111"; }}
                   />
-                  {/* Gradient overlay */}
                   <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent" />
-                  {/* Play button */}
                   <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200">
                     <div className="w-12 h-12 rounded-full bg-amber-400/95 flex items-center justify-center shadow-xl scale-90 group-hover:scale-100 transition-transform duration-200">
                       <Play className="w-5 h-5 text-white fill-white ml-0.5" />
                     </div>
                   </div>
-                  {/* Title */}
                   <div className="absolute bottom-0 left-0 right-0 px-3 pb-4 pt-8">
                     <p className="text-white font-bold text-sm truncate leading-tight">
                       {item.showTitle || item.title}
@@ -1106,7 +1148,6 @@ function HomeTab({ onPlay, onSubscribeClick, isSubscribed, user, onSignIn }: {
                       </p>
                     )}
                   </div>
-                  {/* Progress bar */}
                   <div className="absolute bottom-0 left-0 right-0 h-1 bg-zinc-700/60">
                     <div className="h-full bg-amber-400 rounded-r-full transition-all" style={{ width: `${Math.min(100, Math.round(item.progressPercent || 0))}%` }} />
                   </div>
@@ -1134,12 +1175,12 @@ function HomeTab({ onPlay, onSubscribeClick, isSubscribed, user, onSignIn }: {
 
           if (section.layout === 'grid') {
             rowContent = (
-              <div className="mb-10">
+              <div className="mb-6">
                 <SectionHeader title={section.title} onSeeAll={() => setLocation(`/browse?section=${section._id}`)} count={items.length} />
-                <div className="px-4 sm:px-8 lg:px-12 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5 pt-2">
+                <div className="px-3 sm:px-6 lg:px-8 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 gap-1 sm:gap-2 md:gap-3 pt-2">
                   {items.map((item: any) => (
                     <Fragment key={item.id || item._id}>
-                      <LandscapeCard item={item} onClick={() => onPlay(item)} fullWidth />
+                      <PortraitCard item={item} onClick={() => onPlay(item)} fullWidth hidePlayButton />
                     </Fragment>
                   ))}
                 </div>
@@ -1197,7 +1238,7 @@ function HomeTab({ onPlay, onSubscribeClick, isSubscribed, user, onSignIn }: {
       {/* Subscribe Banner if there are dynamic sections, to ensure it always renders at bottom if not shown in hardcoded fallback */}
       {webSections.length > 0 && !isSubscribed && <SubscribeBanner onSubscribeClick={onSubscribeClick} />}
 
-      <div className="px-4 sm:px-8 lg:px-12 pb-4 pt-2">
+      <div className="px-3 sm:px-6 lg:px-8 pb-4 pt-2">
         <WebsiteReviews
           user={user}
           onSignInRequired={() => (onSignIn ? onSignIn() : setLocation("/login"))}

@@ -27,7 +27,7 @@ const replacePreviewVariables = (template: string, vars: Record<string, string>)
     return vars[k] ?? vars[key.trim()] ?? `<span style="background:#fef3c7;padding:0 4px;border-radius:3px;color:#92400e;">[[ ${key.trim()} ]]</span>`;
   });
 
-const wrapPreviewEmail = (body: string, platformName = 'Triple Minds'): string => {
+const wrapPreviewEmail = (body: string, platformName = 'Tataiya'): string => {
   if (/^<!DOCTYPE|^<html/i.test(body.trim())) return body;
   const inner = /<[a-z][\s\S]*>/i.test(body) ? body : body.replace(/\n/g, '<br>');
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
@@ -387,12 +387,12 @@ export default function NotificationTemplateFormPage() {
   // Build preview HTML
   const sampleVars = {
     ...SAMPLE_VARS,
-    platform_name: settings?.platformName || "StreamVault",
+    platform_name: settings?.platformName || "Tataiya",
   };
 
   const previewHtml =
     previewTarget === "email"
-      ? wrapPreviewEmail(replacePreviewVariables(form.emailTemplate || "<p>No email template set.</p>", sampleVars), settings?.platformName || "Triple Minds")
+      ? wrapPreviewEmail(replacePreviewVariables(form.emailTemplate || "<p>No email template set.</p>", sampleVars), settings?.platformName || "Tataiya")
       : `<div style="font-family:Arial,sans-serif;max-width:500px;margin:30px auto;background:#fff;border-radius:12px;border:1px solid #e5e7eb;overflow:hidden;">
           <div style="background:linear-gradient(135deg,#ef4444 0%,#dc2626 100%);padding:16px 20px;">
             <p style="color:#fff;font-size:12px;margin:0;opacity:0.8;text-transform:uppercase;letter-spacing:1px;">In-App Notification</p>
@@ -565,7 +565,7 @@ export default function NotificationTemplateFormPage() {
             <div className="space-y-2">
               <Label className={labelCls}>Subject</Label>
               <Input value={form.notifSubject} onChange={(e) => set("notifSubject", e.target.value)}
-                placeholder={`e.g. Welcome to ${settings?.platformName || "Triple Minds"}`} className={inputCls} />
+                placeholder={`e.g. Welcome to ${settings?.platformName || "Tataiya"}`} className={inputCls} />
             </div>
             <div className="space-y-2">
               <Label className={labelCls}>Message Body</Label>
@@ -582,7 +582,7 @@ export default function NotificationTemplateFormPage() {
             <div className="space-y-2">
               <Label className={labelCls}>Subject</Label>
               <Input value={form.emailSubject} onChange={(e) => set("emailSubject", e.target.value)}
-                placeholder={`e.g. Welcome to ${settings?.platformName || "Triple Minds"} 🎬`} className={inputCls} />
+                placeholder={`e.g. Welcome to ${settings?.platformName || "Tataiya"} 🎬`} className={inputCls} />
             </div>
             <div className="space-y-2">
               <Label className={labelCls}>Body (HTML)</Label>

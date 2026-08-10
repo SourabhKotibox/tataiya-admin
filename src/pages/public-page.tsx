@@ -29,7 +29,7 @@ export default function PublicPagePage() {
 
   useEffect(() => {
     if (page) {
-      document.title = page.metaTitle || `${page.title} | Triple Minds`;
+      document.title = page.metaTitle || `${page.title} | Tataiya`;
       
       // Update meta description
       let metaDesc = document.querySelector('meta[name="description"]');
@@ -38,20 +38,20 @@ export default function PublicPagePage() {
         metaDesc.setAttribute('name', 'description');
         document.head.appendChild(metaDesc);
       }
-      metaDesc.setAttribute('content', page.metaDescription || `Read ${page.title} on Triple Minds.`);
+      metaDesc.setAttribute('content', page.metaDescription || `Read ${page.title} on Tataiya.`);
 
       // Update OpenGraph / Twitter meta tags
       const ogTitle = document.querySelector('meta[property="og:title"]');
       if (ogTitle) ogTitle.setAttribute('content', page.metaTitle || page.title);
 
       const ogDesc = document.querySelector('meta[property="og:description"]');
-      if (ogDesc) ogDesc.setAttribute('content', page.metaDescription || `Read ${page.title} on Triple Minds.`);
+      if (ogDesc) ogDesc.setAttribute('content', page.metaDescription || `Read ${page.title} on Tataiya.`);
 
       const twitterTitle = document.querySelector('meta[name="twitter:title"]');
       if (twitterTitle) twitterTitle.setAttribute('content', page.metaTitle || page.title);
 
       const twitterDesc = document.querySelector('meta[name="twitter:description"]');
-      if (twitterDesc) twitterDesc.setAttribute('content', page.metaDescription || `Read ${page.title} on Triple Minds.`);
+      if (twitterDesc) twitterDesc.setAttribute('content', page.metaDescription || `Read ${page.title} on Tataiya.`);
     }
   }, [page]);
 

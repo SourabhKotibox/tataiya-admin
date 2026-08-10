@@ -934,10 +934,10 @@ export default function Settings() {
       {/* Basic fields */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-5">
         {[
-          { key: "platformName", label: "App Name", placeholder: "StreamVault", req: false },
+          { key: "platformName", label: "App Name", placeholder: "Tataiya", req: false },
           { key: "contactNo", label: "Contact No", placeholder: "+1 234 567 8900", req: true },
           { key: "inquiryEmail", label: "Inquiry Email", placeholder: "hello@example.com", req: true },
-          { key: "copyrightText", label: "Copyright Text", placeholder: "© 2026 StreamVault. All Rights Reserved.", req: false },
+          { key: "copyrightText", label: "Copyright Text", placeholder: "© 2026 Tataiya. All Rights Reserved.", req: false },
         ].map(({ key, label, placeholder, req }) => (
           <div key={key} className="space-y-2">
             <Label className={labelCls}>
@@ -956,7 +956,7 @@ export default function Settings() {
           <Textarea
             value={business.siteDescription}
             onChange={(e) => setBusiness({ ...business, siteDescription: e.target.value })}
-            placeholder="StreamVault: Your Ultimate Destination for Unlimited Movies and Shows!"
+            placeholder="Tataiya: Your Ultimate Destination for Unlimited Movies and Shows!"
             className="bg-background border-border text-foreground focus:border-primary rounded-lg resize-none"
             rows={3}
           />
