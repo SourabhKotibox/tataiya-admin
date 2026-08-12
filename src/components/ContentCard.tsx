@@ -120,21 +120,15 @@ export function PortraitCard({
   size = "md",
   fullWidth = false,
   hidePlayButton = false,
-  useThumbnail = false,
-  square = false,
 }: {
   item: any;
   onClick: () => void;
   size?: "sm" | "md" | "lg";
   fullWidth?: boolean;
   hidePlayButton?: boolean;
-  useThumbnail?: boolean;
-  square?: boolean;
 }) {
   const imgSrc =
-    useThumbnail
-      ? getImageUrl(item.thumbnail || item.poster || item.posterImage || item.backdrop) || ""
-      : getImageUrl(item.poster || item.posterImage || item.thumbnail || item.backdrop) || "";
+    getImageUrl(item.thumbnail || item.poster || item.posterImage || item.backdrop) || "";
 
   const year = item.year || item.releaseYear || "";
   const duration = formatCardDuration(item.duration);
@@ -146,7 +140,7 @@ export function PortraitCard({
     >
       {/* Image container */}
       <div
-        className={`relative overflow-hidden bg-zinc-900 group-hover:ring-1 group-hover:ring-amber-400/60 transition-all duration-300 ${square ? "rounded-none" : "rounded-xl sm:rounded-2xl"}`}
+        className="relative rounded-xl sm:rounded-2xl overflow-hidden bg-zinc-900 group-hover:ring-1 group-hover:ring-amber-400/60 transition-all duration-300"
         style={{ aspectRatio: "9/16" }}
       >
         {/* Poster image */}
