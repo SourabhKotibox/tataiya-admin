@@ -1063,6 +1063,7 @@ function HomeTab({ onPlay, onSubscribeClick, isSubscribed, user, onSignIn }: {
   onSignIn?: () => void;
 }) {
   const [, setLocation] = useLocation();
+  const cwScrollRef = useRef<HTMLDivElement>(null);
   const { data: homeData, isLoading: isHomeLoading } = useGetWebHome();
   const { data: watchHistoryData } = useGetWatchHistory({ limit: 10 });
   const { data: sectionsData, isLoading: isSectionsLoading } = useGetSections({ platform: 'web', activeOnly: true });
@@ -1079,81 +1080,50 @@ function HomeTab({ onPlay, onSubscribeClick, isSubscribed, user, onSignIn }: {
       {cw.length > 0 && (
         <section className="px-3 sm:px-6 lg:px-8">
           <SectionHeader title="Continue Watching" icon={<Clock className="w-4 h-4" />} />
-          {/* Mobile grid: 3 columns */}
-          <div className="md:hidden grid grid-cols-3 gap-1">
-            {cw.map((item: any) => (
-              <div
-                key={item.id}
-                className="group relative cursor-pointer"
-                onClick={() => onPlay(item)}
-              >
-                <div className="relative rounded-xl overflow-hidden bg-zinc-900 shadow-lg" style={{ aspectRatio: "9/16" }}>
-                  <img
-                    src={getImageUrl(item.thumbnail || item.backdrop || item.poster || item.posterImage) || ""}
-                    alt={item.title || ""}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                    onError={(e) => { (e.target as HTMLImageElement).style.backgroundColor = "#111"; }}
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent" />
-                  {item.imdbRating && (
-                    <div className="absolute top-1.5 left-1.5 z-10">
-                      <ImdbBadge rating={item.imdbRating} />
-                    </div>
-                  )}
-                  <div className="absolute bottom-0 left-0 right-0 px-2 pb-2 pt-6">
-                    <p className="text-white font-bold text-[11px] truncate leading-tight">
-                      {item.showTitle || item.title}
-                    </p>
-                    {item.showTitle && (
-                      <p className="text-white/80 text-[10px] truncate mt-0.5">
-                        {item.title}
-                      </p>
+          <div className="relative group/row">
+            <button onClick={() => cwScrollRef.current?.scrollBy({ left: -1200, behavior: 'smooth' })} className="hidden lg:flex absolute left-2 top-1/2 -translate-y-1/2 z-10 w-9 h-9 items-center justify-center rounded-full bg-black/80 border border-zinc-700/60 text-white opacity-0 group-hover/row:opacity-100 hover:bg-amber-400 hover:border-amber-400 transition-all shadow-xl">
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <button onClick={() => cwScrollRef.current?.scrollBy({ left: 1200, behavior: 'smooth' })} className="hidden lg:flex absolute right-2 top-1/2 -translate-y-1/2 z-10 w-9 h-9 items-center justify-center rounded-full bg-black/80 border border-zinc-700/60 text-white opacity-0 group-hover/row:opacity-100 hover:bg-amber-400 hover:border-amber-400 transition-all shadow-xl">
+              <ChevronRight className="w-4 h-4" />
+            </button>
+            <div ref={cwScrollRef} className="flex gap-3 overflow-x-auto pb-3" style={{ scrollbarWidth: "none", msOverflowStyle: "none" } as React.CSSProperties}>
+              {cw.map((item: any) => (
+                <div
+                  key={item.id}
+                  className="group relative flex-shrink-0 w-[160px] sm:w-[180px] md:w-[200px] cursor-pointer"
+                  onClick={() => onPlay(item)}
+                >
+                  <div className="relative rounded-xl overflow-hidden bg-zinc-900 shadow-lg" style={{ aspectRatio: "9/16" }}>
+                    <img
+                      src={getImageUrl(item.thumbnail || item.backdrop || item.poster || item.posterImage) || ""}
+                      alt={item.title || ""}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                      onError={(e) => { (e.target as HTMLImageElement).style.backgroundColor = "#111"; }}
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent" />
+                    {item.imdbRating && (
+                      <div className="absolute top-1.5 left-1.5 z-10">
+                        <ImdbBadge rating={item.imdbRating} />
+                      </div>
                     )}
-                  </div>
-                  <div className="absolute bottom-0 left-0 right-0 h-1 bg-zinc-700/60">
-                    <div className="h-full bg-amber-400 rounded-r-full transition-all" style={{ width: `${Math.min(100, Math.round(item.progressPercent || 0))}%` }} />
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-          {/* Desktop horizontal scroll */}
-          <div className="hidden md:block flex gap-4 overflow-x-auto pb-3" style={{ scrollbarWidth: "none", msOverflowStyle: "none" } as React.CSSProperties}>
-            {cw.map((item: any) => (
-              <div
-                key={item.id}
-                className="group relative flex-shrink-0 w-[260px] sm:w-[300px] cursor-pointer"
-                onClick={() => onPlay(item)}
-              >
-                <div className="relative rounded-xl overflow-hidden bg-zinc-900 shadow-lg" style={{ aspectRatio: "16/9" }}>
-                  <img
-                    src={getImageUrl(item.backdrop || item.poster || item.posterImage || item.thumbnail) || ""}
-                    alt={item.title || ""}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                    onError={(e) => { (e.target as HTMLImageElement).style.backgroundColor = "#111"; }}
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent" />
-                  <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                    <div className="w-12 h-12 rounded-full bg-amber-400/95 flex items-center justify-center shadow-xl scale-90 group-hover:scale-100 transition-transform duration-200">
-                      <Play className="w-5 h-5 text-white fill-white ml-0.5" />
+                    <div className="absolute bottom-0 left-0 right-0 px-2 pb-2 pt-6">
+                      <p className="text-white font-bold text-[11px] truncate leading-tight">
+                        {item.showTitle || item.title}
+                      </p>
+                      {item.showTitle && (
+                        <p className="text-white/80 text-[10px] truncate mt-0.5">
+                          {item.title}
+                        </p>
+                      )}
+                    </div>
+                    <div className="absolute bottom-0 left-0 right-0 h-1 bg-zinc-700/60">
+                      <div className="h-full bg-amber-400 rounded-r-full transition-all" style={{ width: `${Math.min(100, Math.round(item.progressPercent || 0))}%` }} />
                     </div>
                   </div>
-                  <div className="absolute bottom-0 left-0 right-0 px-3 pb-4 pt-8">
-                    <p className="text-white font-bold text-sm truncate leading-tight">
-                      {item.showTitle || item.title}
-                    </p>
-                    {item.showTitle && (
-                      <p className="text-white/80 text-[11px] truncate mt-0.5">
-                        {item.title}
-                      </p>
-                    )}
-                  </div>
-                  <div className="absolute bottom-0 left-0 right-0 h-1 bg-zinc-700/60">
-                    <div className="h-full bg-amber-400 rounded-r-full transition-all" style={{ width: `${Math.min(100, Math.round(item.progressPercent || 0))}%` }} />
-                  </div>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         </section>
       )}
