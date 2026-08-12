@@ -130,7 +130,7 @@ export function PortraitCard({
   square?: boolean;
 }) {
   const imgSrc =
-    getImageUrl(item.thumbnail || item.poster || item.posterImage || item.backdrop) || "";
+    getImageUrl(item.poster || item.posterImage || item.thumbnail || item.backdrop) || "";
 
   const year = item.year || item.releaseYear || "";
   const duration = formatCardDuration(item.duration);
