@@ -681,9 +681,9 @@ function MoviesTab({ onPlay }: { onPlay: (item: ContentItem) => void }) {
         </div>
       ) : (
          <div className="px-3 sm:px-6 lg:px-12 grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-1.5 sm:gap-2">
-            {filtered.map((item: any) => (
-              <PortraitCard key={item.id || item._id} item={item} onClick={() => onPlay(item)} size="sm" hidePlayButton useThumbnail square />
-            ))}
+           {filtered.map((item: any) => (
+             <PortraitCard key={item.id || item._id} item={item} onClick={() => onPlay(item)} size="sm" hidePlayButton useThumbnail />
+           ))}
          </div>
       )}
     </div>
