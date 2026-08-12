@@ -680,7 +680,7 @@ function MoviesTab({ onPlay }: { onPlay: (item: ContentItem) => void }) {
           <p className="text-white/70 text-sm font-medium">No movies in this genre yet.</p>
         </div>
       ) : (
-         <div className="px-3 sm:px-6 lg:px-12 grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-1">
+         <div className="px-3 sm:px-6 lg:px-8 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2 sm:gap-3 md:gap-4 pt-2">
            {filtered.map((item: any) => (
              <PortraitCard
                key={item.id || item._id}
@@ -688,7 +688,6 @@ function MoviesTab({ onPlay }: { onPlay: (item: ContentItem) => void }) {
                onClick={() => onPlay(item)}
                fullWidth
                hidePlayButton
-               square
              />
            ))}
          </div>
