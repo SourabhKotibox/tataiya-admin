@@ -100,7 +100,8 @@ export default function MembershipPage() {
   const [processing, setProcessing] = useState(false);
   const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
 
-  const plans: any[] = plansData?.data || plansData?.plans || [];
+  const rawPlans: any[] = plansData?.data || plansData?.plans || [];
+  const plans = rawPlans.filter((p: any) => String(p?.name || "").trim().toLowerCase() !== "free" && Number(p?.totalPrice ?? p?.price ?? 0) > 0);
   const platformName = settings.platformName || "StreamIT";
   const user = (() => { try { return JSON.parse(localStorage.getItem("appUser") || "null"); } catch { return null; } })();
 

@@ -28,15 +28,6 @@ export const getImageUrl = (filePath) => {
   if (!filePath) return "";
 
   if (filePath.startsWith("http") || filePath.startsWith("data:") || filePath.startsWith("blob:")) {
-    // Old bug: S3 files were saved as https://tataiya.in/uploads/media/...
-    // Rewrite those to the real S3 public URL.
-    const m = filePath.match(/^https?:\/\/(?:www\.)?tataiya\.in\/uploads\/(media\/.+)$/i);
-    if (m) {
-      const s3Base =
-        import.meta.env.VITE_S3_PUBLIC_BASE ||
-        "https://tatiyatv.s3.eu-north-1.amazonaws.com";
-      return `${String(s3Base).replace(/\/$/, "")}/${m[1]}`;
-    }
     return filePath;
   }
 
@@ -47,29 +38,12 @@ export const getImageUrl = (filePath) => {
   // Local uploads
   if (filePath.startsWith("/uploads/") || filePath.startsWith("uploads/")) {
     const cleanPath = filePath.startsWith("/") ? filePath.slice(1) : filePath;
-    // Rewrite /uploads/media/* → S3 (current production storage)
-    if (cleanPath.startsWith("uploads/media/") || cleanPath.startsWith("media/")) {
-      const key = cleanPath.replace(/^uploads\//, "");
-      const s3Base =
-        import.meta.env.VITE_S3_PUBLIC_BASE ||
-        "https://tatiyatv.s3.eu-north-1.amazonaws.com";
-      return `${String(s3Base).replace(/\/$/, "")}/${key}`;
-    }
-    const origin = String(baseUrl || "").replace(/\/api\/?$/, "") || "https://tataiya.in";
+    const origin = String(baseUrl || "").replace(/\/api\/?$/, "") || (typeof window !== "undefined" ? window.location.origin : "https://tataiya.in");
     return `${origin}/${cleanPath}`;
   }
 
   const cleanPath = filePath.startsWith("/") ? filePath.slice(1) : filePath;
-
-  // S3 object keys look like "media/folder/file.png" (no uploads/ prefix)
-  if (!cleanPath.startsWith("uploads/")) {
-    const s3Base =
-      import.meta.env.VITE_S3_PUBLIC_BASE ||
-      "https://tatiyatv.s3.eu-north-1.amazonaws.com";
-    return `${String(s3Base).replace(/\/$/, "")}/${cleanPath}`;
-  }
-
-  const origin = String(baseUrl || "").replace(/\/api\/?$/, "") || "https://tataiya.in";
+  const origin = String(baseUrl || "").replace(/\/api\/?$/, "") || (typeof window !== "undefined" ? window.location.origin : "https://tataiya.in");
   return `${origin}/uploads/${cleanPath}`;
 };
 
@@ -1330,6 +1304,30 @@ export const useGetEmailStatus = () => {
 export const useTestEmail = () => {
   return useMutation<any, Error, string>({
     mutationFn: (to) => testEmail(to),
+  });
+};
+
+// Storage Diagnostics / Test Connection
+export const testStorageConnection = async (data: {
+  driver: 'spaces' | 's3';
+  spaceName?: string;
+  region?: string;
+  endpoint?: string;
+  accessKey?: string;
+  secretKey?: string;
+  bucket?: string;
+  cdnUrl?: string;
+}) => {
+  return api('/settings/test-storage', {
+    method: 'POST',
+    body: JSON.stringify(data),
+    useAdminToken: true,
+  });
+};
+
+export const useTestStorageConnection = () => {
+  return useMutation<any, Error, any>({
+    mutationFn: (data) => testStorageConnection(data),
   });
 };
 

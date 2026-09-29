@@ -17,11 +17,28 @@ function BadgeTop({ item }: { item: any }) {
     return false;
   })();
 
-  const isPremium = item.isPremium || item.badge === "TOP" || item.badge === "EXCLUSIVE";
+  const planRequired = String(item?.planRequired || "").toLowerCase().trim();
+  const isFree = !planRequired || planRequired === "free";
+  const isPremium = !isFree && (item.isPremium || planRequired !== "free");
+
   if (isPremium && !isSubscribed) {
     return (
       <span className="flex items-center gap-0.5 px-1.5 py-0.5 bg-amber-400/90 text-black text-[9px] font-black rounded-md leading-none shadow">
         <Crown className="w-2.5 h-2.5" /> PREMIUM
+      </span>
+    );
+  }
+  if (item.badge === "EXCLUSIVE") {
+    return (
+      <span className="px-1.5 py-0.5 bg-amber-400/90 text-black text-[9px] font-black rounded-md leading-none shadow">
+        EXCLUSIVE
+      </span>
+    );
+  }
+  if (item.badge === "TOP") {
+    return (
+      <span className="px-1.5 py-0.5 bg-amber-500/90 text-black text-[9px] font-black rounded-md leading-none shadow">
+        TOP
       </span>
     );
   }
@@ -46,7 +63,7 @@ function BadgeTop({ item }: { item: any }) {
       </span>
     );
   }
-  if (item.badge && item.badge !== "TOP" && item.badge !== "EXCLUSIVE") {
+  if (item.badge) {
     return (
       <span className="px-1.5 py-0.5 bg-white/20 text-foreground text-[9px] font-black rounded-md leading-none shadow">
         {item.badge}

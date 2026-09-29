@@ -249,13 +249,20 @@ export function PlayerPrerollAd({ onFinished }: { onFinished: () => void }) {
   // ── SKIP BUTTON ──
   const SkipBtn = canSkip ? (
     <button
-      onClick={onFinished}
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onFinished();
+      }}
       className="absolute bottom-6 right-6 z-10 flex items-center gap-1.5 px-5 py-2.5 bg-black/80 border border-white/20 text-white text-sm font-bold rounded-xl hover:bg-white/10 transition-all shadow-xl animate-in fade-in duration-200"
     >
       <SkipForward className="w-4 h-4" /> Skip Ad
     </button>
   ) : (
-    <div className="absolute bottom-6 right-6 z-10 px-5 py-2.5 bg-black/80 border border-white/20 text-white text-sm font-bold rounded-xl shadow-xl">
+    <div
+      onClick={(e) => e.stopPropagation()}
+      className="absolute bottom-6 right-6 z-10 px-5 py-2.5 bg-black/80 border border-white/20 text-white text-sm font-bold rounded-xl shadow-xl"
+    >
       Skip in {countdown}s
     </div>
   );
@@ -296,7 +303,13 @@ export function PlayerPrerollAd({ onFinished }: { onFinished: () => void }) {
           className="max-w-full max-h-full object-contain"
         />
         {ad.redirectUrl && (
-          <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
+          <div
+            className="absolute bottom-20 left-1/2 -translate-x-1/2 z-10 opacity-0 group-hover:opacity-100 transition-opacity"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleAdClick();
+            }}
+          >
             <span className="flex items-center gap-1.5 px-6 py-3 bg-amber-500 text-black/90 hover:bg-amber-500 text-black text-white text-sm font-bold rounded-xl shadow-xl hover:scale-105 transition-all">
               <ExternalLink className="w-4 h-4" /> Learn More
             </span>
@@ -322,7 +335,11 @@ export function PlayerPrerollAd({ onFinished }: { onFinished: () => void }) {
       />
       <div className="absolute top-4 left-4 text-[10px] text-muted-foreground uppercase tracking-widest bg-black/60 px-2 py-1 rounded z-10">Advertisement</div>
       <button
-        onClick={() => setMuted(m => !m)}
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          setMuted(m => !m);
+        }}
         className="absolute top-4 right-6 w-10 h-10 flex items-center justify-center rounded-full bg-black/60 border border-white/10 text-white hover:bg-black/80 transition-all z-10"
       >
         {muted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}

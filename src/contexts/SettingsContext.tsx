@@ -88,13 +88,19 @@ export interface AppSettings {
   currencyPosition: 'before' | 'after';
   decimalPlaces: number;
   // Storage
-  storageDriver: 'local' | 's3';
+  storageDriver: 'local' | 's3' | 'spaces';
   awsAccessKeyId: string;
   awsSecretAccessKey: string;
   awsRegion: string;
   awsBucket: string;
   awsPathStyleEndpoint: boolean;
   awsCdnUrl: string;
+  doSpaceName: string;
+  doRegion: string;
+  doEndpoint: string;
+  doAccessKey: string;
+  doSecretKey: string;
+  doCdnUrl: string;
   bunnyStorageZone: string;
   bunnyAccessKey: string;
   bunnyCdnUrl: string;
@@ -232,6 +238,12 @@ const DEFAULT: AppSettings = {
   awsBucket: "",
   awsPathStyleEndpoint: false,
   awsCdnUrl: "",
+  doSpaceName: "",
+  doRegion: "nyc3",
+  doEndpoint: "https://nyc3.digitaloceanspaces.com",
+  doAccessKey: "",
+  doSecretKey: "",
+  doCdnUrl: "",
   bunnyStorageZone: "",
   bunnyAccessKey: "",
   bunnyCdnUrl: "",
@@ -361,13 +373,19 @@ function mapApiData(api: any): AppSettings {
     currencyPosition: api.currencyPosition || DEFAULT.currencyPosition,
     decimalPlaces: api.decimalPlaces ?? DEFAULT.decimalPlaces,
     // Storage
-    storageDriver: (api.storageDriver === 'local' ? 'local' : 's3') as 'local' | 's3',
+    storageDriver: (api.storageDriver === 'local' ? 'local' : api.storageDriver === 'spaces' ? 'spaces' : 's3') as 'local' | 's3' | 'spaces',
     awsAccessKeyId: api.awsAccessKeyId || "",
     awsSecretAccessKey: api.awsSecretAccessKey || "",
     awsRegion: api.awsRegion || "us-east-1",
     awsBucket: api.awsBucket || "",
     awsPathStyleEndpoint: !!api.awsPathStyleEndpoint,
     awsCdnUrl: api.awsCdnUrl || "",
+    doSpaceName: api.doSpaceName || "",
+    doRegion: api.doRegion || "nyc3",
+    doEndpoint: api.doEndpoint || "https://nyc3.digitaloceanspaces.com",
+    doAccessKey: api.doAccessKey || "",
+    doSecretKey: api.doSecretKey || "",
+    doCdnUrl: api.doCdnUrl || "",
     bunnyStorageZone: api.bunnyStorageZone || "",
     bunnyAccessKey: api.bunnyAccessKey || "",
     bunnyCdnUrl: api.bunnyCdnUrl || "",

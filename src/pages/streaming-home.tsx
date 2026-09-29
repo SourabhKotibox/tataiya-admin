@@ -101,9 +101,10 @@ function persistAppUser(partial: Record<string, any>) {
 }
 
 function canPlayMovie(item: any, user: any): boolean {
-  const required = String(item?.planRequired || (item?.isPremium ? "basic" : "free")).toLowerCase();
+  const planRequired = String(item?.planRequired || "").toLowerCase().trim();
+  const isFreeContent = !planRequired || planRequired === "free";
   // Free titles are always playable
-  if (!required || required === "free") return true;
+  if (isFreeContent) return true;
   // Any active paid plan unlocks paid/premium titles (Standard covers the catalog)
   return isUserSubscribed(user);
 }
@@ -421,7 +422,8 @@ function Hero({ activeTab, onPlay, onSubscribeClick, isSubscribed }: { activeTab
   }
   if (!heroContent.length) return null;
 
-  const isPremium = item.isPremium || item.planRequired && item.planRequired !== "free" || item.badge === "TOP" || item.badge === "EXCLUSIVE";
+  const planRequired = String(item?.planRequired || "").toLowerCase().trim();
+  const isPremium = planRequired ? planRequired !== "free" : !!item?.isPremium;
   const genres = [...new Set<string>(item.genres || [])];
 
   return (

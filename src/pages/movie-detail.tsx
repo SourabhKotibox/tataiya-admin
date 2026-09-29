@@ -127,7 +127,9 @@ export default function MovieDetailPage() {
 
   if (!item) { setLocation("/"); return null; }
 
-  const isPremium = item.badge === "TOP" || item.badge === "EXCLUSIVE";
+  const planRequired = String(item?.planRequired || "").toLowerCase().trim();
+  const isFreeContent = !planRequired || planRequired === "free";
+  const isPremium = !isFreeContent && (item.isPremium || planRequired !== "free");
 
   const getPlanLevel = (plan?: string) => {
     switch (plan?.toLowerCase()) {
@@ -146,9 +148,8 @@ export default function MovieDetailPage() {
     (profileUser?.subscription === true || (status === "active" && plan !== "free")) &&
     (!expiryRaw || new Date(expiryRaw).getTime() >= Date.now());
   const userPlan = hasPaidPlan ? plan : "free";
-  const planRequired = String(item?.planRequired || "free").toLowerCase();
   // Any active paid plan unlocks paid titles
-  const isLocked = planRequired !== "free" && !hasPaidPlan;
+  const isLocked = !isFreeContent && !hasPaidPlan;
 
   const heroBg = getImageUrl(item.backdrop || item.poster || item.posterImage || item.thumbnail) || "";
   const posterImg = getImageUrl(item.poster || item.posterImage || item.thumbnail || item.backdrop) || "";

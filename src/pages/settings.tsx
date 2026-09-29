@@ -44,7 +44,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
-import { useDeleteAccount, useUpdateSettings, useUploadSettingsLogos, useGetEmailStatus, useTestEmail, getImageUrl } from "@/lib/api-client";
+import { useDeleteAccount, useUpdateSettings, useUploadSettingsLogos, useGetEmailStatus, useTestEmail, useTestStorageConnection, getImageUrl } from "@/lib/api-client";
 import { useSettings, applyColorTheme, applyBodyClasses } from "@/contexts/SettingsContext";
 import { useTheme } from "next-themes";
 import MediaPicker from "@/components/MediaPicker";
@@ -558,27 +558,44 @@ export default function Settings() {
   };
 
   // ── Storage Settings ───────────────────────────────────────────────────
+  const [testingStorage, setTestingStorage] = useState(false);
+  const testStorageMutation = useTestStorageConnection();
+
   const [storage, setStorage] = useState({
     localStorage: ctxSettings.storageDriver === "local",
-    s3Storage: ctxSettings.storageDriver !== "local",
+    s3Storage: ctxSettings.storageDriver === "s3" || (!ctxSettings.storageDriver && true),
+    spacesStorage: ctxSettings.storageDriver === "spaces",
     awsAccessKeyId: ctxSettings.awsAccessKeyId || "",
     awsSecretAccessKey: ctxSettings.awsSecretAccessKey || "",
     awsDefaultRegion: ctxSettings.awsRegion || "us-east-1",
     awsBucket: ctxSettings.awsBucket || "",
     awsPathStyle: ctxSettings.awsPathStyleEndpoint ?? false,
     awsCdnUrl: ctxSettings.awsCdnUrl || "",
+    doSpaceName: ctxSettings.doSpaceName || "",
+    doRegion: ctxSettings.doRegion || "nyc3",
+    doEndpoint: ctxSettings.doEndpoint || "https://nyc3.digitaloceanspaces.com",
+    doAccessKey: ctxSettings.doAccessKey || "",
+    doSecretKey: ctxSettings.doSecretKey || "",
+    doCdnUrl: ctxSettings.doCdnUrl || "",
   });
 
   useEffect(() => {
     setStorage({
       localStorage: ctxSettings.storageDriver === "local",
-      s3Storage: ctxSettings.storageDriver !== "local",
+      s3Storage: ctxSettings.storageDriver === "s3",
+      spacesStorage: ctxSettings.storageDriver === "spaces",
       awsAccessKeyId: ctxSettings.awsAccessKeyId || "",
       awsSecretAccessKey: ctxSettings.awsSecretAccessKey || "",
       awsDefaultRegion: ctxSettings.awsRegion || "us-east-1",
       awsBucket: ctxSettings.awsBucket || "",
       awsPathStyle: ctxSettings.awsPathStyleEndpoint ?? false,
       awsCdnUrl: ctxSettings.awsCdnUrl || "",
+      doSpaceName: ctxSettings.doSpaceName || "",
+      doRegion: ctxSettings.doRegion || "nyc3",
+      doEndpoint: ctxSettings.doEndpoint || "https://nyc3.digitaloceanspaces.com",
+      doAccessKey: ctxSettings.doAccessKey || "",
+      doSecretKey: ctxSettings.doSecretKey || "",
+      doCdnUrl: ctxSettings.doCdnUrl || "",
     });
   }, [
     ctxSettings.storageDriver,
@@ -588,12 +605,18 @@ export default function Settings() {
     ctxSettings.awsBucket,
     ctxSettings.awsPathStyleEndpoint,
     ctxSettings.awsCdnUrl,
+    ctxSettings.doSpaceName,
+    ctxSettings.doRegion,
+    ctxSettings.doEndpoint,
+    ctxSettings.doAccessKey,
+    ctxSettings.doSecretKey,
+    ctxSettings.doCdnUrl,
   ]);
 
   const handleSaveStorage = async () => {
     setSaving(true);
     try {
-      const driver = storage.s3Storage ? "s3" : "local";
+      const driver = storage.spacesStorage ? "spaces" : storage.s3Storage ? "s3" : "local";
       const payload = {
         storageDriver: driver,
         awsAccessKeyId: storage.awsAccessKeyId,
@@ -602,15 +625,70 @@ export default function Settings() {
         awsBucket: storage.awsBucket,
         awsPathStyleEndpoint: storage.awsPathStyle,
         awsCdnUrl: storage.awsCdnUrl,
+        doSpaceName: storage.doSpaceName,
+        doRegion: storage.doRegion,
+        doEndpoint: storage.doEndpoint,
+        doAccessKey: storage.doAccessKey,
+        doSecretKey: storage.doSecretKey,
+        doCdnUrl: storage.doCdnUrl,
       };
       await updateSettingsMutation.mutateAsync(payload);
       updateCtx(payload as any);
       await refreshSettings();
-      toast({ title: `Storage set to ${driver === "s3" ? "AWS S3" : "Local"}` });
+      const driverLabel = driver === "spaces" ? "DigitalOcean Spaces" : driver === "s3" ? "AWS S3" : "Local";
+      toast({ title: `Storage set to ${driverLabel}` });
     } catch (err: any) {
       toast({ title: err?.message || "Save failed", variant: "destructive" });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleTestSpacesConnection = async () => {
+    const spaceName = storage.doSpaceName?.trim();
+    const accessKey = storage.doAccessKey?.trim();
+    const secretKey = storage.doSecretKey?.trim();
+
+    if (!spaceName || !accessKey || !secretKey) {
+      toast({
+        title: "Missing Credentials",
+        description: "Please enter Space Name, Access Key, and Secret Key before testing.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setTestingStorage(true);
+    try {
+      const res = await testStorageMutation.mutateAsync({
+        driver: "spaces",
+        spaceName,
+        region: storage.doRegion.trim() || "nyc3",
+        endpoint: storage.doEndpoint.trim() || `https://${storage.doRegion.trim() || "nyc3"}.digitaloceanspaces.com`,
+        accessKey,
+        secretKey,
+        cdnUrl: storage.doCdnUrl.trim(),
+      });
+      if (res?.success) {
+        toast({
+          title: "Connection Successful",
+          description: res.message || "Successfully connected to DigitalOcean Spaces.",
+        });
+      } else {
+        toast({
+          title: "Connection Failed",
+          description: res?.error || res?.message || "Failed to connect to DigitalOcean Spaces.",
+          variant: "destructive",
+        });
+      }
+    } catch (err: any) {
+      toast({
+        title: "Connection Test Failed",
+        description: err?.message || "Could not connect to DigitalOcean Spaces. Please check your credentials and endpoint.",
+        variant: "destructive",
+      });
+    } finally {
+      setTestingStorage(false);
     }
   };
 
@@ -1542,6 +1620,7 @@ export default function Settings() {
           [
             { key: "localStorage" as const, label: "Local Storage" },
             { key: "s3Storage" as const, label: "AWS S3" },
+            { key: "spacesStorage" as const, label: "DigitalOcean Spaces" },
           ]
         ).map(({ key, label }, i, arr) => (
           <div
@@ -1554,17 +1633,114 @@ export default function Settings() {
             <Switch
               checked={storage[key]}
               onCheckedChange={(v) => {
-                setStorage({
-                  ...storage,
-                  localStorage: key === "localStorage" ? v : !v,
-                  s3Storage: key === "s3Storage" ? v : !v,
-                });
+                if (v) {
+                  setStorage({
+                    ...storage,
+                    localStorage: key === "localStorage",
+                    s3Storage: key === "s3Storage",
+                    spacesStorage: key === "spacesStorage",
+                  });
+                }
               }}
               className="data-[state=checked]:bg-primary"
             />
           </div>
         ))}
       </div>
+
+      {storage.spacesStorage && (
+        <div className="space-y-4 mb-6">
+          <div className="space-y-2">
+            <Label className={labelCls}>Space Name <span className="text-primary">*</span></Label>
+            <Input
+              value={storage.doSpaceName}
+              onChange={(e) => setStorage({ ...storage, doSpaceName: e.target.value })}
+              placeholder="e.g. my-space-name"
+              className={inputCls}
+            />
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label className={labelCls}>Region <span className="text-primary">*</span></Label>
+              <Input
+                value={storage.doRegion}
+                onChange={(e) => {
+                  const reg = e.target.value;
+                  setStorage({
+                    ...storage,
+                    doRegion: reg,
+                    doEndpoint: storage.doEndpoint.includes('digitaloceanspaces.com')
+                      ? `https://${reg || 'nyc3'}.digitaloceanspaces.com`
+                      : storage.doEndpoint,
+                  });
+                }}
+                placeholder="e.g. nyc3, ams3, sgp1, sfo3, blr1, fra1"
+                className={inputCls}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label className={labelCls}>Endpoint URL <span className="text-primary">*</span></Label>
+              <Input
+                value={storage.doEndpoint}
+                onChange={(e) => setStorage({ ...storage, doEndpoint: e.target.value })}
+                placeholder="https://nyc3.digitaloceanspaces.com"
+                className={inputCls}
+              />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label className={labelCls}>DO Access Key <span className="text-primary">*</span></Label>
+            <Input
+              value={storage.doAccessKey}
+              onChange={(e) => setStorage({ ...storage, doAccessKey: e.target.value })}
+              placeholder="e.g. DO00..."
+              className={inputCls}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label className={labelCls}>DO Secret Key <span className="text-primary">*</span></Label>
+            <SecretInput
+              value={storage.doSecretKey}
+              onChange={(e) => setStorage({ ...storage, doSecretKey: e.target.value })}
+              placeholder="Enter Secret Key"
+              className={inputCls}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label className={labelCls}>CDN / Public Base URL (optional)</Label>
+            <Input
+              value={storage.doCdnUrl}
+              onChange={(e) => setStorage({ ...storage, doCdnUrl: e.target.value })}
+              placeholder="https://my-space.nyc3.cdn.digitaloceanspaces.com"
+              className={inputCls}
+            />
+          </div>
+
+          <div className="p-4 rounded-lg border border-border bg-muted/20 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-foreground">Test DigitalOcean Spaces Connection</p>
+              <p className="text-xs text-muted-foreground">
+                Verify credentials and connectivity with DigitalOcean Spaces before saving.
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={testingStorage || saving}
+              onClick={handleTestSpacesConnection}
+              className="shrink-0"
+            >
+              {testingStorage ? "Testing..." : "Test Connection"}
+            </Button>
+          </div>
+        </div>
+      )}
+
       {storage.s3Storage && (
         <div className="space-y-4 mb-6">
           {(

@@ -36,12 +36,21 @@ function AdOverlay({ ad, onSkip }: { ad: any; onSkip: () => void }) {
       ) : (
         <div className="w-full h-full" dangerouslySetInnerHTML={{ __html: ad.mediaUrl }} />
       )}
-      <div className="absolute bottom-4 right-4 flex items-center gap-3">
+      <div className="absolute bottom-4 right-4 flex items-center gap-3 z-10" onClick={(e) => e.stopPropagation()}>
         <span className="text-foreground/80 text-xs bg-black/60 px-2 py-1 rounded">Advertisement</span>
         {countdown > 0 ? (
           <span className="bg-black/70 text-white text-xs px-3 py-1.5 rounded-lg font-bold border border-zinc-700">Skip in {countdown}s</span>
         ) : (
-          <button onClick={onSkip} className="bg-white/90 hover:bg-white text-black text-xs font-black px-3 py-1.5 rounded-lg transition-colors">Skip Ad ›</button>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onSkip();
+            }}
+            className="bg-white/90 hover:bg-white text-black text-xs font-black px-3 py-1.5 rounded-lg transition-colors"
+          >
+            Skip Ad ›
+          </button>
         )}
       </div>
     </div>
@@ -1748,7 +1757,9 @@ function LockPopup({ onClose, onSubscribed }: { onClose: () => void; onSubscribe
           ) : (
             <div className="space-y-3">
               {plans.map((plan: any) => {
-                if (plan.name === "free") return null;
+                const planName = String(plan?.name || "").trim().toLowerCase();
+                const planPrice = Number(plan?.totalPrice ?? plan?.price ?? 0);
+                if (planName === "free" || planPrice <= 0) return null;
                 return (
                   <div
                     key={plan.id}
@@ -2051,15 +2062,15 @@ export default function WatchPage() {
   const hasPaidPlan =
     (profileUser?.subscription === true || (liveStatus === "active" && livePlan !== "free")) &&
     (!expiryRaw || new Date(expiryRaw).getTime() >= Date.now());
-  const userPlan = hasPaidPlan ? livePlan : "free";
-  const requiredPlan = String(showData?.planRequired || "free").toLowerCase();
+  const requiredPlan = String(showData?.planRequired || "").toLowerCase().trim();
+  const isFreeContent = !requiredPlan || requiredPlan === "free";
   // Any active paid plan unlocks paid content (don't lock Standard users out of "premium" titles)
-  const isLockedForContent = requiredPlan !== "free" && !hasPaidPlan;
+  const isLockedForContent = !isFreeContent && !hasPaidPlan;
 
   const goToEpisode = useCallback((ep: number) => {
     if (ep !== 0 && ep !== 1) return;
     if (ep !== 0) {
-      const isLocked = (showData?.isPremium === true || requiredPlan !== "free") && isLockedForContent;
+      const isLocked = isLockedForContent;
       if (isLocked) {
         setLockPopupOpen(true);
         return;

@@ -73,7 +73,11 @@ export default function SubscriptionPlansModal({ isOpen, onClose, onSubscribed }
 
   if (!isOpen) return null;
 
-  const plans = (plansData?.data || []).filter((p: any) => p.name !== "free");
+  const plans = (plansData?.data || []).filter((p: any) => {
+    const name = String(p?.name || "").trim().toLowerCase();
+    const price = Number(p?.totalPrice ?? p?.price ?? 0);
+    return name !== "free" && price > 0;
+  });
 
   const handleSubscribe = async (plan: any) => {
     if (!user) {
