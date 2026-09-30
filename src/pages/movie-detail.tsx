@@ -127,12 +127,22 @@ export default function MovieDetailPage() {
 
   if (!item) { setLocation("/"); return null; }
 
-  const planRequired = String(item?.planRequired || "").toLowerCase().trim();
-  const isFreeContent = !planRequired || planRequired === "free";
-  const isPremium = !isFreeContent && (item.isPremium || planRequired !== "free");
+  const planRequired = String(item?.planRequired || "free").toLowerCase().trim();
+  const requiredPlan = planRequired === "vip" || planRequired.includes("vip")
+    ? "vip"
+    : planRequired.includes("premium")
+    ? "premium"
+    : planRequired.includes("standard")
+    ? "standard"
+    : planRequired.includes("basic")
+    ? "basic"
+    : "free";
 
-  const getPlanLevel = (plan?: string) => {
-    switch (plan?.toLowerCase()) {
+  const isFreeContent = requiredPlan === "free";
+
+  const getPlanLevel = (planKey?: string) => {
+    switch (planKey) {
+      case "vip": return 4;
       case "premium": return 3;
       case "standard": return 2;
       case "basic": return 1;
@@ -142,14 +152,45 @@ export default function MovieDetailPage() {
 
   const profileUser = profileData?.user || profileData;
   const status = String(profileUser?.subscriptionStatus || user?.subscriptionStatus || "").toLowerCase();
-  const plan = String(profileUser?.subscriptionPlan || user?.subscriptionPlan || "free").toLowerCase();
+  const rawPlan = String(profileUser?.subscriptionPlan || user?.subscriptionPlan || "free").toLowerCase();
+  const normalizedUserPlan = rawPlan.includes("vip")
+    ? "vip"
+    : rawPlan.includes("premium")
+    ? "premium"
+    : rawPlan.includes("standard")
+    ? "standard"
+    : rawPlan.includes("basic")
+    ? "basic"
+    : "free";
+
   const expiryRaw = profileUser?.subscriptionExpiry || user?.subscriptionExpiry;
   const hasPaidPlan =
-    (profileUser?.subscription === true || (status === "active" && plan !== "free")) &&
+    (profileUser?.subscription === true || (status === "active" && normalizedUserPlan !== "free")) &&
     (!expiryRaw || new Date(expiryRaw).getTime() >= Date.now());
-  const userPlan = hasPaidPlan ? plan : "free";
-  // Any active paid plan unlocks paid titles
-  const isLocked = !isFreeContent && !hasPaidPlan;
+
+  const userPlan = hasPaidPlan ? normalizedUserPlan : "free";
+  const userLevel = getPlanLevel(userPlan);
+  const requiredLevel = getPlanLevel(requiredPlan);
+  const isLocked = !isFreeContent && (!hasPaidPlan || userLevel < requiredLevel);
+
+  const handleBack = (e?: React.MouseEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    if (window.history.length > 1 && document.referrer && document.referrer.includes(window.location.host)) {
+      window.history.back();
+    } else if (window.history.length > 1) {
+      window.history.back();
+      setTimeout(() => {
+        if (window.location.pathname.startsWith("/movie/")) {
+          setLocation("/");
+        }
+      }, 150);
+    } else {
+      setLocation("/");
+    }
+  };
 
   const heroBg = getImageUrl(item.backdrop || item.poster || item.posterImage || item.thumbnail) || "";
   const posterImg = getImageUrl(item.poster || item.posterImage || item.thumbnail || item.backdrop) || "";
@@ -185,11 +226,11 @@ export default function MovieDetailPage() {
         <div className="absolute inset-0 bg-gradient-to-r from-[#0c0c14]/90 via-[#0c0c14]/30 to-transparent" />
 
         {/* Back button */}
-        <div className="absolute top-0 left-0 right-0 z-10 pt-[68px] sm:pt-[72px]">
+        <div className="absolute top-0 left-0 right-0 z-30 pt-[68px] sm:pt-[72px] pointer-events-auto">
           <div className="px-4 sm:px-10 lg:px-16">
             <button
-              onClick={() => window.history.back()}
-              className="flex items-center gap-1.5 text-foreground/80 hover:text-foreground text-sm font-semibold transition-colors"
+              onClick={handleBack}
+              className="flex items-center gap-1.5 text-foreground/80 hover:text-foreground text-sm font-semibold transition-colors cursor-pointer"
             >
               <ChevronLeft className="w-4 h-4" /> Back
             </button>
@@ -252,11 +293,6 @@ export default function MovieDetailPage() {
               {item.language}
             </span>
           )}
-          {isPremium && (
-            <span className="flex items-center gap-1 text-xs font-black px-2.5 py-1 rounded-md bg-amber-500 text-black">
-              <Crown className="w-3 h-3" /> Premium
-            </span>
-          )}
         </div>
 
         {/* Description */}
@@ -271,8 +307,6 @@ export default function MovieDetailPage() {
               onClick={() => {
                 if (isLocked) {
                   setPlansModalOpen(true);
-                } else if (item.trailerUrl) {
-                  setLocation(`/watch/${id}/0`);
                 } else {
                   setLocation(`/watch/${id}`);
                 }
@@ -551,6 +585,7 @@ export default function MovieDetailPage() {
       <SubscriptionPlansModal 
         isOpen={plansModalOpen} 
         onClose={() => setPlansModalOpen(false)} 
+        requiredPlan={requiredPlan}
       />
 
       <style>{`

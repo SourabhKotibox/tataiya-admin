@@ -1,10 +1,11 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useRoute, useLocation } from "wouter";
 import { 
   useGetUserById, 
   useUpdateUser, 
   useBanUser,
-  useUnbanUser
+  useUnbanUser,
+  useGetSubscriptionPlans
 } from "../lib/api-client";
 import { Input } from "@/components/ui/input";
 import { useQueryClient } from "@tanstack/react-query";
@@ -46,6 +47,40 @@ export default function UserDetail() {
   const queryClient = useQueryClient();
 
   const { data: user, isLoading } = useGetUserById(id);
+  const { data: plansData, isLoading: isPlansLoading } = useGetSubscriptionPlans({ limit: 100 });
+  const rawPlans: any[] = plansData?.data || [];
+
+  const availablePlans = useMemo(() => {
+    const list: Array<{ value: string; label: string; id?: string }> = [
+      { value: "free", label: "Free", id: undefined }
+    ];
+    const seen = new Set(["free"]);
+
+    rawPlans.forEach((p: any) => {
+      const val = String(p.name || "").trim().toLowerCase();
+      if (val && !seen.has(val)) {
+        seen.add(val);
+        list.push({
+          value: val,
+          label: p.name || val.charAt(0).toUpperCase() + val.slice(1),
+          id: p.id || p._id,
+        });
+      }
+    });
+
+    // If user has a plan in DB that isn't in the active/current plans list, preserve it in the dropdown
+    const userPlanVal = String(user?.subscriptionPlan || "").trim().toLowerCase();
+    if (userPlanVal && !seen.has(userPlanVal)) {
+      seen.add(userPlanVal);
+      list.push({
+        value: userPlanVal,
+        label: userPlanVal.charAt(0).toUpperCase() + userPlanVal.slice(1),
+        id: user?.subscriptionPlanId,
+      });
+    }
+
+    return list;
+  }, [rawPlans, user?.subscriptionPlan, user?.subscriptionPlanId]);
 
   const updateMutation = useUpdateUser();
   const banMutation = useBanUser();
@@ -70,7 +105,7 @@ export default function UserDetail() {
         name: user.name || "",
         email: user.email || "",
         phone: user.phone || "",
-        subscriptionPlan: user.subscriptionPlan || "free",
+        subscriptionPlan: String(user.subscriptionPlan || "free").toLowerCase().trim(),
         subscriptionStatus: user.subscriptionStatus || "inactive",
         status: user.status || "active",
         banReason: user.banReason || ""
@@ -88,13 +123,17 @@ export default function UserDetail() {
 
   const handleUpdate = (e: React.FormEvent) => {
     e.preventDefault();
+    const selectedPlanKey = String(formData.subscriptionPlan || "free").toLowerCase().trim();
+    const selectedPlanObj = availablePlans.find((p) => p.value === selectedPlanKey);
+
     updateMutation.mutate({
       id,
       data: {
         name: formData.name,
         email: formData.email,
         phone: formData.phone,
-        subscriptionPlan: formData.subscriptionPlan,
+        subscriptionPlan: selectedPlanKey,
+        subscriptionPlanId: selectedPlanObj?.id || (selectedPlanKey === "free" ? null : undefined),
         subscriptionStatus: formData.subscriptionStatus,
         status: formData.status,
         banReason: formData.status !== "active" ? formData.banReason : ""
@@ -289,15 +328,19 @@ export default function UserDetail() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label htmlFor="plan">Plan</Label>
-                      <Select value={formData.subscriptionPlan} onValueChange={(v: string) => setFormData({...formData, subscriptionPlan: v})}>
+                      <Select
+                        value={formData.subscriptionPlan}
+                        onValueChange={(v: string) => setFormData({ ...formData, subscriptionPlan: v })}
+                      >
                         <SelectTrigger className="bg-background border-border">
-                          <SelectValue placeholder="Select plan" />
+                          <SelectValue placeholder={isPlansLoading ? "Loading plans..." : "Select plan"} />
                         </SelectTrigger>
                         <SelectContent className="bg-muted border-border text-foreground">
-                          <SelectItem value="free">Free</SelectItem>
-                          <SelectItem value="basic">Basic</SelectItem>
-                          <SelectItem value="standard">Standard</SelectItem>
-                          <SelectItem value="premium">Premium</SelectItem>
+                          {availablePlans.map((p) => (
+                            <SelectItem key={p.value} value={p.value}>
+                              {p.label}
+                            </SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
                     </div>

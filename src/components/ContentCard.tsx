@@ -18,13 +18,26 @@ function BadgeTop({ item }: { item: any }) {
   })();
 
   const planRequired = String(item?.planRequired || "").toLowerCase().trim();
-  const isFree = !planRequired || planRequired === "free";
-  const isPremium = !isFree && (item.isPremium || planRequired !== "free");
+  const reqKey = planRequired.includes("vip")
+    ? "vip"
+    : planRequired.includes("premium")
+    ? "premium"
+    : planRequired.includes("standard")
+    ? "standard"
+    : planRequired.includes("basic")
+    ? "basic"
+    : planRequired === "free" || !planRequired
+    ? "free"
+    : planRequired;
 
-  if (isPremium && !isSubscribed) {
+  const isFree = reqKey === "free";
+  const isPaid = !isFree;
+
+  if (isPaid && !isSubscribed) {
+    const label = reqKey === "vip" ? "VIP" : reqKey.toUpperCase();
     return (
       <span className="flex items-center gap-0.5 px-1.5 py-0.5 bg-amber-400/90 text-black text-[9px] font-black rounded-md leading-none shadow">
-        <Crown className="w-2.5 h-2.5" /> PREMIUM
+        <Crown className="w-2.5 h-2.5" /> {label}
       </span>
     );
   }

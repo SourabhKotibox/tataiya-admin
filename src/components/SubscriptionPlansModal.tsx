@@ -4,13 +4,25 @@ import { useSettings } from "@/contexts/SettingsContext";
 import { useGetWebSubscriptionPlans, useGetAppProfile, useCreateSubscriptionRazorpayOrder, useVerifySubscriptionRazorpayPayment } from "@/lib/api-client";
 import { useToast } from "@/hooks/use-toast";
 
-const normalizePlanKey = (name?: string) => {
+export const normalizePlanKey = (name?: string) => {
   const n = String(name || "free").toLowerCase().trim();
   if (!n || n === "free" || /\bfree\b/.test(n)) return "free";
-  if (n.includes("premium") || n.includes("vip")) return "premium";
+  if (n.includes("vip")) return "vip";
+  if (n.includes("premium")) return "premium";
   if (n.includes("standard")) return "standard";
   if (n.includes("basic")) return "basic";
-  return "standard";
+  return n;
+};
+
+export const getPlanLevel = (plan?: string) => {
+  const k = normalizePlanKey(plan);
+  switch (k) {
+    case "vip": return 4;
+    case "premium": return 3;
+    case "standard": return 2;
+    case "basic": return 1;
+    default: return 0;
+  }
 };
 
 const isUserSubscribed = (u: any): boolean => {
@@ -65,9 +77,10 @@ interface SubscriptionPlansModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSubscribed?: () => void;
+  requiredPlan?: string;
 }
 
-export default function SubscriptionPlansModal({ isOpen, onClose, onSubscribed }: SubscriptionPlansModalProps) {
+export default function SubscriptionPlansModal({ isOpen, onClose, onSubscribed, requiredPlan }: SubscriptionPlansModalProps) {
   const { settings } = useSettings();
   const { toast } = useToast();
   const { data: plansData, isLoading: loadingPlans } = useGetWebSubscriptionPlans();
@@ -243,7 +256,7 @@ export default function SubscriptionPlansModal({ isOpen, onClose, onSubscribed }
         <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-800 bg-[#09090e]/90 backdrop-blur sticky top-0 z-25">
           <div className="flex items-center gap-2">
             <Crown className="w-5 h-5 text-amber-500 fill-amber-500 animate-pulse" />
-            <h3 className="text-foreground font-extrabold text-lg sm:text-xl tracking-tight">Choose Your Premium Plan</h3>
+            <h3 className="text-foreground font-extrabold text-lg sm:text-xl tracking-tight">Choose Your Subscription Plan</h3>
           </div>
           <button 
             onClick={onClose}
@@ -256,7 +269,9 @@ export default function SubscriptionPlansModal({ isOpen, onClose, onSubscribed }
         {/* Content */}
         <div className="flex-1 overflow-y-auto px-6 py-8">
           <p className="text-foreground/70 text-sm text-center max-w-lg mx-auto mb-8 leading-relaxed">
-            Unlock unlimited access to the entire Tataiya library. Supercharge your streaming experience with crystal-clear 4K, Dolby Atmos, and zero ads.
+            {requiredPlan && normalizePlanKey(requiredPlan) !== "free"
+              ? `This content requires an active ${normalizePlanKey(requiredPlan) === "vip" ? "VIP" : normalizePlanKey(requiredPlan).charAt(0).toUpperCase() + normalizePlanKey(requiredPlan).slice(1)} plan or higher. Select a plan below to unlock playback.`
+              : "Unlock unlimited access to the entire Tataiya library. Supercharge your streaming experience with crystal-clear streaming, downloads, and zero ads."}
           </p>
 
           {loadingPlans ? (
@@ -267,9 +282,11 @@ export default function SubscriptionPlansModal({ isOpen, onClose, onSubscribed }
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {plans.map((plan: any) => {
-                const isPremium = plan.name === "premium";
-                const isStandard = plan.name === "standard";
-                const isPopular = plan.isPopular || isStandard;
+                const planKey = normalizePlanKey(plan.name);
+                const reqKey = normalizePlanKey(requiredPlan);
+                const isPremium = planKey === "premium" || planKey === "vip";
+                const isReqMatch = reqKey !== "free" && planKey === reqKey;
+                const isPopular = isReqMatch || plan.isPopular || (reqKey === "free" && planKey === "standard");
                 const isActive = isPlanActive(plan, effectiveUser);
 
                 return (
@@ -283,10 +300,14 @@ export default function SubscriptionPlansModal({ isOpen, onClose, onSubscribed }
                         : "border-zinc-800 hover:border-zinc-700"
                     }`}
                   >
-                    {/* Active / Popular Badge */}
+                    {/* Active / Popular / Required Badge */}
                     {isActive ? (
                       <span className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 bg-emerald-600 text-white text-[10px] font-black uppercase tracking-wider rounded-full shadow-lg flex items-center gap-1 border border-emerald-400/40">
                         <Check className="w-3 h-3 text-white" /> Active Plan
+                      </span>
+                    ) : isReqMatch ? (
+                      <span className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 bg-amber-500 text-black text-[10px] font-black uppercase tracking-wider rounded-full shadow-lg flex items-center gap-1">
+                        <Crown className="w-3 h-3 fill-black" /> Required Plan
                       </span>
                     ) : isPopular ? (
                       <span className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 bg-primary text-white text-[10px] font-black uppercase tracking-wider rounded-full shadow-lg flex items-center gap-1">

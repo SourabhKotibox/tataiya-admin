@@ -101,12 +101,42 @@ function persistAppUser(partial: Record<string, any>) {
 }
 
 function canPlayMovie(item: any, user: any): boolean {
-  const planRequired = String(item?.planRequired || "").toLowerCase().trim();
-  const isFreeContent = !planRequired || planRequired === "free";
-  // Free titles are always playable
-  if (isFreeContent) return true;
-  // Any active paid plan unlocks paid/premium titles (Standard covers the catalog)
-  return isUserSubscribed(user);
+  const planRequired = String(item?.planRequired || "free").toLowerCase().trim();
+  const reqKey = planRequired.includes("vip")
+    ? "vip"
+    : planRequired.includes("premium")
+    ? "premium"
+    : planRequired.includes("standard")
+    ? "standard"
+    : planRequired.includes("basic")
+    ? "basic"
+    : "free";
+
+  if (reqKey === "free") return true;
+  if (!isUserSubscribed(user)) return false;
+
+  const rawPlan = String(user?.subscriptionPlan || "free").toLowerCase();
+  const userPlanKey = rawPlan.includes("vip")
+    ? "vip"
+    : rawPlan.includes("premium")
+    ? "premium"
+    : rawPlan.includes("standard")
+    ? "standard"
+    : rawPlan.includes("basic")
+    ? "basic"
+    : "free";
+
+  const getLvl = (k: string) => {
+    switch (k) {
+      case "vip": return 4;
+      case "premium": return 3;
+      case "standard": return 2;
+      case "basic": return 1;
+      default: return 0;
+    }
+  };
+
+  return getLvl(userPlanKey) >= getLvl(reqKey);
 }
 
 function resolveBannerVideo(item: any): { src: string; isTrailer: boolean; clipSeconds: number | null } {
@@ -420,10 +450,18 @@ function Hero({ activeTab, onPlay, onSubscribeClick, isSubscribed }: { activeTab
       </div>
     );
   }
-  if (!heroContent.length) return null;
-
-  const planRequired = String(item?.planRequired || "").toLowerCase().trim();
-  const isPremium = planRequired ? planRequired !== "free" : !!item?.isPremium;
+  const planRequired = String(item?.planRequired || "free").toLowerCase().trim();
+  const reqKey = planRequired.includes("vip")
+    ? "vip"
+    : planRequired.includes("premium")
+    ? "premium"
+    : planRequired.includes("standard")
+    ? "standard"
+    : planRequired.includes("basic")
+    ? "basic"
+    : "free";
+  const isPaid = reqKey !== "free";
+  const planBadgeName = reqKey === "vip" ? "VIP" : reqKey.charAt(0).toUpperCase() + reqKey.slice(1);
   const genres = [...new Set<string>(item.genres || [])];
 
   return (
@@ -482,7 +520,11 @@ function Hero({ activeTab, onPlay, onSubscribeClick, isSubscribed }: { activeTab
         <div className={`max-w-2xl transition-all duration-500 ${fading ? "opacity-0 translate-y-3" : "opacity-100 translate-y-0"}`}>
           {/* Desktop badges only — keep mobile clean */}
           <div className="hidden sm:flex items-center gap-2 mb-3 flex-wrap">
-            {isPremium && !isSubscribed ? <PremiumBadge /> : null}
+            {isPaid && !isSubscribed ? (
+              <span className="flex items-center gap-1 text-xs font-black px-2.5 py-1 rounded-md bg-amber-500 text-black">
+                <Crown className="w-3 h-3 fill-black" /> {planBadgeName}
+              </span>
+            ) : null}
             <span className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-full bg-amber-400/15 text-amber-300 border border-amber-400/30 backdrop-blur-sm">
               <Film className="w-3 h-3" />
               {bannerVideo.isTrailer ? "Trailer" : bannerVideo.src ? "Preview" : "Movie"}
@@ -527,7 +569,7 @@ function Hero({ activeTab, onPlay, onSubscribeClick, isSubscribed }: { activeTab
               <Play className="w-3.5 h-3.5 sm:w-4 sm:h-4 fill-black" />
               Watch Now
             </button>
-            {isPremium && !isSubscribed && (
+            {isPaid && !isSubscribed && (
               <button
                 onClick={onSubscribeClick}
                 className="hidden sm:flex items-center gap-2 px-7 py-3.5 bg-black/40 hover:bg-black/55 text-white font-bold rounded-full text-sm tracking-wide transition-all active:scale-95 border border-white/30 backdrop-blur-md"
@@ -1653,8 +1695,23 @@ export function PublicHeader({ activeTab, setActiveTab, onSignIn, onSignOut, use
 
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
-  const [readNotifications, setReadNotifications] = useState<Set<string>>(new Set());
-  const { data: notifData } = useGetPublicNotifications();
+  const [readNotifications, setReadNotifications] = useState<Set<string>>(() => {
+    try {
+      const stored = localStorage.getItem("user_read_notifications");
+      return stored ? new Set(JSON.parse(stored)) : new Set();
+    } catch {
+      return new Set();
+    }
+  });
+  const [clearedNotifications, setClearedNotifications] = useState<Set<string>>(() => {
+    try {
+      const stored = localStorage.getItem("user_cleared_notifications");
+      return stored ? new Set(JSON.parse(stored)) : new Set();
+    } catch {
+      return new Set();
+    }
+  });
+  const { data: notifData, isLoading: isNotifLoading } = useGetPublicNotifications();
 
   const avatarRef = useRef<HTMLDivElement>(null);
   const notificationsRef = useRef<HTMLDivElement>(null);
@@ -1716,15 +1773,51 @@ export function PublicHeader({ activeTab, setActiveTab, onSignIn, onSignOut, use
     setLocation("/browse");
   };
 
-  const notifications: any[] = notifData?.data || [];
-  const unreadCount = notifications.filter((n: any) => !readNotifications.has(n._id || n.id)).length;
+  const rawNotifications: any[] = notifData?.data || [];
+  const notifications = rawNotifications.filter((n: any) => !clearedNotifications.has(String(n._id || n.id)));
+  const unreadCount = notifications.filter((n: any) => !readNotifications.has(String(n._id || n.id))).length;
 
   const handleToggleNotifications = () => {
     setNotificationsOpen((o) => !o);
-    if (!notificationsOpen) {
-      const allIds = new Set(notifications.map((n: any) => n._id || n.id));
-      setReadNotifications(allIds);
-    }
+  };
+
+  const handleMarkAllRead = () => {
+    const allIds = new Set(notifications.map((n: any) => String(n._id || n.id)));
+    setReadNotifications(allIds);
+    try {
+      localStorage.setItem("user_read_notifications", JSON.stringify(Array.from(allIds)));
+    } catch {}
+  };
+
+  const handleClearAll = () => {
+    const allIds = new Set([...Array.from(clearedNotifications), ...rawNotifications.map((n: any) => String(n._id || n.id))]);
+    setClearedNotifications(allIds);
+    try {
+      localStorage.setItem("user_cleared_notifications", JSON.stringify(Array.from(allIds)));
+    } catch {}
+  };
+
+  const handleDismissNotification = (nid: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setClearedNotifications((prev) => {
+      const next = new Set(prev);
+      next.add(nid);
+      try {
+        localStorage.setItem("user_cleared_notifications", JSON.stringify(Array.from(next)));
+      } catch {}
+      return next;
+    });
+  };
+
+  const handleNotificationClick = (nid: string) => {
+    setReadNotifications((prev) => {
+      const next = new Set(prev);
+      next.add(nid);
+      try {
+        localStorage.setItem("user_read_notifications", JSON.stringify(Array.from(next)));
+      } catch {}
+      return next;
+    });
   };
 
   return (
@@ -1735,7 +1828,15 @@ export function PublicHeader({ activeTab, setActiveTab, onSignIn, onSignOut, use
             <div className="flex items-center gap-4 lg:gap-8 min-w-0">
               <Link href="/" className="flex items-center gap-2.5 flex-shrink-0 group max-w-[42vw] sm:max-w-none">
                 {logoUrl ? (
-                  <img src={logoUrl} alt={settings.platformName || "StreamIT"} className="h-7 sm:h-8 w-auto max-h-8 object-contain group-hover:scale-105 transition-transform" />
+                  <img
+                    src={logoUrl}
+                    alt={settings.platformName || "StreamIT"}
+                    style={{
+                      height: `${resolvedTheme === "light" ? (settings.lightLogoSize || 32) : (settings.darkLogoSize || 32)}px`,
+                      maxHeight: `${Math.max(resolvedTheme === "light" ? (settings.lightLogoSize || 32) : (settings.darkLogoSize || 32), 48)}px`,
+                    }}
+                    className="w-auto object-contain group-hover:scale-105 transition-all"
+                  />
                 ) : (
                   <>
                     <div className="w-8 h-8 rounded-lg bg-amber-400 flex items-center justify-center shadow-lg shadow-amber-500/50 group-hover:scale-105 transition-transform">
@@ -1789,6 +1890,7 @@ export function PublicHeader({ activeTab, setActiveTab, onSignIn, onSignOut, use
                 <button
                   onClick={handleToggleNotifications}
                   className="relative w-9 h-9 flex items-center justify-center text-white hover:text-white rounded-full hover:bg-white/5 transition-all"
+                  aria-label="Notifications"
                 >
                   <Bell className="w-[17px] h-[17px]" />
                   {unreadCount > 0 && (
@@ -1815,15 +1917,14 @@ export function PublicHeader({ activeTab, setActiveTab, onSignIn, onSignOut, use
                           )}
                         </div>
                         <div className="flex items-center gap-1 shrink-0">
-                          <button
-                            onClick={() => {
-                              const allIds = new Set(notifications.map((n: any) => n._id || n.id));
-                              setReadNotifications(allIds);
-                            }}
-                            className="text-white/70 hover:text-white text-[10px] font-medium px-2 py-1 rounded-lg hover:bg-white/5 transition-colors whitespace-nowrap"
-                          >
-                            Mark all read
-                          </button>
+                          {notifications.length > 0 && (
+                            <button
+                              onClick={handleClearAll}
+                              className="text-white/70 hover:text-white text-[11px] font-medium px-2 py-1 rounded-lg hover:bg-white/10 transition-colors whitespace-nowrap"
+                            >
+                              Clear all
+                            </button>
+                          )}
                           <button
                             onClick={() => setNotificationsOpen(false)}
                             className="w-8 h-8 flex items-center justify-center text-white/70 hover:text-white rounded-full hover:bg-white/5"
@@ -1834,23 +1935,28 @@ export function PublicHeader({ activeTab, setActiveTab, onSignIn, onSignOut, use
                         </div>
                       </div>
                       <div className="max-h-[min(58vh,340px)] sm:max-h-[300px] overflow-y-auto divide-y divide-white/5 overscroll-contain">
-                        {notifications.length === 0 ? (
+                        {isNotifLoading ? (
+                          <div className="p-6 text-center">
+                            <div className="w-5 h-5 border-2 border-amber-400 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
+                            <p className="text-white/70 text-xs font-medium">Loading notifications…</p>
+                          </div>
+                        ) : notifications.length === 0 ? (
                           <div className="p-6 text-center">
                             <Bell className="w-8 h-8 text-white/60 mx-auto mb-2" />
-                            <p className="text-white/70 text-xs font-medium">No notifications yet</p>
+                            <p className="text-white/70 text-xs font-medium">No notifications</p>
                           </div>
                         ) : (
                           notifications.map((n: any) => {
-                            const nid = n._id || n.id;
+                            const nid = String(n._id || n.id);
                             const isRead = readNotifications.has(nid);
-                            const timeStr = formatRelativeTime(n.createdAt);
+                            const timeStr = formatRelativeTime(n.createdAt || n.updatedAt);
                             return (
                               <div
                                 key={nid}
-                                className={`p-3.5 transition-colors cursor-pointer ${isRead ? "hover:bg-white/5" : "bg-amber-400/5 hover:bg-amber-400/10"}`}
-                                onClick={() => setNotificationsOpen(false)}
+                                className={`group relative p-3.5 transition-colors cursor-pointer ${isRead ? "hover:bg-white/5" : "bg-amber-400/5 hover:bg-amber-400/10"}`}
+                                onClick={() => handleNotificationClick(nid)}
                               >
-                                <div className="flex items-start gap-2">
+                                <div className="flex items-start gap-2 pr-6">
                                   {!isRead && <span className="mt-1.5 w-1.5 h-1.5 bg-amber-400 rounded-full shrink-0" />}
                                   <div className="min-w-0 flex-1">
                                     <p className="text-white text-xs font-bold leading-snug break-words">{n.title}</p>
@@ -1864,6 +1970,14 @@ export function PublicHeader({ activeTab, setActiveTab, onSignIn, onSignOut, use
                                     )}
                                   </div>
                                 </div>
+                                <button
+                                  onClick={(e) => handleDismissNotification(nid, e)}
+                                  className="absolute top-3 right-2.5 w-6 h-6 rounded-full flex items-center justify-center text-white/40 hover:text-white hover:bg-white/15 opacity-70 sm:opacity-0 group-hover:opacity-100 transition-all"
+                                  title="Clear notification"
+                                  aria-label="Clear notification"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
                               </div>
                             );
                           })
@@ -1990,7 +2104,15 @@ export function PublicFooter() {
           <div className="space-y-4">
             <div className="flex items-center gap-2.5">
               {logoUrl ? (
-                <img src={logoUrl} alt={settings.platformName || "StreamIT"} className="h-9 w-auto object-contain" />
+                <img
+                  src={logoUrl}
+                  alt={settings.platformName || "StreamIT"}
+                  style={{
+                    height: `${resolvedTheme === "light" ? (settings.lightLogoSize || 36) : (settings.darkLogoSize || 36)}px`,
+                    maxHeight: `${Math.max(resolvedTheme === "light" ? (settings.lightLogoSize || 36) : (settings.darkLogoSize || 36), 56)}px`,
+                  }}
+                  className="w-auto object-contain transition-all"
+                />
               ) : (
                 <>
                   <div className="w-8 h-8 rounded-lg bg-amber-400 flex items-center justify-center shadow-lg shadow-amber-500/40">
@@ -2107,6 +2229,7 @@ export default function StreamingHomePage() {
   const [user, setUser] = useState<any>(null);
   const [toastMsg, setToastMsg] = useState("");
   const [plansModalOpen, setPlansModalOpen] = useState(false);
+  const [selectedReqPlan, setSelectedReqPlan] = useState<string | undefined>(undefined);
   const [pendingPlay, setPendingPlay] = useState<any>(null);
   const [showPreroll, setShowPreroll] = useState(false);
 
@@ -2198,8 +2321,18 @@ export default function StreamingHomePage() {
   const handlePlay = useCallback((item: any) => {
     // Enforce subscription plan limits before playback
     if (!canPlayMovie(item, user)) {
+      const planRequired = String(item?.planRequired || "free").toLowerCase().trim();
+      const reqKey = planRequired.includes("vip")
+        ? "vip"
+        : planRequired.includes("premium")
+        ? "premium"
+        : planRequired.includes("standard")
+        ? "standard"
+        : planRequired.includes("basic")
+        ? "basic"
+        : "free";
+      setSelectedReqPlan(reqKey);
       setPlansModalOpen(true);
-      showToast("This movie requires a higher subscription plan");
       return;
     }
     // Show pre-roll ad before navigation (only when plan still has ads)
@@ -2228,17 +2361,31 @@ export default function StreamingHomePage() {
         onSignIn={() => setShowSignIn(true)}
         onSignOut={handleSignOut}
         user={user}
-        onSubscribeClick={() => setPlansModalOpen(true)}
+        onSubscribeClick={() => {
+          setSelectedReqPlan(undefined);
+          setPlansModalOpen(true);
+        }}
       />
 
       <main>
-        <Hero activeTab={activeTab} onPlay={handlePlay} onSubscribeClick={() => setPlansModalOpen(true)} isSubscribed={isSubscribed} />
+        <Hero
+          activeTab={activeTab}
+          onPlay={handlePlay}
+          onSubscribeClick={() => {
+            setSelectedReqPlan(undefined);
+            setPlansModalOpen(true);
+          }}
+          isSubscribed={isSubscribed}
+        />
         {!hasHeroForTab && <div className="h-20" />}
 
         {activeTab === "home" && (
           <HomeTab
             onPlay={handlePlay}
-            onSubscribeClick={() => setPlansModalOpen(true)}
+            onSubscribeClick={() => {
+              setSelectedReqPlan(undefined);
+              setPlansModalOpen(true);
+            }}
             isSubscribed={isSubscribed}
             user={user}
             onSignIn={() => setShowSignIn(true)}
@@ -2263,7 +2410,11 @@ export default function StreamingHomePage() {
 
       <SubscriptionPlansModal
         isOpen={plansModalOpen}
-        onClose={() => setPlansModalOpen(false)}
+        onClose={() => {
+          setPlansModalOpen(false);
+          setSelectedReqPlan(undefined);
+        }}
+        requiredPlan={selectedReqPlan}
       />
 
       {toastMsg && (

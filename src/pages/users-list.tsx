@@ -143,7 +143,7 @@ export default function UsersList() {
                   <TableCell>
                     <span
                       className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
-                        user.subscriptionPlan === "premium"
+                        user.subscriptionPlan === "premium" || user.subscriptionPlan === "vip"
                           ? "bg-primary/15 text-primary"
                           : user.subscriptionPlan === "standard"
                           ? "bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400"
@@ -152,7 +152,11 @@ export default function UsersList() {
                           : "bg-muted text-muted-foreground/80 dark:text-foreground/70"
                       }`}
                     >
-                      {user.subscriptionPlan || "Free"}
+                      {user.subscriptionPlan
+                        ? user.subscriptionPlan.toLowerCase() === "vip"
+                          ? "VIP"
+                          : user.subscriptionPlan.charAt(0).toUpperCase() + user.subscriptionPlan.slice(1)
+                        : "Free"}
                     </span>
                   </TableCell>
                   <TableCell className="text-muted-foreground text-sm">

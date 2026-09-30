@@ -9,7 +9,8 @@ import {
 import { PublicHeader, PublicFooter } from "./streaming-home";
 import { WebsiteReviews } from "@/components/WebsiteReviews";
 import Hls from "hls.js";
-import { useGetWebSubscriptionPlans, useCreateSubscription, useGetWebDetail, getImageUrl, useGetPublicAds, useGetAppProfile, useToggleLike, useRequestDownload, useRemoveDownload, useGetWishlist, useToggleWishlist, useSaveWatchProgress, useGetWatchProgress, getOfflineVideoUrl, useGetDownloads, cacheDownloadedVideo, removeOfflineVideo, hasOfflineVideo, useRecordView, useRecordShare } from "@/lib/api-client";
+import { useGetWebSubscriptionPlans, useGetWebDetail, getImageUrl, useGetPublicAds, useGetAppProfile, useToggleLike, useRequestDownload, useRemoveDownload, useGetWishlist, useToggleWishlist, useSaveWatchProgress, useGetWatchProgress, getOfflineVideoUrl, useGetDownloads, cacheDownloadedVideo, removeOfflineVideo, hasOfflineVideo, useRecordView, useRecordShare } from "@/lib/api-client";
+import SubscriptionPlansModal, { normalizePlanKey, getPlanLevel } from "@/components/SubscriptionPlansModal";
 import { PlayerPrerollAd } from "@/components/AdComponents";
 import { useToast } from "@/hooks/use-toast";
 import { LandscapeCard } from "@/components/ContentCard";
@@ -1666,136 +1667,7 @@ function VideoPlayer({
   return playerShell;
 }
 
-/* ─────────────────────────────────────────────────────────────
-   LOCK / PAYWALL POPUP
-   ───────────────────────────────────────────────────────────── */
 
-function LockPopup({ onClose, onSubscribed }: { onClose: () => void; onSubscribed: () => void }) {
-  const { toast } = useToast();
-  const { data: plansData, isLoading: loadingPlans } = useGetWebSubscriptionPlans();
-  const createSubMutation = useCreateSubscription();
-  const [user, setUser] = useState<any>(null);
-
-  useEffect(() => {
-    try {
-      const storedUser = localStorage.getItem("appUser");
-      if (storedUser) setUser(JSON.parse(storedUser));
-    } catch (e) {}
-  }, []);
-
-  const plans = plansData?.data || [];
-
-  const handleSubscribe = async (plan: any) => {
-    if (!user) {
-      toast({ title: "Authentication Required", description: "Please login first to subscribe.", variant: "destructive" });
-      window.location.href = "/login";
-      return;
-    }
-    try {
-      await createSubMutation.mutateAsync({
-        userId: user.id || user._id,
-        planId: plan.id || plan._id,
-        startDate: new Date(),
-        price: plan.price || plan.totalPrice,
-        totalAmount: plan.totalPrice || plan.price,
-        paymentMethod: 'Credit Card',
-        status: 'active'
-      });
-
-      const updatedUser = {
-        ...user,
-        subscriptionPlan: plan.name,
-        subscriptionStatus: 'active'
-      };
-      localStorage.setItem("user", JSON.stringify(updatedUser));
-      toast({ title: "Subscription Successful", description: `Successfully subscribed to ${plan.name}! Content unlocked.` });
-      onSubscribed();
-      onClose();
-    } catch (err: any) {
-      toast({ title: "Subscription Failed", description: err?.message || "An error occurred.", variant: "destructive" });
-    }
-  };
-
-  /* prevent body scroll while open */
-  useEffect(() => {
-    document.body.style.overflow = "hidden";
-    return () => { document.body.style.overflow = ""; };
-  }, []);
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
-      {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/75 backdrop-blur-sm" onClick={onClose} />
-
-      {/* Modal */}
-      <div
-        className="relative z-10 bg-[#111111] w-full sm:max-w-[500px] sm:mx-4 rounded-t-2xl sm:rounded-2xl overflow-hidden border border-zinc-800 animate-in slide-in-from-bottom duration-300"
-        style={{ maxHeight: "90vh", overflowY: "auto" } as React.CSSProperties}
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between px-5 py-3.5 border-b border-zinc-800 sticky top-0 bg-[#111111] z-10">
-          <span className="text-foreground font-extrabold text-sm flex items-center gap-1.5">
-            <Crown className="w-4 h-4 text-amber-500 fill-amber-500" /> Choose Subscription Plan
-          </span>
-          <button
-            onClick={onClose}
-            className="w-7 h-7 flex items-center justify-center rounded-full bg-zinc-800 hover:bg-zinc-700 text-foreground/80 hover:text-foreground transition-colors"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-
-        <div className="p-5 space-y-4">
-          <p className="text-foreground/80 text-xs text-center leading-relaxed">
-            This content is locked. Subscribe to one of our premium plans to unlock the entire library!
-          </p>
-
-          {loadingPlans ? (
-            <div className="flex justify-center py-8">
-              <Loader2 className="w-6 h-6 animate-spin text-primary" />
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {plans.map((plan: any) => {
-                const planName = String(plan?.name || "").trim().toLowerCase();
-                const planPrice = Number(plan?.totalPrice ?? plan?.price ?? 0);
-                if (planName === "free" || planPrice <= 0) return null;
-                return (
-                  <div
-                    key={plan.id}
-                    className="p-4 rounded-xl border border-zinc-800/80 bg-zinc-900/40 hover:border-amber-500/50 hover:bg-zinc-900/80 transition-all flex flex-col justify-between"
-                  >
-                    <div className="flex justify-between items-start mb-2">
-                      <div>
-                        <h4 className="text-amber-400 font-bold text-sm uppercase tracking-wide">{plan.name}</h4>
-                        <p className="text-foreground text-[11px] mt-0.5">{plan.description}</p>
-                      </div>
-                      <div className="text-right">
-                        <span className="text-foreground font-black text-lg">₹{plan.totalPrice || plan.price}</span>
-                        <span className="text-foreground/80 text-[10px] block">/ {plan.duration || 'month'}</span>
-                      </div>
-                    </div>
-                    <div className="flex items-center justify-between mt-3 pt-3 border-t border-zinc-800 text-[11px] text-foreground/80">
-                      <span>Valid: <strong className="text-foreground">{plan.durationValue} {plan.duration}</strong></span>
-                      {plan.discount > 0 && <span className="text-amber-400 font-bold">{plan.discount}% off</span>}
-                      <button
-                        onClick={() => handleSubscribe(plan)}
-                        disabled={createSubMutation.isPending}
-                        className="px-4 py-1.5 bg-primary hover:bg-primary/90 disabled:bg-zinc-800 text-white font-bold rounded-lg transition-colors text-xs"
-                      >
-                        {createSubMutation.isPending ? "Connecting..." : "Subscribe"}
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
 
 /* ─────────────────────────────────────────────────────────────
    MAIN PAGE
@@ -2045,27 +1917,37 @@ export default function WatchPage() {
     );
   }, [user, navigate, downloadItems, contentId, isOfflineHere, removeDownloadMutation, requestDownloadMutation, toast, showData?.trailerUrl]);
 
-  const getPlanLevel = (plan?: string) => {
-    switch (plan?.toLowerCase()) {
-      case "premium": return 3;
-      case "standard": return 2;
-      case "basic": return 1;
-      default: return 0;
-    }
-  };
-
   // useGetAppProfile returns { user, likeRecords, ... } — subscription lives on user
   const profileUser = profileData?.user || profileData;
   const liveStatus = String(profileUser?.subscriptionStatus || user?.subscriptionStatus || "").toLowerCase();
-  const livePlan   = String(profileUser?.subscriptionPlan   || user?.subscriptionPlan || "free").toLowerCase();
+  const rawPlan = String(profileUser?.subscriptionPlan || user?.subscriptionPlan || "free").toLowerCase();
+  const normalizedUserPlan = normalizePlanKey(rawPlan);
   const expiryRaw = profileUser?.subscriptionExpiry || user?.subscriptionExpiry;
   const hasPaidPlan =
-    (profileUser?.subscription === true || (liveStatus === "active" && livePlan !== "free")) &&
+    (profileUser?.subscription === true || (liveStatus === "active" && normalizedUserPlan !== "free")) &&
     (!expiryRaw || new Date(expiryRaw).getTime() >= Date.now());
-  const requiredPlan = String(showData?.planRequired || "").toLowerCase().trim();
-  const isFreeContent = !requiredPlan || requiredPlan === "free";
-  // Any active paid plan unlocks paid content (don't lock Standard users out of "premium" titles)
-  const isLockedForContent = !isFreeContent && !hasPaidPlan;
+
+  const userPlan = hasPaidPlan ? normalizedUserPlan : "free";
+  const requiredPlan = normalizePlanKey(showData?.planRequired || "free");
+  const isFreeContent = requiredPlan === "free";
+
+  const userLevel = getPlanLevel(userPlan);
+  const requiredLevel = getPlanLevel(requiredPlan);
+  const isLockedForContent = !isFreeContent && (!hasPaidPlan || userLevel < requiredLevel);
+
+  const handleBack = useCallback((e?: React.MouseEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    if (window.history.length > 1 && document.referrer && document.referrer.includes(window.location.host)) {
+      window.history.back();
+    } else if (contentId) {
+      navigate(`/movie/${contentId}`);
+    } else {
+      navigate("/");
+    }
+  }, [contentId, navigate]);
 
   const goToEpisode = useCallback((ep: number) => {
     if (ep !== 0 && ep !== 1) return;
@@ -2089,7 +1971,7 @@ export default function WatchPage() {
     setCurrentEp(ep);
     setAutoPlay(true);
     navigate(`/watch/${contentId}/${ep}`);
-  }, [contentId, navigate, isLockedForContent, requiredPlan, showData, toast]);
+  }, [contentId, navigate, isLockedForContent, showData, toast]);
 
   // Keep episode in sync with URL (/watch/:id/0 = trailer, /1 = movie)
   useEffect(() => {
@@ -2119,6 +2001,8 @@ export default function WatchPage() {
   const videoSrc =
     currentEp === 0
       ? pickPlayableUrl(showData?.trailerUrl)
+      : isLockedForContent
+      ? ""
       : pickPlayableUrl(
           showData?.hlsUrl,
           showData?.videoSettings?.find((q: any) => q.key === "auto")?.url,
@@ -2157,8 +2041,8 @@ export default function WatchPage() {
           {/* Back button row */}
           <div className="pt-4 pb-4">
             <button
-              onClick={() => window.history.back()}
-              className="flex items-center gap-1.5 text-foreground/80 hover:text-foreground text-sm font-semibold transition-colors"
+              onClick={handleBack}
+              className="flex items-center gap-1.5 text-foreground/80 hover:text-foreground text-sm font-semibold transition-colors cursor-pointer"
             >
               <ChevronLeft className="w-4 h-4" /> Back
             </button>
@@ -2211,7 +2095,24 @@ export default function WatchPage() {
               </div>
             )}
 
-            {!videoSrc && (
+            {currentEp === 1 && isLockedForContent && (
+              <div className="absolute inset-0 z-[45] flex flex-col items-center justify-center bg-black/90 px-6 text-center gap-3">
+                <Crown className="w-10 h-10 text-amber-400 animate-bounce" />
+                <h3 className="text-white text-lg font-bold">Subscription Required</h3>
+                <p className="text-white/70 text-xs max-w-sm">
+                  This title requires the {requiredPlan === "vip" ? "VIP" : requiredPlan.charAt(0).toUpperCase() + requiredPlan.slice(1)} plan or higher.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setLockPopupOpen(true)}
+                  className="px-6 py-2.5 bg-amber-400 hover:bg-amber-300 text-black font-bold rounded-xl text-xs sm:text-sm transition-all shadow-lg shadow-amber-900/20"
+                >
+                  Unlock Now
+                </button>
+              </div>
+            )}
+
+            {!videoSrc && !isLockedForContent && (
               <div className="absolute inset-0 z-[40] flex items-center justify-center bg-black/80 px-6 text-center">
                 <p className="text-sm text-foreground/80 font-semibold">
                   {currentEp === 0 ? "Trailer not available." : "Movie video not available yet."}
@@ -2268,7 +2169,7 @@ export default function WatchPage() {
                   <Home className="w-3.5 h-3.5" /> Home
                 </button>
                 <ChevronRight className="w-3 h-3 flex-shrink-0" />
-                <button onClick={() => window.history.back()} className="hover:text-foreground transition-colors truncate max-w-[180px]">
+                <button onClick={handleBack} className="hover:text-foreground transition-colors truncate max-w-[180px]">
                   {title}
                 </button>
                 <ChevronRight className="w-3 h-3 flex-shrink-0" />
@@ -2461,12 +2362,12 @@ export default function WatchPage() {
 
       <PublicFooter />
 
-      {lockPopupOpen && (
-        <LockPopup
-          onClose={() => setLockPopupOpen(false)}
-          onSubscribed={handleSubscribed}
-        />
-      )}
+      <SubscriptionPlansModal
+        isOpen={lockPopupOpen}
+        onClose={() => setLockPopupOpen(false)}
+        onSubscribed={handleSubscribed}
+        requiredPlan={requiredPlan}
+      />
     </div>
   );
 }

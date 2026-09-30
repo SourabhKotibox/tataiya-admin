@@ -1,7 +1,9 @@
 import { useState } from "react";
-import { Trash2, Search, Bell, Check } from "lucide-react";
+import { Trash2, Search, Bell, Check, Plus, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -9,6 +11,9 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -18,6 +23,8 @@ import {
   useGetAdminNotifications,
   useMarkAdminNotificationsRead,
   useGetNotificationLogs,
+  useCreateNotificationLog,
+  useUpdateNotificationLog,
   useDeleteNotificationLog,
   useBulkDeleteNotificationLogs,
 } from "../lib/api-client";
@@ -31,6 +38,14 @@ export default function NotificationListPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [confirmDelete, setConfirmDelete] = useState<any | null>(null);
 
+  // Broadcast create/edit modal state
+  const [broadcastModalOpen, setBroadcastModalOpen] = useState(false);
+  const [editingBroadcast, setEditingBroadcast] = useState<any | null>(null);
+  const [formTitle, setFormTitle] = useState("");
+  const [formText, setFormText] = useState("");
+  const [formType, setFormType] = useState("broadcast");
+  const [formUserName, setFormUserName] = useState("All users");
+
   const { data: adminRes, isLoading: adminLoading } = useGetAdminNotifications();
   const markRead = useMarkAdminNotificationsRead();
   const { data: logsData, isLoading: logsLoading } = useGetNotificationLogs({
@@ -38,6 +53,8 @@ export default function NotificationListPage() {
     limit: 100,
     type: typeFilter === "all" ? undefined : typeFilter,
   });
+  const createMutation = useCreateNotificationLog();
+  const updateMutation = useUpdateNotificationLog();
   const deleteMutation = useDeleteNotificationLog();
   const bulkDeleteMutation = useBulkDeleteNotificationLogs();
 
@@ -83,6 +100,63 @@ export default function NotificationListPage() {
   const toggleSelect = (id: string) =>
     setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
 
+  const openCreateModal = () => {
+    setEditingBroadcast(null);
+    setFormTitle("");
+    setFormText("");
+    setFormType("broadcast");
+    setFormUserName("All users");
+    setBroadcastModalOpen(true);
+  };
+
+  const openEditModal = (item: any) => {
+    setEditingBroadcast(item);
+    setFormTitle(item.title || "");
+    setFormText(item.text || "");
+    setFormType(item.type || "broadcast");
+    setFormUserName(item.userName || "All users");
+    setBroadcastModalOpen(true);
+  };
+
+  const handleSaveBroadcast = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formTitle.trim() || !formText.trim()) {
+      toast({ title: "Title and message are required", variant: "destructive" });
+      return;
+    }
+
+    try {
+      if (editingBroadcast) {
+        await updateMutation.mutateAsync({
+          id: editingBroadcast.id,
+          data: {
+            title: formTitle.trim(),
+            text: formText.trim(),
+            type: formType,
+            userName: formUserName.trim() || "All users",
+          },
+        });
+        toast({ title: "Broadcast updated successfully" });
+      } else {
+        await createMutation.mutateAsync({
+          title: formTitle.trim(),
+          text: formText.trim(),
+          type: formType,
+          userName: formUserName.trim() || "All users",
+          isHighlight: true,
+        });
+        toast({ title: "Broadcast created successfully" });
+      }
+      setBroadcastModalOpen(false);
+    } catch (err: any) {
+      toast({
+        title: editingBroadcast ? "Failed to update broadcast" : "Failed to create broadcast",
+        description: err?.message,
+        variant: "destructive",
+      });
+    }
+  };
+
   const handleApply = async () => {
     if (!bulkAction || selectedIds.length === 0) {
       toast({ title: "Select items and an action first", variant: "destructive" });
@@ -124,7 +198,7 @@ export default function NotificationListPage() {
         <span className="text-foreground font-medium">Notification List</span>
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <button
           onClick={() => { setTab("admin"); setSelectedIds([]); }}
           className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all ${
@@ -141,6 +215,7 @@ export default function NotificationListPage() {
         >
           User broadcasts ({userNotifications.length})
         </button>
+
         {tab === "admin" && (
           <Button
             variant="outline"
@@ -149,6 +224,15 @@ export default function NotificationListPage() {
             disabled={markRead.isPending}
           >
             <Check className="h-4 w-4 mr-1.5" /> Mark all read
+          </Button>
+        )}
+
+        {tab === "user" && (
+          <Button
+            onClick={openCreateModal}
+            className="ml-auto rounded-xl bg-primary hover:bg-primary/90 text-black font-semibold h-10 px-4"
+          >
+            <Plus className="h-4 w-4 mr-1.5" /> New broadcast
           </Button>
         )}
       </div>
@@ -175,14 +259,14 @@ export default function NotificationListPage() {
           </SelectTrigger>
           <SelectContent className="bg-muted border-border text-foreground">
             <SelectItem value="all">All types</SelectItem>
+            <SelectItem value="broadcast">Broadcast</SelectItem>
+            <SelectItem value="announcement">Announcement</SelectItem>
+            <SelectItem value="promo">Promo</SelectItem>
+            <SelectItem value="system">System</SelectItem>
             <SelectItem value="user_registered">User Registered</SelectItem>
             <SelectItem value="content_created">Created</SelectItem>
             <SelectItem value="content_updated">Updated</SelectItem>
             <SelectItem value="content_deleted">Deleted</SelectItem>
-            <SelectItem value="system">System</SelectItem>
-            <SelectItem value="broadcast">Broadcast</SelectItem>
-            <SelectItem value="announcement">Announcement</SelectItem>
-            <SelectItem value="promo">Promo</SelectItem>
           </SelectContent>
         </Select>
 
@@ -206,9 +290,9 @@ export default function NotificationListPage() {
               </TableHead>
               <TableHead className="text-foreground/70 font-semibold text-sm">Type</TableHead>
               <TableHead className="text-foreground/70 font-semibold text-sm">Notification</TableHead>
-              <TableHead className="text-foreground/70 font-semibold text-sm">Meta</TableHead>
+              <TableHead className="text-foreground/70 font-semibold text-sm">Audience</TableHead>
               <TableHead className="text-foreground/70 font-semibold text-sm whitespace-nowrap">When</TableHead>
-              {tab === "user" && <TableHead className="text-foreground/70 font-semibold text-sm">Action</TableHead>}
+              {tab === "user" && <TableHead className="text-foreground/70 font-semibold text-sm text-right">Actions</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -242,10 +326,27 @@ export default function NotificationListPage() {
                     {n.updatedAt ? new Date(n.updatedAt).toLocaleString() : "—"}
                   </TableCell>
                   {tab === "user" && (
-                    <TableCell>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg" onClick={() => setConfirmDelete(n)}>
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
+                    <TableCell className="text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 rounded-lg hover:text-foreground"
+                          onClick={() => openEditModal(n)}
+                          title="Edit Broadcast"
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 rounded-lg hover:text-destructive"
+                          onClick={() => setConfirmDelete(n)}
+                          title="Delete Broadcast"
+                        >
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </div>
                     </TableCell>
                   )}
                 </TableRow>
@@ -255,15 +356,121 @@ export default function NotificationListPage() {
         </Table>
       </div>
 
+      {/* Create / Edit Broadcast Dialog */}
+      <Dialog open={broadcastModalOpen} onOpenChange={setBroadcastModalOpen}>
+        <DialogContent className="sm:max-w-[480px] rounded-2xl bg-card border-border text-foreground">
+          <form onSubmit={handleSaveBroadcast}>
+            <DialogHeader>
+              <DialogTitle className="text-lg font-bold">
+                {editingBroadcast ? "Edit User Broadcast" : "New User Broadcast"}
+              </DialogTitle>
+              <DialogDescription className="text-xs text-muted-foreground">
+                This notification will appear in the User Website Notifications popup.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4 py-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="broadcast-title" className="text-xs font-semibold">
+                  Notification Title <span className="text-destructive">*</span>
+                </Label>
+                <Input
+                  id="broadcast-title"
+                  placeholder="e.g. New Movie Added: Inception"
+                  value={formTitle}
+                  onChange={(e) => setFormTitle(e.target.value)}
+                  className="bg-muted border-border rounded-xl"
+                  required
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="broadcast-text" className="text-xs font-semibold">
+                  Message / Body <span className="text-destructive">*</span>
+                </Label>
+                <Textarea
+                  id="broadcast-text"
+                  placeholder="Describe the update, announcement, or new release..."
+                  rows={4}
+                  value={formText}
+                  onChange={(e) => setFormText(e.target.value)}
+                  className="bg-muted border-border rounded-xl resize-none"
+                  required
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="broadcast-type" className="text-xs font-semibold">
+                    Category / Type
+                  </Label>
+                  <Select value={formType} onValueChange={setFormType}>
+                    <SelectTrigger id="broadcast-type" className="bg-muted border-border rounded-xl">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-muted border-border text-foreground">
+                      <SelectItem value="broadcast">Broadcast</SelectItem>
+                      <SelectItem value="announcement">Announcement</SelectItem>
+                      <SelectItem value="promo">Promo</SelectItem>
+                      <SelectItem value="system">System</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="broadcast-audience" className="text-xs font-semibold">
+                    Audience
+                  </Label>
+                  <Input
+                    id="broadcast-audience"
+                    placeholder="All users"
+                    value={formUserName}
+                    onChange={(e) => setFormUserName(e.target.value)}
+                    className="bg-muted border-border rounded-xl"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <DialogFooter className="gap-2 sm:gap-0">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setBroadcastModalOpen(false)}
+                className="rounded-xl"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                className="rounded-xl bg-primary hover:bg-primary/90 text-black font-semibold"
+                disabled={createMutation.isPending || updateMutation.isPending}
+              >
+                {createMutation.isPending || updateMutation.isPending
+                  ? "Saving…"
+                  : editingBroadcast
+                  ? "Update Broadcast"
+                  : "Send Broadcast"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Alert Dialog */}
       <AlertDialog open={!!confirmDelete} onOpenChange={(o) => !o && setConfirmDelete(null)}>
-        <AlertDialogContent className="rounded-2xl">
+        <AlertDialogContent className="rounded-2xl bg-card border-border text-foreground">
           <AlertDialogHeader>
             <AlertDialogTitle>Delete notification?</AlertDialogTitle>
-            <AlertDialogDescription>This cannot be undone.</AlertDialogDescription>
+            <AlertDialogDescription className="text-muted-foreground">
+              Are you sure you want to delete &quot;{confirmDelete?.title}&quot;? This cannot be undone.
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel className="rounded-xl">Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete} className="rounded-xl bg-destructive">Delete</AlertDialogAction>
+            <AlertDialogAction onClick={handleDelete} className="rounded-xl bg-destructive text-destructive-foreground">
+              Delete
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

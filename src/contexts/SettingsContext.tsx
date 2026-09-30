@@ -6,6 +6,8 @@ export interface AppSettings {
   logoUrl: string;
   darkLogoUrl: string;
   lightLogoUrl: string;
+  lightLogoSize?: number;
+  darkLogoSize?: number;
   faviconUrl: string;
   logoStyle: 'icon' | 'fill';
   platformName: string;
@@ -149,6 +151,8 @@ const DEFAULT: AppSettings = {
   logoUrl: "/logo.png",
   darkLogoUrl: "/logo.png",
   lightLogoUrl: "/logo.png",
+  lightLogoSize: 32,
+  darkLogoSize: 32,
   faviconUrl: "",
   logoStyle: "fill",
   platformName: "Tataiya",
@@ -291,6 +295,8 @@ function mapApiData(api: any): AppSettings {
     logoUrl: img(api.logoUrl) || DEFAULT.logoUrl,
     darkLogoUrl: img(api.darkLogoUrl) || DEFAULT.darkLogoUrl,
     lightLogoUrl: img(api.lightLogoUrl) || DEFAULT.lightLogoUrl,
+    lightLogoSize: api.lightLogoSize ? Number(api.lightLogoSize) : DEFAULT.lightLogoSize,
+    darkLogoSize: api.darkLogoSize ? Number(api.darkLogoSize) : DEFAULT.darkLogoSize,
     faviconUrl: img(api.faviconUrl),
     logoStyle: api.logoStyle || DEFAULT.logoStyle,
     platformName: api.platformName || DEFAULT.platformName,

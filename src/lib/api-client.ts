@@ -1164,7 +1164,7 @@ export const useGetPublicNotifications = () => {
   return useQuery({
     queryKey: ['public-notifications'],
     queryFn: getPublicNotifications,
-    staleTime: 2 * 60 * 1000,
+    staleTime: 15 * 1000,
     retry: false,
   });
 };
@@ -2910,6 +2910,13 @@ export const bulkDeleteNotificationLogs = async (ids: string[]) => {
   });
 };
 
+export const updateNotificationLog = async ({ id, data }: { id: string; data: any }) => {
+  return api(`/notification-logs/item/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+};
+
 export const useGetNotificationLogs = (options?: { page?: number; limit?: number; type?: string }) => {
   return useQuery({
     queryKey: ['notification-logs', options],
@@ -2931,6 +2938,18 @@ export const useCreateNotificationLog = () => {
     mutationFn: createNotificationLog,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['notification-logs'] });
+      queryClient.invalidateQueries({ queryKey: ['public-notifications'] });
+    }
+  });
+};
+
+export const useUpdateNotificationLog = () => {
+  const queryClient = useQueryClient();
+  return useMutation<any, Error, { id: string; data: any }>({
+    mutationFn: updateNotificationLog,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['notification-logs'] });
+      queryClient.invalidateQueries({ queryKey: ['public-notifications'] });
     }
   });
 };
@@ -2941,6 +2960,7 @@ export const useDeleteNotificationLog = () => {
     mutationFn: deleteNotificationLog,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['notification-logs'] });
+      queryClient.invalidateQueries({ queryKey: ['public-notifications'] });
       queryClient.invalidateQueries({ queryKey: ['admin-notifications'] });
     }
   });
@@ -2952,6 +2972,7 @@ export const useBulkDeleteNotificationLogs = () => {
     mutationFn: bulkDeleteNotificationLogs,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['notification-logs'] });
+      queryClient.invalidateQueries({ queryKey: ['public-notifications'] });
       queryClient.invalidateQueries({ queryKey: ['admin-notifications'] });
     }
   });

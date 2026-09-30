@@ -207,6 +207,8 @@ export default function Settings() {
   const [lightLogoPreview, setLightLogoPreview] = useState<string>(ctxSettings.lightLogoUrl || "");
   const [darkLogoPreview, setDarkLogoPreview] = useState<string>(ctxSettings.darkLogoUrl || "");
   const [faviconPreview, setFaviconPreview] = useState<string>(ctxSettings.faviconUrl || "");
+  const [lightLogoSize, setLightLogoSize] = useState<number>(ctxSettings.lightLogoSize || 32);
+  const [darkLogoSize, setDarkLogoSize] = useState<number>(ctxSettings.darkLogoSize || 32);
 
   type LogoType = "lightLogo" | "darkLogo" | "favicon" | null;
   const [mediaPickerType, setMediaPickerType] = useState<LogoType>(null);
@@ -222,6 +224,14 @@ export default function Settings() {
   useEffect(() => {
     setFaviconPreview(ctxSettings.faviconUrl || "");
   }, [ctxSettings.faviconUrl]);
+
+  useEffect(() => {
+    setLightLogoSize(ctxSettings.lightLogoSize || 32);
+  }, [ctxSettings.lightLogoSize]);
+
+  useEffect(() => {
+    setDarkLogoSize(ctxSettings.darkLogoSize || 32);
+  }, [ctxSettings.darkLogoSize]);
 
   const handleSaveBusiness = async () => {
     setSaving(true);
@@ -241,8 +251,10 @@ export default function Settings() {
         lightLogoUrl: lightLogoPreview !== ctxSettings.lightLogoUrl ? lightLogoPreview : undefined,
         darkLogoUrl: darkLogoPreview !== ctxSettings.darkLogoUrl ? darkLogoPreview : undefined,
         faviconUrl: faviconPreview !== ctxSettings.faviconUrl ? faviconPreview : undefined,
+        lightLogoSize,
+        darkLogoSize,
       });
-      updateCtx({ ...business });
+      updateCtx({ ...business, lightLogoSize, darkLogoSize });
       await refreshSettings();
       toast({ title: "Business settings saved!" });
     } catch (err: any) {
@@ -922,20 +934,27 @@ export default function Settings() {
     label,
     preview,
     onClick,
+    size,
   }: {
     label: string;
     preview: string;
     onClick: () => void;
+    size?: number;
   }) => (
     <div className="space-y-2">
       <Label className={labelCls}>{label}</Label>
       <div
-        className="relative flex flex-col items-center justify-center h-28 rounded-lg border-2 border-dashed border-border bg-muted/30 dark:bg-zinc-800/40 cursor-pointer hover:border-primary/60 transition-colors overflow-hidden"
+        className="relative flex flex-col items-center justify-center h-28 rounded-lg border-2 border-dashed border-border bg-muted/30 dark:bg-zinc-800/40 cursor-pointer hover:border-primary/60 transition-colors overflow-hidden p-2"
         onClick={onClick}
       >
         {preview ? (
           <>
-            <img src={getImageUrl(preview)} alt={label} className="h-full w-full object-contain p-2" />
+            <img
+              src={getImageUrl(preview)}
+              alt={label}
+              style={size ? { height: `${Math.min(Math.max(size, 16), 80)}px`, maxHeight: "100%" } : undefined}
+              className="max-h-full max-w-full object-contain transition-all"
+            />
             <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
               <Upload className="h-5 w-5 text-foreground" />
             </div>
@@ -957,22 +976,62 @@ export default function Settings() {
       {/* Logo uploads */}
       <div className="mb-6">
         <p className="text-sm font-semibold text-foreground mb-4">Logos & Favicon</p>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <LogoUploadBox
-            label="Light Theme Logo"
-            preview={lightLogoPreview}
-            onClick={() => setMediaPickerType("lightLogo")}
-          />
-          <LogoUploadBox
-            label="Dark Theme Logo"
-            preview={darkLogoPreview}
-            onClick={() => setMediaPickerType("darkLogo")}
-          />
-          <LogoUploadBox
-            label="Favicon"
-            preview={faviconPreview}
-            onClick={() => setMediaPickerType("favicon")}
-          />
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
+          <div className="space-y-2.5">
+            <LogoUploadBox
+              label="Light Theme Logo"
+              preview={lightLogoPreview}
+              size={lightLogoSize}
+              onClick={() => setMediaPickerType("lightLogo")}
+            />
+            <div className="pt-1 px-1 space-y-1.5">
+              <div className="flex items-center justify-between text-xs text-muted-foreground font-medium">
+                <span>Logo Size</span>
+                <span className="text-foreground font-semibold bg-muted/60 px-2 py-0.5 rounded text-[11px]">{lightLogoSize}px</span>
+              </div>
+              <input
+                type="range"
+                min={16}
+                max={80}
+                step={1}
+                value={lightLogoSize}
+                onChange={(e) => setLightLogoSize(Number(e.target.value))}
+                className="w-full h-1.5 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
+              />
+            </div>
+          </div>
+
+          <div className="space-y-2.5">
+            <LogoUploadBox
+              label="Dark Theme Logo"
+              preview={darkLogoPreview}
+              size={darkLogoSize}
+              onClick={() => setMediaPickerType("darkLogo")}
+            />
+            <div className="pt-1 px-1 space-y-1.5">
+              <div className="flex items-center justify-between text-xs text-muted-foreground font-medium">
+                <span>Logo Size</span>
+                <span className="text-foreground font-semibold bg-muted/60 px-2 py-0.5 rounded text-[11px]">{darkLogoSize}px</span>
+              </div>
+              <input
+                type="range"
+                min={16}
+                max={80}
+                step={1}
+                value={darkLogoSize}
+                onChange={(e) => setDarkLogoSize(Number(e.target.value))}
+                className="w-full h-1.5 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
+              />
+            </div>
+          </div>
+
+          <div className="space-y-2.5">
+            <LogoUploadBox
+              label="Favicon"
+              preview={faviconPreview}
+              onClick={() => setMediaPickerType("favicon")}
+            />
+          </div>
         </div>
       </div>
 
