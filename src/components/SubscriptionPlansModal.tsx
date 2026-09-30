@@ -1,16 +1,40 @@
 import { useState, useEffect } from "react";
 import { X, Crown, Check, Loader2, Sparkles, Flame, Play } from "lucide-react";
 import { useSettings } from "@/contexts/SettingsContext";
-import { useGetWebSubscriptionPlans, useCreateSubscriptionRazorpayOrder, useVerifySubscriptionRazorpayPayment } from "@/lib/api-client";
+import { useGetWebSubscriptionPlans, useGetAppProfile, useCreateSubscriptionRazorpayOrder, useVerifySubscriptionRazorpayPayment } from "@/lib/api-client";
 import { useToast } from "@/hooks/use-toast";
 
 const normalizePlanKey = (name?: string) => {
-  const n = String(name || "free").toLowerCase();
-  if (!n || n === "free") return "free";
+  const n = String(name || "free").toLowerCase().trim();
+  if (!n || n === "free" || /\bfree\b/.test(n)) return "free";
   if (n.includes("premium") || n.includes("vip")) return "premium";
   if (n.includes("standard")) return "standard";
   if (n.includes("basic")) return "basic";
   return "standard";
+};
+
+const isUserSubscribed = (u: any): boolean => {
+  if (!u) return false;
+  if (u.subscription === false) return false;
+  const status = String(u.subscriptionStatus || "").toLowerCase();
+  const planKey = normalizePlanKey(u.subscriptionPlan);
+  if (planKey === "free") return false;
+  if (u.subscriptionExpiry) {
+    const exp = new Date(u.subscriptionExpiry);
+    if (!Number.isNaN(exp.getTime()) && exp.getTime() < Date.now()) return false;
+  }
+  return u.subscription === true || status === "active";
+};
+
+const isPlanActive = (plan: any, u: any): boolean => {
+  if (!isUserSubscribed(u)) return false;
+  const planId = String(plan?._id || plan?.id || "");
+  const userPlanId = String(u?.subscriptionPlanId || "");
+  if (userPlanId && planId && userPlanId === planId) return true;
+
+  const planKey = normalizePlanKey(plan?.name);
+  const userPlanKey = normalizePlanKey(u?.subscriptionPlan);
+  return planKey !== "free" && planKey === userPlanKey;
 };
 
 const persistSubscribedUser = (user: any, planName: string, expiry?: string | Date | null) => {
@@ -47,6 +71,7 @@ export default function SubscriptionPlansModal({ isOpen, onClose, onSubscribed }
   const { settings } = useSettings();
   const { toast } = useToast();
   const { data: plansData, isLoading: loadingPlans } = useGetWebSubscriptionPlans();
+  const { data: profileData } = useGetAppProfile();
   const createOrderMutation = useCreateSubscriptionRazorpayOrder();
   const verifyPaymentMutation = useVerifySubscriptionRazorpayPayment();
   const [user, setUser] = useState<any>(null);
@@ -58,6 +83,8 @@ export default function SubscriptionPlansModal({ isOpen, onClose, onSubscribed }
       if (storedUser) setUser(JSON.parse(storedUser));
     } catch (e) {}
   }, [isOpen]);
+
+  const effectiveUser = profileData?.user || user;
 
   // Prevent background scroll when modal is open
   useEffect(() => {
@@ -80,7 +107,7 @@ export default function SubscriptionPlansModal({ isOpen, onClose, onSubscribed }
   });
 
   const handleSubscribe = async (plan: any) => {
-    if (!user) {
+    if (!effectiveUser) {
       toast({
         title: "Authentication Required",
         description: "Please login first to subscribe.",
@@ -90,16 +117,32 @@ export default function SubscriptionPlansModal({ isOpen, onClose, onSubscribed }
       return;
     }
 
+    if (isPlanActive(plan, effectiveUser)) {
+      toast({
+        title: "Already Subscribed",
+        description: "You are already subscribed to this plan.",
+      });
+      return;
+    }
+
     try {
       setSelectedPlanId(plan.id || plan._id);
 
       const orderData = await createOrderMutation.mutateAsync({
         planId: plan.id || plan._id,
-        userId: user.id || user._id,
+        userId: effectiveUser.id || effectiveUser._id,
       });
 
+      if (orderData?.alreadySubscribed) {
+        toast({
+          title: "Already Subscribed",
+          description: "You are already subscribed to this plan.",
+        });
+        return;
+      }
+
       if (orderData.isFree) {
-        persistSubscribedUser(user, plan.name);
+        persistSubscribedUser(effectiveUser, plan.name);
         toast({
           title: "Subscription Successful",
           description: `Successfully subscribed to ${plan.name}! Full library unlocked.`,
@@ -129,11 +172,19 @@ export default function SubscriptionPlansModal({ isOpen, onClose, onSubscribed }
               razorpay_payment_id: response.razorpay_payment_id,
               razorpay_signature: response.razorpay_signature,
               planId: plan.id || plan._id,
-              userId: user.id || user._id,
+              userId: effectiveUser.id || effectiveUser._id,
             });
 
+            if (verifyRes?.alreadySubscribed) {
+              toast({
+                title: "Already Subscribed",
+                description: "You are already subscribed to this plan.",
+              });
+              return;
+            }
+
             persistSubscribedUser(
-              user,
+              effectiveUser,
               verifyRes?.subscriptionPlan || plan.name,
               verifyRes?.subscriptionExpiry || null
             );
@@ -153,8 +204,8 @@ export default function SubscriptionPlansModal({ isOpen, onClose, onSubscribed }
           }
         },
         prefill: {
-          name: user.name,
-          email: user.email,
+          name: effectiveUser.name,
+          email: effectiveUser.email,
         },
         theme: {
           color: settings.primaryColor || "#e50914",
@@ -166,7 +217,7 @@ export default function SubscriptionPlansModal({ isOpen, onClose, onSubscribed }
 
     } catch (err: any) {
       toast({
-        title: "Subscription Failed",
+        title: "Subscription",
         description: err?.message || "An error occurred during subscription.",
         variant: "destructive",
       });
@@ -219,29 +270,43 @@ export default function SubscriptionPlansModal({ isOpen, onClose, onSubscribed }
                 const isPremium = plan.name === "premium";
                 const isStandard = plan.name === "standard";
                 const isPopular = plan.isPopular || isStandard;
+                const isActive = isPlanActive(plan, effectiveUser);
 
                 return (
                   <div
                     key={plan.id || plan._id}
                     className={`relative rounded-2xl p-6 flex flex-col justify-between transition-all duration-300 border bg-zinc-950/40 hover:scale-[1.02] ${
-                      isPopular 
+                      isActive
+                        ? "border-emerald-500/50 shadow-[0_0_30px_rgba(16,185,129,0.15)] bg-[#07130e]/60"
+                        : isPopular 
                         ? "border-primary shadow-[0_0_30px_rgba(229,9,20,0.1)] md:-translate-y-2 bg-[#0d070b]/60" 
                         : "border-zinc-800 hover:border-zinc-700"
                     }`}
                   >
-                    {/* Popular Badge */}
-                    {isPopular && (
+                    {/* Active / Popular Badge */}
+                    {isActive ? (
+                      <span className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 bg-emerald-600 text-white text-[10px] font-black uppercase tracking-wider rounded-full shadow-lg flex items-center gap-1 border border-emerald-400/40">
+                        <Check className="w-3 h-3 text-white" /> Active Plan
+                      </span>
+                    ) : isPopular ? (
                       <span className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 bg-primary text-white text-[10px] font-black uppercase tracking-wider rounded-full shadow-lg flex items-center gap-1">
                         <Flame className="w-3 h-3 fill-white animate-pulse" /> Popular
                       </span>
-                    )}
+                    ) : null}
 
                     {/* Plan Header */}
                     <div>
                       <div className="flex items-center justify-between mb-4">
-                        <h4 className={`text-base font-black uppercase tracking-wide ${isPremium ? 'text-amber-400' : 'text-foreground'}`}>
-                          {plan.name}
-                        </h4>
+                        <div className="flex items-center gap-2">
+                          <h4 className={`text-base font-black uppercase tracking-wide ${isPremium ? 'text-amber-400' : 'text-foreground'}`}>
+                            {plan.name}
+                          </h4>
+                          {isActive && (
+                            <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                              Active
+                            </span>
+                          )}
+                        </div>
                         {isPremium && <Sparkles className="w-4 h-4 text-amber-400" />}
                       </div>
 
@@ -282,27 +347,43 @@ export default function SubscriptionPlansModal({ isOpen, onClose, onSubscribed }
                     </div>
 
                     {/* Subscribe Button */}
-                    <button
-                      onClick={() => handleSubscribe(plan)}
-                      disabled={createOrderMutation.isPending && selectedPlanId === (plan.id || plan._id)}
-                      className={`w-full py-3 rounded-xl font-bold transition-all duration-300 text-sm tracking-wide active:scale-95 flex items-center justify-center gap-2 ${
-                        isPopular
-                          ? "bg-primary text-white hover:bg-primary/90 shadow-[0_8px_20px_rgba(229,9,20,0.3)]"
-                          : "bg-zinc-800 text-foreground hover:bg-zinc-700 hover:text-foreground"
-                      } disabled:opacity-50 disabled:pointer-events-none`}
-                    >
-                      {createOrderMutation.isPending && selectedPlanId === (plan.id || plan._id) ? (
-                        <>
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                          Processing...
-                        </>
-                      ) : (
-                        <>
-                          <Play className="w-3.5 h-3.5 fill-current" />
-                          Subscribe Now
-                        </>
-                      )}
-                    </button>
+                    {isActive ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          toast({
+                            title: "Already Subscribed",
+                            description: "You are already subscribed to this plan.",
+                          });
+                        }}
+                        className="w-full py-3 rounded-xl font-bold transition-all duration-300 text-sm tracking-wide flex items-center justify-center gap-2 bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/30 cursor-pointer active:scale-95 shadow-md shadow-emerald-950/20"
+                      >
+                        <Check className="w-4 h-4 text-emerald-400" />
+                        Current Plan
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => handleSubscribe(plan)}
+                        disabled={createOrderMutation.isPending && selectedPlanId === (plan.id || plan._id)}
+                        className={`w-full py-3 rounded-xl font-bold transition-all duration-300 text-sm tracking-wide active:scale-95 flex items-center justify-center gap-2 ${
+                          isPopular
+                            ? "bg-primary text-white hover:bg-primary/90 shadow-[0_8px_20px_rgba(229,9,20,0.3)]"
+                            : "bg-zinc-800 text-foreground hover:bg-zinc-700 hover:text-foreground"
+                        } disabled:opacity-50 disabled:pointer-events-none cursor-pointer`}
+                      >
+                        {createOrderMutation.isPending && selectedPlanId === (plan.id || plan._id) ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            Processing...
+                          </>
+                        ) : (
+                          <>
+                            <Play className="w-3.5 h-3.5 fill-current" />
+                            Subscribe Now
+                          </>
+                        )}
+                      </button>
+                    )}
                   </div>
                 );
               })}

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useLocation } from "wouter";
 import {
   useGetWebSubscriptionPlans,
+  useGetAppProfile,
   useCreateSubscriptionRazorpayOrder,
   useVerifySubscriptionRazorpayPayment,
   openRazorpayCheckout,
@@ -15,6 +16,39 @@ import {
 /* ═══════════════════════════════════════════════════════════════════════════════
    HELPERS
    ═══════════════════════════════════════════════════════════════════════════════ */
+const normalizePlanKey = (name?: string) => {
+  const n = String(name || "free").toLowerCase().trim();
+  if (!n || n === "free" || /\bfree\b/.test(n)) return "free";
+  if (n.includes("premium") || n.includes("vip")) return "premium";
+  if (n.includes("standard")) return "standard";
+  if (n.includes("basic")) return "basic";
+  return "standard";
+};
+
+const isUserSubscribed = (u: any): boolean => {
+  if (!u) return false;
+  if (u.subscription === false) return false;
+  const status = String(u.subscriptionStatus || "").toLowerCase();
+  const planKey = normalizePlanKey(u.subscriptionPlan);
+  if (planKey === "free") return false;
+  if (u.subscriptionExpiry) {
+    const exp = new Date(u.subscriptionExpiry);
+    if (!Number.isNaN(exp.getTime()) && exp.getTime() < Date.now()) return false;
+  }
+  return u.subscription === true || status === "active";
+};
+
+const isPlanActive = (plan: any, u: any): boolean => {
+  if (!isUserSubscribed(u)) return false;
+  const planId = String(plan?._id || plan?.id || "");
+  const userPlanId = String(u?.subscriptionPlanId || "");
+  if (userPlanId && planId && userPlanId === planId) return true;
+
+  const planKey = normalizePlanKey(plan?.name);
+  const userPlanKey = normalizePlanKey(u?.subscriptionPlan);
+  return planKey !== "free" && planKey === userPlanKey;
+};
+
 function getPlanFeatures(plan: any): { text: string; icon: any }[] {
   const name = (plan.name || "").toLowerCase();
   const lim = plan.limits || {};
@@ -48,7 +82,7 @@ function getPlanFeatures(plan: any): { text: string; icon: any }[] {
       { text: "4K + HDR", icon: <Star className="w-3.5 h-3.5" /> },
       { text: "4 screens", icon: <Users className="w-3.5 h-3.5" /> },
       { text: "Ad-free", icon: <Shield className="w-3.5 h-3.5" /> },
-      { text: "Unlimited downloads", icon: <Download className="w-3.5 h-3.5" /> },
+      { text: "Downloads", icon: <Download className="w-3.5 h-3.5" /> },
       { text: "VIP content", icon: <Crown className="w-3.5 h-3.5" /> }
     ];
   }
@@ -92,7 +126,8 @@ function Toast({ msg, type, onClose }: { msg: string; type: "success" | "error";
 export default function MembershipPage() {
   const [, setLocation] = useLocation();
   const { settings } = useSettings();
-  const { data: plansData, isLoading } = useGetWebSubscriptionPlans();
+  const { data: plansData, isLoading: loadingPlans } = useGetWebSubscriptionPlans();
+  const { data: profileData } = useGetAppProfile();
   const createOrderMutation = useCreateSubscriptionRazorpayOrder();
   const verifyPaymentMutation = useVerifySubscriptionRazorpayPayment();
 
@@ -103,7 +138,8 @@ export default function MembershipPage() {
   const rawPlans: any[] = plansData?.data || plansData?.plans || [];
   const plans = rawPlans.filter((p: any) => String(p?.name || "").trim().toLowerCase() !== "free" && Number(p?.totalPrice ?? p?.price ?? 0) > 0);
   const platformName = settings.platformName || "StreamIT";
-  const user = (() => { try { return JSON.parse(localStorage.getItem("appUser") || "null"); } catch { return null; } })();
+  const storedUser = (() => { try { return JSON.parse(localStorage.getItem("appUser") || localStorage.getItem("user") || "null"); } catch { return null; } })();
+  const user = profileData?.user || storedUser;
 
   // Currency Formatting
   const currency = {
@@ -131,13 +167,25 @@ export default function MembershipPage() {
   }
 
   const selectedPlan = plans.find((p: any) => (p._id || p.id) === selectedPlanId);
+  const isSelectedPlanActive = isPlanActive(selectedPlan, user);
 
   const handlePurchase = async () => {
     if (!selectedPlanId || processing) return;
+    if (isSelectedPlanActive) {
+      showToast("You are already subscribed to this plan.", "error");
+      return;
+    }
+
     setProcessing(true);
     try {
       const orderRes: any = await createOrderMutation.mutateAsync({ planId: selectedPlanId });
       
+      if (orderRes?.alreadySubscribed) {
+        showToast("You are already subscribed to this plan.", "error");
+        setProcessing(false);
+        return;
+      }
+
       if (orderRes?.success && orderRes?.isFree) {
         showToast("🎉 Free plan activated successfully!", "success");
         if (user) {
@@ -164,19 +212,25 @@ export default function MembershipPage() {
         theme: { color: "#E50000" },
         onSuccess: async (response) => {
           try {
-            await verifyPaymentMutation.mutateAsync({
+            const verifyRes: any = await verifyPaymentMutation.mutateAsync({
               razorpay_order_id: response.razorpay_order_id,
               razorpay_payment_id: response.razorpay_payment_id,
               razorpay_signature: response.razorpay_signature,
               planId: selectedPlanId!,
             });
+
+            if (verifyRes?.alreadySubscribed) {
+              showToast("You are already subscribed to this plan.", "error");
+              return;
+            }
+
             showToast("🎉 Subscription activated! Welcome to VIP!", "success");
             if (user) {
               localStorage.setItem("appUser", JSON.stringify({ ...user, subscriptionPlan: selectedPlan?.name || "premium", subscriptionStatus: "active" }));
             }
             setTimeout(() => setLocation("/account"), 2000);
-          } catch {
-            showToast("Payment received but activation failed. Contact support.", "error");
+          } catch (verifyErr: any) {
+            showToast(verifyErr?.message || "Payment received but activation failed. Contact support.", "error");
           } finally { setProcessing(false); }
         },
         onDismiss: () => { showToast("Payment cancelled.", "error"); setProcessing(false); },
@@ -230,7 +284,7 @@ export default function MembershipPage() {
           
           {/* Left: Plan List */}
           <div className="lg:col-span-7">
-            {isLoading ? (
+            {loadingPlans ? (
               <div className="flex flex-col items-center justify-center py-20 gap-4">
                 <Loader2 className="w-10 h-10 animate-spin text-primary/60" />
                 <p className="text-muted-foreground font-medium">Loading VIP plans...</p>
@@ -246,6 +300,7 @@ export default function MembershipPage() {
                 {plans.map((plan: any) => {
                   const planId = plan._id || plan.id;
                   const isSelected = selectedPlanId === planId;
+                  const isActive = isPlanActive(plan, user);
                   const style = getPlanStyle(plan.name);
                   const isFree = (plan.name || "").toLowerCase() === "free";
                   const isPopular = (plan.name || "").toLowerCase() === "standard";
@@ -278,12 +333,17 @@ export default function MembershipPage() {
                                 <h3 className={`font-black text-xl capitalize tracking-tight ${isSelected ? style.accent : "text-foreground"}`}>
                                   {plan.name}
                                 </h3>
-                                {isPopular && (
+                                {isActive && (
+                                  <span className="px-2.5 py-0.5 rounded-md text-[10px] font-black uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 tracking-widest shadow-sm flex items-center gap-1">
+                                    <Check className="w-3 h-3 text-emerald-400" /> Active
+                                  </span>
+                                )}
+                                {!isActive && isPopular && (
                                   <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase bg-primary text-white tracking-widest shadow-sm">
                                     Popular
                                   </span>
                                 )}
-                                {hasDiscount && (
+                                {!isActive && hasDiscount && (
                                   <span className={`px-2 py-0.5 rounded-md text-[10px] font-black tracking-widest shadow-sm ${style.badge}`}>
                                     Save {plan.discount}%
                                   </span>
@@ -354,7 +414,14 @@ export default function MembershipPage() {
                 <div className="bg-background/50 rounded-2xl p-4 border border-border/40 mb-6">
                   <div className="flex justify-between items-start mb-2">
                     <div>
-                      <h4 className="font-bold text-foreground capitalize text-base">{selectedPlan.name} Plan</h4>
+                      <div className="flex items-center gap-2">
+                        <h4 className="font-bold text-foreground capitalize text-base">{selectedPlan.name} Plan</h4>
+                        {isSelectedPlanActive && (
+                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                            Active
+                          </span>
+                        )}
+                      </div>
                       <p className="text-muted-foreground text-xs">{selectedPlan.durationValue} {selectedPlan.duration} access</p>
                     </div>
                     <span className="font-black text-lg text-foreground">
@@ -388,32 +455,44 @@ export default function MembershipPage() {
               </div>
 
               {/* Purchase Button */}
-              <button
-                id="membership-purchase-btn"
-                onClick={handlePurchase}
-                disabled={!selectedPlanId || processing}
-                className={`w-full h-14 rounded-2xl font-black text-sm flex items-center justify-center gap-2 transition-all duration-300 ${
-                  selectedPlanId && !processing
-                    ? "bg-gradient-to-r from-primary via-primary to-red-600 text-white shadow-xl shadow-primary/30 hover:shadow-primary/40 hover:-translate-y-0.5 active:translate-y-0"
-                    : "bg-muted text-muted-foreground/50 cursor-not-allowed"
-                }`}
-              >
-                {processing ? (
-                  <><Loader2 className="w-5 h-5 animate-spin" /><span>Processing secure checkout...</span></>
-                ) : selectedPlanId ? (
-                  <>
-                    <Crown className="w-5 h-5" />
-                    <span>
-                      {(selectedPlan?.name || "").toLowerCase() === "free"
-                        ? "Activate Free Plan"
-                        : `Pay ${formatPrice(selectedPlan?.totalPrice)} · Subscribe`}
-                    </span>
-                    <ChevronRight className="w-5 h-5" />
-                  </>
-                ) : (
-                  <span>Select a Plan</span>
-                )}
-              </button>
+              {isSelectedPlanActive ? (
+                <button
+                  id="membership-purchase-btn"
+                  type="button"
+                  onClick={() => showToast("You are already subscribed to this plan.", "error")}
+                  className="w-full h-14 rounded-2xl font-black text-sm flex items-center justify-center gap-2 transition-all duration-300 bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/30 cursor-pointer shadow-lg shadow-emerald-950/20 active:scale-[0.99]"
+                >
+                  <Check className="w-5 h-5 text-emerald-400" />
+                  <span>Current Plan (Active)</span>
+                </button>
+              ) : (
+                <button
+                  id="membership-purchase-btn"
+                  onClick={handlePurchase}
+                  disabled={!selectedPlanId || processing}
+                  className={`w-full h-14 rounded-2xl font-black text-sm flex items-center justify-center gap-2 transition-all duration-300 ${
+                    selectedPlanId && !processing
+                      ? "bg-gradient-to-r from-primary via-primary to-red-600 text-white shadow-xl shadow-primary/30 hover:shadow-primary/40 hover:-translate-y-0.5 active:translate-y-0 cursor-pointer"
+                      : "bg-muted text-muted-foreground/50 cursor-not-allowed"
+                  }`}
+                >
+                  {processing ? (
+                    <><Loader2 className="w-5 h-5 animate-spin" /><span>Processing secure checkout...</span></>
+                  ) : selectedPlanId ? (
+                    <>
+                      <Crown className="w-5 h-5" />
+                      <span>
+                        {(selectedPlan?.name || "").toLowerCase() === "free"
+                          ? "Activate Free Plan"
+                          : `Pay ${formatPrice(selectedPlan?.totalPrice)} · Subscribe`}
+                      </span>
+                      <ChevronRight className="w-5 h-5" />
+                    </>
+                  ) : (
+                    <span>Select a Plan</span>
+                  )}
+                </button>
+              )}
               
               {/* Payment Partner Info */}
               <div className="flex items-center justify-center gap-2 mt-4 text-muted-foreground/60">

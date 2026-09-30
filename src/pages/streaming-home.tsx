@@ -1230,6 +1230,13 @@ function HomeTab({ onPlay, onSubscribeClick, isSubscribed, user, onSignIn }: {
 /* ─── USER DROPDOWN ─── */
 function UserDropdown({ onSignIn, onSignOut, user }: { onSignIn: () => void; onSignOut?: () => void; user?: any }) {
   const [, setLocation] = useLocation();
+  const isSubscribed = isUserSubscribed(user);
+  const rawPlan = String(user?.subscriptionPlan || "").trim().toLowerCase();
+  const planLabel = !user
+    ? "Sign in for full access"
+    : isSubscribed
+    ? `${rawPlan ? rawPlan.charAt(0).toUpperCase() + rawPlan.slice(1) : "Basic"} Plan`
+    : "Free Plan";
 
   return (
     <div className="absolute top-[calc(100%+8px)] right-0 w-[260px] bg-[#0a0a10] border border-zinc-800 rounded-2xl shadow-2xl overflow-hidden z-50 animate-in fade-in slide-in-from-top-2 duration-200">
@@ -1248,10 +1255,10 @@ function UserDropdown({ onSignIn, onSignOut, user }: { onSignIn: () => void; onS
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5">
             <p className="text-white font-bold text-sm truncate leading-none">{user ? user.name || "User" : "Guest User"}</p>
-            {user && <Crown className="w-3.5 h-3.5 text-amber-500 fill-amber-500 flex-shrink-0" />}
+            {user && isSubscribed && <Crown className="w-3.5 h-3.5 text-amber-500 fill-amber-500 flex-shrink-0" />}
           </div>
           <p className="text-white text-[11px] truncate mt-1 leading-none font-medium">
-            {user ? "Premium Member" : "Sign in for full access"}
+            {planLabel}
           </p>
         </div>
       </div>
