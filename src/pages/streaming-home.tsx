@@ -22,6 +22,7 @@ import { WebsiteReviews } from "@/components/WebsiteReviews";
 import { LandscapeCard, PortraitCard } from "@/components/ContentCard";
 import Hls from "hls.js";
 import SubscriptionPlansModal from "@/components/SubscriptionPlansModal";
+import { getAdminTvShows } from "@/data/tvShows";
 
 /* ─── TYPES ─── */
 interface ContentItem {
@@ -49,7 +50,7 @@ interface ContentItem {
   planRequired?: string;
 }
 
-type Tab = "home" | "movies" | "new";
+type Tab = "home" | "movies" | "new" | "tvshows";
 
 const PLAN_LEVEL: Record<string, number> = { free: 0, basic: 1, standard: 2, premium: 3 };
 
@@ -1127,6 +1128,40 @@ function HomeTab({ onPlay, onSubscribeClick, isSubscribed, user, onSignIn }: {
 
   return (
     <div className="pb-20 space-y-6 pt-6 sm:pt-8 relative z-10 bg-[#030306]">
+      {/* Featured TV Shows Showcase */}
+      {getAdminTvShows().length > 0 && (
+        <section className="px-3 sm:px-6 lg:px-8">
+          <SectionHeader
+            title="TV Shows"
+            icon={<Tv className="w-4 h-4 text-amber-400" />}
+            onSeeAll={() => setLocation("/tv-shows")}
+            count={getAdminTvShows().length}
+          />
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2.5 sm:gap-4 pt-2">
+            {getAdminTvShows().slice(0, 6).map((show) => (
+              <div
+                key={show.id}
+                onClick={() => setLocation(`/tv-shows/${show.id}`)}
+                className="group relative cursor-pointer rounded-xl overflow-hidden bg-zinc-900 border border-white/5 hover:border-amber-400/50 transition-all duration-300 hover:scale-[1.03] shadow-lg"
+              >
+                <div className="aspect-[2/3] w-full overflow-hidden">
+                  <img
+                    src={show.poster}
+                    alt={show.title}
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                    onError={(e) => { (e.target as HTMLImageElement).style.backgroundColor = "#111"; }}
+                  />
+                </div>
+                <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent pointer-events-none" />
+                <div className="absolute bottom-0 left-0 right-0 p-2.5">
+                  <p className="text-white font-bold text-xs truncate leading-tight">{show.title}</p>
+                  <p className="text-amber-400 text-[10px] font-semibold mt-0.5">{(show.genres && show.genres[0]) || "Drama"} • {show.year}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
       {cw.length > 0 && (
         <section className="px-3 sm:px-6 lg:px-8">
           <SectionHeader title="Continue Watching" icon={<Clock className="w-4 h-4" />} />
@@ -1676,16 +1711,17 @@ function SignInModal({ onClose }: { onClose: () => void }) {
 const NAV_TABS: { label: string; tab: Tab; icon: React.ReactNode }[] = [
   { label: "Home", tab: "home", icon: null },
   { label: "Movies", tab: "movies", icon: <Film className="w-3.5 h-3.5" /> },
+  { label: "TV Shows", tab: "tvshows", icon: <Tv className="w-3.5 h-3.5" /> },
   { label: "New & Hot", tab: "new", icon: <Flame className="w-3.5 h-3.5" /> },
 ];
 
 export function PublicHeader({ activeTab, setActiveTab, onSignIn, onSignOut, user, onSubscribeClick }: {
-  activeTab: Tab; setActiveTab: (t: Tab) => void; onSignIn: () => void; onSignOut?: () => void; user?: any; onSubscribeClick?: () => void;
+  activeTab?: any; setActiveTab?: (t: any) => void; onSignIn?: () => void; onSignOut?: () => void; user?: any; onSubscribeClick?: () => void;
 }) {
   const [scrolled, setScrolled] = useState(false);
   const isSubscribed = isUserSubscribed(user);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [, setLocation] = useLocation();
+  const [currLocation, setLocation] = useLocation();
   const searchString = useSearch();
 
   const currentQuery = new URLSearchParams(searchString).get("q") || "";
@@ -1830,7 +1866,7 @@ export function PublicHeader({ activeTab, setActiveTab, onSignIn, onSignOut, use
                 {logoUrl ? (
                   <img
                     src={logoUrl}
-                    alt={settings.platformName || "StreamIT"}
+                    alt={(!settings.platformName || settings.platformName.toLowerCase().includes("ashqe") || settings.platformName === "StreamIT") ? "Tataiya" : settings.platformName}
                     style={{
                       height: `${resolvedTheme === "light" ? (settings.lightLogoSize || 32) : (settings.darkLogoSize || 32)}px`,
                       maxHeight: `${Math.max(resolvedTheme === "light" ? (settings.lightLogoSize || 32) : (settings.darkLogoSize || 32), 48)}px`,
@@ -1842,7 +1878,9 @@ export function PublicHeader({ activeTab, setActiveTab, onSignIn, onSignOut, use
                     <div className="w-8 h-8 rounded-lg bg-amber-400 flex items-center justify-center shadow-lg shadow-amber-500/50 group-hover:scale-105 transition-transform">
                       <Play className="w-4 h-4 text-white fill-white ml-0.5" />
                     </div>
-                    <span className="text-white font-bold text-xl tracking-tight hidden sm:block">{settings.platformName || "StreamIT"}</span>
+                    <span className="text-white font-bold text-xl tracking-tight hidden sm:block">
+                      {(!settings.platformName || settings.platformName.toLowerCase().includes("ashqe") || settings.platformName === "StreamIT") ? "Tataiya" : settings.platformName}
+                    </span>
                   </>
                 )}
               </Link>
@@ -1851,7 +1889,16 @@ export function PublicHeader({ activeTab, setActiveTab, onSignIn, onSignOut, use
                 {NAV_TABS.map(({ label, tab, icon }) => (
                   <button
                     key={tab}
-                    onClick={() => setActiveTab(tab)}
+                    onClick={() => {
+                      if (tab === "tvshows") {
+                        setLocation("/tv-shows");
+                      } else {
+                        if (currLocation !== "/") {
+                          setLocation("/");
+                        }
+                        setActiveTab?.(tab);
+                      }
+                    }}
                     className={`relative flex items-center gap-1.5 px-3.5 py-2 text-[13.5px] font-bold rounded-lg transition-all duration-200 text-white hover:bg-white/10`}
                   >
                     {icon}
@@ -2044,7 +2091,17 @@ export function PublicHeader({ activeTab, setActiveTab, onSignIn, onSignOut, use
               <button
                 key={tab}
                 type="button"
-                onClick={() => { setActiveTab(tab); setMobileOpen(false); }}
+                onClick={() => {
+                  if (tab === "tvshows") {
+                    setLocation("/tv-shows");
+                  } else {
+                    if (currLocation !== "/") {
+                      setLocation("/");
+                    }
+                    setActiveTab?.(tab);
+                  }
+                  setMobileOpen(false);
+                }}
                 className={`w-full flex items-center gap-3 px-3.5 py-3.5 min-h-[48px] rounded-xl text-sm font-bold transition-all ${activeTab === tab ? "bg-amber-400/15 text-white" : "text-white hover:bg-white/10"}`}
               >
                 {activeTab === tab && <span className="w-1.5 h-1.5 rounded-full bg-amber-400 flex-shrink-0" />}

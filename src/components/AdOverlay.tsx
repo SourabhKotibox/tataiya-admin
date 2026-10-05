@@ -24,25 +24,27 @@ export default function AdOverlay({ timer, canSkip, onSkip, mediaUrl, label = 'A
           {label}
         </div>
         <div className="text-foreground font-black text-5xl tabular-nums">{timer}s</div>
-        {canSkip ? (
+        {canSkip || timer <= 0 ? (
           <button
             type="button"
             onClick={(e) => {
               e.stopPropagation();
               onSkip();
             }}
-            className="flex items-center gap-2 px-5 py-2.5 bg-white/10 hover:bg-white/20 border border-white/20 rounded-full text-foreground text-sm font-bold transition-all active:scale-95"
+            className="flex items-center gap-2 px-5 py-2.5 bg-white/10 hover:bg-white/20 border border-white/20 rounded-full text-foreground text-sm font-bold transition-all active:scale-95 cursor-pointer"
           >
             <SkipForward className="w-4 h-4" />
             Skip Ad
           </button>
         ) : (
-          <div
+          <button
+            type="button"
+            disabled
             onClick={(e) => e.stopPropagation()}
-            className="px-4 py-2 bg-white/5 rounded-full text-foreground/70 text-xs font-medium"
+            className="px-4 py-2 bg-white/5 border border-white/10 rounded-full text-foreground/70 text-xs font-medium cursor-not-allowed opacity-80"
           >
             Skip in {timer}s
-          </div>
+          </button>
         )}
       </div>
     </div>

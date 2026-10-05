@@ -75,7 +75,8 @@ function ThemeApplier() {
   }, [settings.colorTheme, settings.primaryColor]);
 
   useEffect(() => {
-    const name = settings.platformName || "Flipshorts";
+    const rawName = settings.platformName;
+    const name = (!rawName || rawName === "Flipshorts" || rawName.toLowerCase().includes("ashqe")) ? "Tataiya" : rawName;
     
     // Convert path to a readable page name
     const pathSegments = location.split('/').filter(Boolean);
@@ -94,7 +95,8 @@ function ThemeApplier() {
     const frontendPrefixes = [
       "/membership", "/account", "/wishlist", 
       "/help-support", "/browse", 
-      "/movie", "/page", "/login", "/register"
+      "/movie", "/page", "/login", "/register",
+      "/tv-shows"
     ];
     
     const isFrontend = location === "/" || location === "" || frontendPrefixes.some(p => location.startsWith(p));
@@ -172,6 +174,16 @@ import GoogleAdsPage from "@/pages/google-ads";
 import NewHotManagement from "@/pages/new-hot-management";
 import Reviews from "@/pages/reviews";
 import RevenueAnalyticsPage from "@/pages/revenue-analytics";
+import TvShowsBrowsePage from "@/tv-shows/pages/TvShowsBrowsePage";
+import TvShowDetailPage from "@/tv-shows/pages/TvShowDetailPage";
+import TvShowWatchPage from "@/tv-shows/pages/TvShowWatchPage";
+import TvShowsList from "@/pages/tv-shows/TvShowsList";
+import TvShowForm from "@/pages/tv-shows/TvShowForm";
+import TvShowAdminDetail from "@/pages/tv-shows/TvShowDetail";
+import SeasonsList from "@/pages/seasons/SeasonsList";
+import SeasonForm from "@/pages/seasons/SeasonForm";
+import EpisodesList from "@/pages/episodes/EpisodesList";
+import EpisodeForm from "@/pages/episodes/EpisodeForm";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -302,6 +314,23 @@ function AdminRoutes() {
               <Route path="/movies/new" component={MovieForm} />
               <Route path="/movies/:id/edit" component={MovieForm} />
               <Route path="/movies" component={MoviesPage} />
+
+              {/* TV Shows Admin Section */}
+              <Route path="/admin/tv-shows/add" component={TvShowForm} />
+              <Route path="/admin/tv-shows/:id/edit" component={TvShowForm} />
+              <Route path="/admin/tv-shows/:id" component={TvShowAdminDetail} />
+              <Route path="/admin/tv-shows" component={TvShowsList} />
+              <Route path="/tv-shows-admin" component={TvShowsList} />
+
+              {/* Seasons Admin Section */}
+              <Route path="/admin/seasons/add" component={SeasonForm} />
+              <Route path="/admin/seasons/:id/edit" component={SeasonForm} />
+              <Route path="/admin/seasons" component={SeasonsList} />
+
+              {/* Episodes Admin Section */}
+              <Route path="/admin/episodes/add" component={EpisodeForm} />
+              <Route path="/admin/episodes/:id/edit" component={EpisodeForm} />
+              <Route path="/admin/episodes" component={EpisodesList} />
               <Route path="/ads/:id" component={AdForm} />
               <Route path="/ads" component={AdsPage} />
               <Route path="/google-ads" component={GoogleAdsPage} />
@@ -377,6 +406,10 @@ function Router() {
       <Route path="/login" component={PublicAuthPage} />
       <Route path="/register" component={PublicAuthPage} />
       <Route path="/movie/:id" component={MovieDetailPage} />
+      <Route path="/tv-shows" component={TvShowsBrowsePage} />
+      <Route path="/tv-shows/:id/watch/:epNum" component={TvShowWatchPage} />
+      <Route path="/tv-shows/:id/watch" component={TvShowWatchPage} />
+      <Route path="/tv-shows/:id" component={TvShowDetailPage} />
       <Route path="/watch/:id/:epNum" component={WatchPage} />
       <Route path="/watch/:id" component={WatchPage} />
       <Route path="/browse/:tab" component={CategoriesBrowsePage} />

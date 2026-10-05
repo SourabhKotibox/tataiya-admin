@@ -299,7 +299,7 @@ function mapApiData(api: any): AppSettings {
     darkLogoSize: api.darkLogoSize ? Number(api.darkLogoSize) : DEFAULT.darkLogoSize,
     faviconUrl: img(api.faviconUrl),
     logoStyle: api.logoStyle || DEFAULT.logoStyle,
-    platformName: api.platformName || DEFAULT.platformName,
+    platformName: (api.platformName && !api.platformName.toLowerCase().includes("ashqe") && api.platformName !== "Flipshorts") ? api.platformName : "Tataiya",
     contactNo: api.contactNo || "",
     inquiryEmail: api.inquiryEmail || "",
     siteDescription: api.siteDescription || "",

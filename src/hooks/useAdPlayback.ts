@@ -17,11 +17,17 @@ interface UseAdPlaybackOptions {
 
 export function useAdPlayback(options: UseAdPlaybackOptions = {}) {
   const [phase, setPhase] = useState<AdPhase>('idle');
-  const [timer, setTimer] = useState(0);
+  const [timer, setTimer] = useState(5);
   const [canSkip, setCanSkip] = useState(false);
   const [config, setConfig] = useState<AdConfig | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval>>();
-  const remainingRef = useRef(0);
+  const remainingRef = useRef(5);
+
+  // Keep options in a ref to prevent startAd/skipAd identity changes on every render
+  const optionsRef = useRef(options);
+  useEffect(() => {
+    optionsRef.current = options;
+  });
 
   const clearTimer = useCallback(() => {
     if (timerRef.current) {
@@ -30,39 +36,42 @@ export function useAdPlayback(options: UseAdPlaybackOptions = {}) {
     }
   }, []);
 
-  const startAd = useCallback((type: AdType, adConfig?: Partial<AdConfig>) => {
+  const startAd = useCallback((type: AdType = 'preroll', adConfig?: Partial<AdConfig>) => {
     clearTimer();
+    const duration = adConfig?.duration ?? 5;
     const fullConfig: AdConfig = {
-      duration: type === 'between-episode' ? 3 : 5,
-      skippableAfter: type === 'between-episode' ? 1 : 2,
+      duration,
+      skippableAfter: 0,
       label: type === 'preroll' ? 'Advertisement' : type === 'midroll' ? 'Ad Break' : 'Up Next',
       ...adConfig,
     };
     setConfig(fullConfig);
     setPhase('playing');
-    setTimer(fullConfig.duration);
+    setTimer(duration);
     setCanSkip(false);
-    remainingRef.current = fullConfig.duration;
+    remainingRef.current = duration;
 
     timerRef.current = setInterval(() => {
       remainingRef.current -= 1;
-      setTimer(remainingRef.current);
-      if (remainingRef.current <= fullConfig.duration - fullConfig.skippableAfter) {
+      const nextRemaining = Math.max(0, remainingRef.current);
+      setTimer(nextRemaining);
+
+      if (nextRemaining <= 0) {
+        clearTimer();
         setCanSkip(true);
       }
-      if (remainingRef.current <= 0) {
-        clearTimer();
-        setPhase('completed');
-        options.onAdComplete?.();
-      }
     }, 1000);
-  }, [clearTimer, options]);
+  }, [clearTimer]);
 
   const skipAd = useCallback(() => {
     clearTimer();
     setPhase('completed');
-    options.onAdSkip?.();
-  }, [clearTimer, options]);
+    if (optionsRef.current.onAdSkip) {
+      optionsRef.current.onAdSkip();
+    } else if (optionsRef.current.onAdComplete) {
+      optionsRef.current.onAdComplete();
+    }
+  }, [clearTimer]);
 
   const reset = useCallback(() => {
     clearTimer();

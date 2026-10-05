@@ -93,6 +93,7 @@ export default function VideoPlayer({
     isActive: adIsActive,
   } = useAdPlayback({
     onAdComplete: handleAdComplete,
+    onAdSkip: handleAdComplete,
   });
 
   // Initialize: check resume and start pre-roll

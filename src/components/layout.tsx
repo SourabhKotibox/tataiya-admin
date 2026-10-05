@@ -98,6 +98,17 @@ export function Layout({ children }: { children: React.ReactNode }) {
         { href: "/genres", label: t('nav.genres'), icon: Tags, permission: "genres" },
         { href: "/movies", label: t('nav.movies'), icon: Film, permission: "movies" },
         {
+          href: "/tv-shows-group",
+          label: "TV Shows",
+          icon: Tv2,
+          permission: null,
+          children: [
+            { href: "/admin/tv-shows", label: "TV Shows", icon: Tv2, permission: null },
+            { href: "/admin/seasons", label: "Seasons", icon: Layers, permission: null },
+            { href: "/admin/episodes", label: "Episodes", icon: Film, permission: null },
+          ],
+        },
+        {
           href: "/ads-group",
           label: "Ads",
           icon: PlusSquare,
@@ -221,6 +232,16 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const filteredNavItemsFlat = filteredNavSections.flatMap((s) =>
     s.items.flatMap((item) => ("children" in item && item.children ? item.children : [item]))
   );
+
+  useEffect(() => {
+    filteredNavSections.forEach((section) => {
+      section.items.forEach((item: any) => {
+        if (item.children?.some((c: any) => isItemActive(c.href))) {
+          setExpandedGroups((prev) => (prev.includes(item.href) ? prev : [...prev, item.href]));
+        }
+      });
+    });
+  }, [location]);
 
   // Expanded nav: sections with group headers
   const NavExpanded = ({ onClose }: { onClose?: () => void }) => (
