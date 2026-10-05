@@ -672,11 +672,13 @@ export default function Settings() {
 
     setTestingStorage(true);
     try {
+      const reg = storage.doRegion?.trim().toLowerCase() || "nyc3";
+      const cleanEndpoint = storage.doEndpoint?.trim() || `https://${reg}.digitaloceanspaces.com`;
       const res = await testStorageMutation.mutateAsync({
         driver: "spaces",
         spaceName,
-        region: storage.doRegion.trim() || "nyc3",
-        endpoint: storage.doEndpoint.trim() || `https://${storage.doRegion.trim() || "nyc3"}.digitaloceanspaces.com`,
+        region: reg,
+        endpoint: cleanEndpoint,
         accessKey,
         secretKey,
         cdnUrl: storage.doCdnUrl.trim(),
@@ -1725,16 +1727,14 @@ export default function Settings() {
               <Input
                 value={storage.doRegion}
                 onChange={(e) => {
-                  const reg = e.target.value;
+                  const reg = e.target.value.trim().toLowerCase();
                   setStorage({
                     ...storage,
                     doRegion: reg,
-                    doEndpoint: storage.doEndpoint.includes('digitaloceanspaces.com')
-                      ? `https://${reg || 'nyc3'}.digitaloceanspaces.com`
-                      : storage.doEndpoint,
+                    doEndpoint: `https://${reg || 'nyc3'}.digitaloceanspaces.com`,
                   });
                 }}
-                placeholder="e.g. nyc3, ams3, sgp1, sfo3, blr1, fra1"
+                placeholder="e.g. sgp1, nyc3, ams3, sfo3, blr1, fra1"
                 className={inputCls}
               />
             </div>
@@ -1744,9 +1744,12 @@ export default function Settings() {
               <Input
                 value={storage.doEndpoint}
                 onChange={(e) => setStorage({ ...storage, doEndpoint: e.target.value })}
-                placeholder="https://nyc3.digitaloceanspaces.com"
+                placeholder="https://sgp1.digitaloceanspaces.com"
                 className={inputCls}
               />
+              <p className="text-[11px] text-muted-foreground">
+                Base regional endpoint (e.g. <code className="text-amber-400">https://sgp1.digitaloceanspaces.com</code>). Do not include Space name here.
+              </p>
             </div>
           </div>
 
