@@ -20,13 +20,12 @@ import { useToast } from "@/hooks/use-toast";
 import {
   useGetEpisodeList,
   useGetTVShows,
-  useGetSeasonList,
+  useGetEpisodeSeasonList,
   useDeleteEpisode,
   getImageUrl,
 } from "@/lib/api-client";
 import { formatDuration } from "@/tv-shows/data/tvShows";
 import { getAdminTvShowById } from "@/data/tvShows";
-import { getAdminSeasonById } from "@/data/seasons";
 import { deleteAdminEpisode } from "@/data/episodes";
 
 export default function EpisodesList() {
@@ -35,7 +34,7 @@ export default function EpisodesList() {
 
   const { data: serverEpisodesData } = useGetEpisodeList({ limit: 500 });
   const { data: serverShowsData } = useGetTVShows({ limit: 100 });
-  const { data: serverSeasonsData } = useGetSeasonList({});
+  const { data: serverSeasonsData } = useGetEpisodeSeasonList({});
   const deleteEpisodeMutation = useDeleteEpisode();
 
   const [search, setSearch] = useState("");
@@ -52,6 +51,7 @@ export default function EpisodesList() {
       id: s._id || s.id,
       title: s.title || "Untitled",
       poster: getImageUrl(s.poster || s.thumbnail),
+      backdrop: getImageUrl(s.backdrop || s.bannerImage),
     }));
   }, [serverShowsData]);
 
@@ -60,8 +60,8 @@ export default function EpisodesList() {
     return rawList.map((s) => ({
       id: s.seasonId || `${s.tvShowId?._id || s.tvShowId}-${s.season}`,
       tvShowId: s.tvShowId?._id || s.tvShowId,
-      seasonNumber: s.season,
-      title: `Season ${s.season}`,
+      seasonNumber: s.seasonNumber ?? s.season,
+      title: s.title || `Season ${s.seasonNumber ?? s.season}`,
     }));
   }, [serverSeasonsData]);
 
@@ -361,7 +361,7 @@ export default function EpisodesList() {
                 ) : (
                   filteredEpisodes.map((ep) => {
                     const tvShow = shows.find((s) => s.id === ep.tvShowId) || getAdminTvShowById(ep.tvShowId);
-                    const season = seasons.find((s) => s.id === ep.seasonId || s.seasonNumber === ep.seasonNumber) || getAdminSeasonById(ep.seasonId);
+                    const season = seasons.find((s) => s.id === ep.seasonId || s.seasonNumber === ep.seasonNumber);
 
                     return (
                       <TableRow key={ep.id} className="hover:bg-muted/30">

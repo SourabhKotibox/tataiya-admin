@@ -14,7 +14,7 @@ import MediaPicker from "@/components/MediaPicker";
 import {
   useGetEpisodeById,
   useGetTVShows,
-  useGetSeasonList,
+  useGetEpisodeSeasonList,
   useCreateEpisode,
   useUpdateEpisode,
   getImageUrl,
@@ -67,7 +67,7 @@ export default function EpisodeForm() {
   const [status, setStatus] = useState<"published" | "draft">("published");
   const [subtitleUrl, setSubtitleUrl] = useState("");
 
-  const { data: serverSeasonsData } = useGetSeasonList(tvShowId ? { tvShowId } : undefined);
+  const { data: serverSeasonsData } = useGetEpisodeSeasonList(tvShowId ? { tvShowId } : undefined);
 
   useEffect(() => {
     if (!tvShowId && tvShows.length > 0) {

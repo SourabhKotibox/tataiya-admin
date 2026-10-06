@@ -13,9 +13,10 @@ import MediaPicker from "@/components/MediaPicker";
 import {
   useGetTVShows,
   useGetSeasonList,
+  useCreateSeason,
+  useUpdateSeason,
   getImageUrl,
 } from "@/lib/api-client";
-import { getAdminSeasonById, saveAdminSeason, AdminSeason } from "@/data/seasons";
 
 export default function SeasonForm() {
   const params = useParams<{ id?: string }>();
@@ -26,6 +27,8 @@ export default function SeasonForm() {
 
   const { data: serverShowsData } = useGetTVShows({ limit: 100 });
   const { data: serverSeasonsData } = useGetSeasonList({});
+  const createSeasonMutation = useCreateSeason();
+  const updateSeasonMutation = useUpdateSeason();
 
   const tvShows = useMemo(() => {
     const raw: any[] = serverShowsData?.data || [];
@@ -53,43 +56,22 @@ export default function SeasonForm() {
   }, [tvShows, tvShowId, id]);
 
   useEffect(() => {
-    if (id) {
-      const existingLocal = getAdminSeasonById(id);
-      if (existingLocal) {
-        setTvShowId(existingLocal.tvShowId);
-        setSeasonNumber(existingLocal.seasonNumber);
-        setTitle(existingLocal.title);
-        setDescription(existingLocal.description || "");
-        const existingPoster = existingLocal.poster || existingLocal.posterImage || "";
-        setPoster({
-          filePath: existingPoster,
-          preview: existingPoster ? getImageUrl(existingPoster) : "",
-        });
-        setReleaseDate(existingLocal.releaseDate || "");
-        setStatus(existingLocal.status || "published");
-      } else if (serverSeasonsData?.data) {
-        const match = serverSeasonsData.data.find(
-          (s: any) =>
-            s.seasonId === id ||
-            `${s.tvShowId?._id || s.tvShowId}-${s.season}` === id ||
-            String(s.season) === id
-        );
-        if (match) {
-          const sid = match.tvShowId?._id || match.tvShowId;
-          if (sid) setTvShowId(sid);
-          setSeasonNumber(match.season || 1);
-          setTitle(match.title || `Season ${match.season}`);
-          setDescription(match.description || "");
-          const p = match.thumbnail || match.poster || "";
-          setPoster({
-            filePath: p,
-            preview: p ? getImageUrl(p) : "",
-          });
-          setReleaseDate(match.releaseDate || "");
-          setStatus(match.status || "published");
-        }
-      }
-    }
+    if (!id || !serverSeasonsData?.data) return;
+    const match = serverSeasonsData.data.find((season: any) => (season.id || season._id) === id);
+    if (!match) return;
+
+    const sid = match.tvShowId?._id || match.tvShowId;
+    if (sid) setTvShowId(sid);
+    setSeasonNumber(match.seasonNumber ?? match.season ?? 1);
+    setTitle(match.title || "");
+    setDescription(match.description || "");
+    const existingPoster = match.poster || match.posterImage || match.thumbnail || "";
+    setPoster({
+      filePath: existingPoster,
+      preview: existingPoster ? getImageUrl(existingPoster) : "",
+    });
+    setReleaseDate(match.releaseDate ? new Date(match.releaseDate).toISOString().slice(0, 10) : "");
+    setStatus(match.status === "draft" ? "draft" : "published");
   }, [id, serverSeasonsData]);
 
   const handleSave = async (e: React.FormEvent) => {
@@ -103,29 +85,38 @@ export default function SeasonForm() {
       return;
     }
 
-    const seasonId = id || `season-${Date.now()}`;
     const selectedShow = tvShows.find((s) => s.id === tvShowId);
-    const resolvedPoster = poster.filePath || poster.preview || selectedShow?.poster || "https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?w=600&auto=format&fit=crop&q=80";
-
-    const savedSeason: AdminSeason = {
-      id: seasonId,
+    const resolvedPoster = poster.filePath || poster.preview || selectedShow?.poster || "";
+    const seasonPayload = {
       tvShowId,
       seasonNumber: Number(seasonNumber) || 1,
       title: title.trim(),
       description: description.trim(),
-      poster: resolvedPoster,
-      posterImage: resolvedPoster,
-      releaseDate,
+      poster: resolvedPoster || undefined,
+      posterImage: resolvedPoster || undefined,
+      releaseDate: releaseDate || null,
       status,
-      createdAt: isEdit ? (getAdminSeasonById(seasonId)?.createdAt || releaseDate) : new Date().toISOString().split("T")[0],
     };
 
-    saveAdminSeason(savedSeason);
-    toast({
-      title: isEdit ? "Season Updated" : "Season Created",
-      description: `"${savedSeason.title}" (Season ${savedSeason.seasonNumber}) saved successfully.`,
-    });
-    setLocation("/admin/seasons");
+    try {
+      if (isEdit && id) {
+        await updateSeasonMutation.mutateAsync({ id, data: seasonPayload });
+      } else {
+        await createSeasonMutation.mutateAsync(seasonPayload);
+      }
+      toast({
+        title: isEdit ? "Season Updated" : "Season Created",
+        description: `"${seasonPayload.title}" (Season ${seasonPayload.seasonNumber}) saved successfully.`,
+      });
+      setLocation("/admin/seasons");
+    } catch (err: any) {
+      console.error("Season save error:", err);
+      toast({
+        title: isEdit ? "Season Update Failed" : "Season Save Failed",
+        description: err?.message || "Failed to save Season to the server.",
+        variant: "destructive",
+      });
+    }
   };
 
   return (
@@ -307,6 +298,7 @@ export default function SeasonForm() {
           </Button>
           <Button
             type="submit"
+            disabled={createSeasonMutation.isPending || updateSeasonMutation.isPending}
             className="gap-2 bg-primary hover:bg-primary/90 text-primary-foreground font-bold shadow-md cursor-pointer"
           >
             <Save className="w-4 h-4" /> {isEdit ? "Update Season" : "Create Season"}

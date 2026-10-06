@@ -4259,6 +4259,17 @@ export const useToggleTVShowTrending = () => {
 
 // ─── Episodes API ──────────────────────────────────────────────────────────────
 
+export type SeasonPayload = {
+  tvShowId: string;
+  seasonNumber: number;
+  title: string;
+  description?: string;
+  poster?: string;
+  posterImage?: string;
+  releaseDate?: string | null;
+  status?: 'published' | 'draft';
+};
+
 export const getEpisodeList = async (options: any = {}) => {
   const params = new URLSearchParams();
   if (options?.page) params.set('page', options.page.toString());
@@ -4272,7 +4283,33 @@ export const getEpisodeList = async (options: any = {}) => {
 export const getSeasonList = async (options: any = {}) => {
   const params = new URLSearchParams();
   if (options?.tvShowId) params.set('tvShowId', options.tvShowId);
+  return api(`/seasons?${params.toString()}`);
+};
+
+export const getEpisodeSeasonList = async (options: any = {}) => {
+  const params = new URLSearchParams();
+  if (options?.tvShowId) params.set('tvShowId', options.tvShowId);
   return api(`/episodes/seasons?${params.toString()}`);
+};
+
+export const createSeason = async (data: SeasonPayload) => {
+  return api('/seasons', {
+    method: 'POST',
+    body: JSON.stringify(data),
+    headers: { 'Content-Type': 'application/json' },
+  });
+};
+
+export const updateSeason = async (id: string, data: SeasonPayload) => {
+  return api(`/seasons/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+    headers: { 'Content-Type': 'application/json' },
+  });
+};
+
+export const deleteSeason = async (id: string) => {
+  return api(`/seasons/${id}`, { method: 'DELETE' });
 };
 
 export const getEpisodeById = async (id: string) => {
@@ -4321,6 +4358,55 @@ export const useGetSeasonList = (options: any = {}) => {
   });
 };
 
+export const useGetEpisodeSeasonList = (options: any = {}) => {
+  return useQuery({
+    queryKey: ['episode-season-list', options],
+    queryFn: () => getEpisodeSeasonList(options),
+  });
+};
+
+export const useCreateSeason = () => {
+  const queryClient = useQueryClient();
+  return useMutation<any, Error, SeasonPayload>({
+    mutationFn: createSeason,
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['season-list'] }),
+        queryClient.invalidateQueries({ queryKey: ['episode-season-list'] }),
+        queryClient.invalidateQueries({ queryKey: ['tv-shows'] }),
+      ]);
+    },
+  });
+};
+
+export const useUpdateSeason = () => {
+  const queryClient = useQueryClient();
+  return useMutation<any, Error, { id: string; data: SeasonPayload }>({
+    mutationFn: ({ id, data }) => updateSeason(id, data),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['season-list'] }),
+        queryClient.invalidateQueries({ queryKey: ['episode-season-list'] }),
+        queryClient.invalidateQueries({ queryKey: ['tv-shows'] }),
+      ]);
+    },
+  });
+};
+
+export const useDeleteSeason = () => {
+  const queryClient = useQueryClient();
+  return useMutation<any, Error, string>({
+    mutationFn: deleteSeason,
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['season-list'] }),
+        queryClient.invalidateQueries({ queryKey: ['episode-season-list'] }),
+        queryClient.invalidateQueries({ queryKey: ['tv-shows'] }),
+      ]);
+    },
+  });
+};
+
 export const useGetEpisodeById = (id: string) => {
   return useQuery({
     queryKey: ['episode', id],
@@ -4339,6 +4425,7 @@ export const useCreateEpisode = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['episode-list'] });
       queryClient.invalidateQueries({ queryKey: ['season-list'] });
+      queryClient.invalidateQueries({ queryKey: ['episode-season-list'] });
       queryClient.invalidateQueries({ queryKey: ['tv-shows'] });
       queryClient.invalidateQueries({ queryKey: ['app-series'] });
     },
@@ -4353,6 +4440,7 @@ export const useUpdateEpisode = () => {
       queryClient.invalidateQueries({ queryKey: ['episode-list'] });
       queryClient.invalidateQueries({ queryKey: ['episode', variables.id] });
       queryClient.invalidateQueries({ queryKey: ['season-list'] });
+      queryClient.invalidateQueries({ queryKey: ['episode-season-list'] });
       queryClient.invalidateQueries({ queryKey: ['tv-shows'] });
       queryClient.invalidateQueries({ queryKey: ['app-series'] });
     },
@@ -4366,6 +4454,7 @@ export const useDeleteEpisode = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['episode-list'] });
       queryClient.invalidateQueries({ queryKey: ['season-list'] });
+      queryClient.invalidateQueries({ queryKey: ['episode-season-list'] });
       queryClient.invalidateQueries({ queryKey: ['tv-shows'] });
       queryClient.invalidateQueries({ queryKey: ['app-series'] });
     },

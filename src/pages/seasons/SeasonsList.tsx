@@ -20,8 +20,7 @@ import { useToast } from "@/hooks/use-toast";
 import {
   useGetSeasonList,
   useGetTVShows,
-  useGetEpisodeList,
-  useDeleteEpisode,
+  useDeleteSeason,
   getImageUrl,
 } from "@/lib/api-client";
 
@@ -31,8 +30,7 @@ export default function SeasonsList() {
 
   const { data: serverSeasonsData } = useGetSeasonList({});
   const { data: serverShowsData } = useGetTVShows({ limit: 100 });
-  const { data: allEpisodesResponse } = useGetEpisodeList({ limit: 200 });
-  const deleteEpisodeMutation = useDeleteEpisode();
+  const deleteSeasonMutation = useDeleteSeason();
 
   const [search, setSearch] = useState("");
   const [showFilter, setShowFilter] = useState("all");
@@ -54,16 +52,18 @@ export default function SeasonsList() {
     const rawList: any[] = serverSeasonsData?.data || [];
     return rawList.map((s) => {
       const matchingShow = shows.find((sh) => sh.id === (s.tvShowId?._id || s.tvShowId));
+      const seasonNumber = s.seasonNumber ?? s.season;
       return {
-        id: s.seasonId || `${s.tvShowId}-${s.season}`,
+        id: s.id || s._id || s.seasonId,
         tvShowId: s.tvShowId?._id || s.tvShowId,
-        seasonNumber: s.season,
-        title: `Season ${s.season}`,
+        seasonNumber,
+        title: s.title || `Season ${seasonNumber}`,
         description: s.description || "",
-        poster: getImageUrl(s.thumbnail || matchingShow?.poster),
-        releaseDate: s.releaseDate || s.createdAt || "2026-01-01",
+        poster: getImageUrl(s.poster || s.posterImage || s.thumbnail || matchingShow?.poster),
+        posterImage: s.posterImage || s.poster || s.thumbnail,
+        releaseDate: s.releaseDate ? String(s.releaseDate).slice(0, 10) : "",
         status: s.status || "published",
-        createdAt: s.createdAt || "2026-01-01",
+        createdAt: s.createdAt ? String(s.createdAt).slice(0, 10) : "",
         showName: s.showName || matchingShow?.title || "TV Show",
         epCount: s.episodeCount ?? 0,
       };
@@ -126,24 +126,15 @@ export default function SeasonsList() {
   const handleConfirmDelete = async () => {
     if (!deleteTarget) return;
     try {
-      const allEpisodes: any[] = allEpisodesResponse?.data || [];
-      const targetShowId = (deleteTarget.tvShowId?._id || deleteTarget.tvShowId)?.toString();
-      const toDelete = allEpisodes.filter(
-        (ep: any) =>
-          ((ep.tvShowId?._id || ep.tvShowId)?.toString() === targetShowId) &&
-          ep.season === deleteTarget.seasonNumber
-      );
-      if (toDelete.length > 0) {
-        await Promise.all(toDelete.map((ep: any) => deleteEpisodeMutation.mutateAsync(ep._id || ep.id)));
-      }
+      await deleteSeasonMutation.mutateAsync(deleteTarget.id);
       toast({
         title: "Season Deleted",
-        description: `"${deleteTarget.title}" was removed (${toDelete.length} episodes deleted).`,
+        description: `"${deleteTarget.title}" was removed.`,
       });
     } catch (err: any) {
       toast({
         title: "Delete Failed",
-        description: err?.message || "Could not delete season episodes.",
+        description: err?.message || "Could not delete Season.",
         variant: "destructive",
       });
     } finally {
