@@ -97,7 +97,7 @@ export default function MediaPicker({ open, onClose, onSelect, onUploadPendingCh
           uploadedFile.hlsMasterPlaylistPath ||
           uploadedFile.filePath
       ),
-      filePath: uploadedFile.filePath || uploadedFile.s3Key || uploadedFile.url,
+      filePath: (uploadedFile.url && uploadedFile.url.startsWith("http") && !uploadedFile.url.includes("/uploads/")) ? uploadedFile.url : uploadedFile.filePath,
     };
 
     // Attach to the form immediately — never wait on media list / HLS
@@ -125,7 +125,7 @@ export default function MediaPicker({ open, onClose, onSelect, onUploadPendingCh
             selectedMedia.hlsMasterPlaylistPath ||
             selectedMedia.filePath
         ),
-        filePath: selectedMedia.filePath || selectedMedia.s3Key || selectedMedia.url,
+        filePath: (selectedMedia.url && selectedMedia.url.startsWith("http") && !selectedMedia.url.includes("/uploads/")) ? selectedMedia.url : selectedMedia.filePath,
       });
       handleClose();
     } else if (mode === "upload" && selectedMedia?.file) {
