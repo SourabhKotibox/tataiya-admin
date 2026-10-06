@@ -82,7 +82,9 @@ const api = async (
     finalEndpoint.startsWith("/api/search") ||
     finalEndpoint.startsWith("/search") ||
     finalEndpoint.startsWith("/api/home") ||
-    finalEndpoint.startsWith("/home");
+    finalEndpoint.startsWith("/home") ||
+    finalEndpoint.startsWith("/api/watch") ||
+    finalEndpoint.startsWith("/watch");
   
   // Choose token based on route prefix, unless explicitly overridden
   const defaultTokenKey = isAppRoute ? "appAccessToken" : "adminAccessToken";
@@ -191,7 +193,10 @@ const api = async (
         return;
       }
     }
-    throw new Error(errorData.message || errorData.error || "API request failed");
+    const err: any = new Error(errorData.message || errorData.error || `API request failed (${res.status})`);
+    err.status = res.status;
+    err.data = errorData;
+    throw err;
   }
 
   return res.json();
@@ -1562,38 +1567,58 @@ export const uploadMediaFiles = async (
       xhr.send(file);
     });
 
-    const confirmed = await api('/media/confirm-s3', {
-      method: 'POST',
-      body: JSON.stringify({
-        key: data.key,
-        publicUrl: data.publicUrl,
-        folderId: data.folderId || folderId,
-        fileName: data.fileName,
-        originalName: data.originalName || file.name,
-        contentType,
-        fileSize: file.size,
-        source: source || 'media-library',
-      }),
-    });
-    completedBytes += file.size;
-    reportOverall(0, 0);
-    return confirmed?.data || confirmed;
+    return { data, contentType };
   };
 
-  // Prefer direct S3 for every file above threshold (one-by-one)
+  // Prefer direct storage uploads, falling back to the streaming API upload on transfer errors.
   const smallFiles: File[] = [];
   for (const file of optimizedFiles) {
     if (file.size >= DIRECT_S3_THRESHOLD) {
+      let directUpload: Awaited<ReturnType<typeof uploadOneDirectS3>>;
       try {
-        uploaded.push(await uploadOneDirectS3(file));
-      } catch (err: any) {
-        if (file.size >= 20 * 1024 * 1024) {
+        directUpload = await uploadOneDirectS3(file);
+      } catch (err) {
+        if (source !== 'episodes' && file.size >= 20 * 1024 * 1024) {
           throw new Error(
-            err?.message ||
+            (err as Error)?.message ||
               'Direct S3 upload failed for this large file. Check S3 bucket CORS allows PUT from https://tataiya.in, then retry.'
           );
         }
-        console.warn('Direct S3 upload failed, queueing for multipart:', err);
+        console.warn('Direct storage upload failed, falling back to the streaming API upload:', err);
+        smallFiles.push(file);
+        continue;
+      }
+
+      const { data, contentType } = directUpload;
+      try {
+        const confirmed = await api('/media/confirm-s3', {
+          method: 'POST',
+          body: JSON.stringify({
+            key: data.key,
+            publicUrl: data.publicUrl,
+            folderId: data.folderId || folderId,
+            fileName: data.fileName,
+            originalName: data.originalName || file.name,
+            contentType,
+            fileSize: file.size,
+            source: source || 'media-library',
+          }),
+        });
+        if (!confirmed?.data) {
+          throw new Error('Storage upload succeeded, but the server did not register the video.');
+        }
+        uploaded.push(confirmed.data);
+        completedBytes += file.size;
+        reportOverall(0, 0);
+      } catch (err) {
+        if (source === 'episodes') throw err;
+        if (file.size >= 20 * 1024 * 1024) {
+          throw new Error(
+            (err as Error)?.message ||
+              'Direct S3 upload failed for this large file. Check S3 bucket CORS allows PUT from https://tataiya.in, then retry.'
+          );
+        }
+        console.warn('Direct storage registration failed, queueing for multipart:', err);
         smallFiles.push(file);
       }
     } else {
@@ -2338,333 +2363,6 @@ export const useToggleMovieTrending = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['movies'] });
     },
-  });
-};
-
-// ─── TV SHOWS API ─────────────────────────────────────────────────────────────
-
-export const getTVShows = async (options?: {
-  page?: number;
-  limit?: number;
-  search?: string;
-  status?: string;
-  genre?: string;
-  category?: string;
-  language?: string;
-  featured?: boolean;
-  trending?: boolean;
-  year?: string;
-}) => {
-  const params = new URLSearchParams();
-  if (options?.page) params.append('page', options.page.toString());
-  if (options?.limit) params.append('limit', options.limit.toString());
-  if (options?.search) params.append('search', options.search);
-  if (options?.status && options.status !== 'all') params.append('status', options.status);
-  if (options?.genre && options.genre !== 'all') params.append('genre', options.genre);
-  if (options?.category && options.category !== 'all') params.append('category', options.category);
-  if (options?.language && options.language !== 'all') params.append('language', options.language);
-  if (options?.featured !== undefined) params.append('featured', options.featured.toString());
-  if (options?.trending !== undefined) params.append('trending', options.trending.toString());
-  if (options?.year) params.append('year', options.year.toString());
-  return api(`/tv-shows?${params.toString()}`);
-};
-
-export const getTVShowById = async (id: string) => {
-  return api(`/tv-shows/${id}`);
-};
-
-export const createTVShow = async (data: any) => {
-  return api('/tv-shows', {
-    method: 'POST',
-    body: JSON.stringify(data),
-  });
-};
-
-export const updateTVShow = async (id: string, data: any) => {
-  return api(`/tv-shows/${id}`, {
-    method: 'PUT',
-    body: JSON.stringify(data),
-  });
-};
-
-export const deleteTVShow = async (id: string) => {
-  return api(`/tv-shows/${id}`, { method: 'DELETE' });
-};
-
-export const updateTVShowStatus = async (id: string, data: { status: string; rejectionReason?: string }) => {
-  return api(`/tv-shows/${id}/status`, {
-    method: 'PATCH',
-    body: JSON.stringify(data),
-  });
-};
-
-export const toggleTVShowFeatured = async (id: string) => {
-  return api(`/tv-shows/${id}/featured`, { method: 'PATCH' });
-};
-
-export const toggleTVShowTrending = async (id: string) => {
-  return api(`/tv-shows/${id}/trending`, { method: 'PATCH' });
-};
-
-export const getTVShowProcessingStatus = async (id: string) => {
-  return api(`/tv-shows/${id}/processing-status`);
-};
-
-export const useTVShowProcessingStatus = (id: string, enabled = true) => {
-  return useQuery({
-    queryKey: ['tvshow-processing-status', id],
-    queryFn: () => getTVShowProcessingStatus(id),
-    enabled: enabled && !!id,
-    refetchInterval: (query) => {
-      const data = query.state.data as any;
-      const status = data?.data?.processingStatus || data?.processingStatus;
-      if (status === 'ready' || status === 'failed') return false;
-      return 5000;
-    },
-  });
-};
-
-export const useGetTVShows = (options?: {
-  page?: number;
-  limit?: number;
-  search?: string;
-  status?: string;
-  genre?: string;
-  category?: string;
-  language?: string;
-  featured?: boolean;
-  trending?: boolean;
-  year?: string;
-}) => {
-  return useQuery({
-    queryKey: ['tv-shows', options],
-    queryFn: () => getTVShows(options),
-  });
-};
-
-export const useGetTVShowById = (id: string) => {
-  return useQuery({
-    queryKey: ['tv-show', id],
-    queryFn: () => getTVShowById(id),
-    enabled: !!id,
-  });
-};
-
-export const useCreateTVShow = () => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: createTVShow,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['tv-shows'] });
-    },
-  });
-};
-
-export const useUpdateTVShow = () => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({ id, data }: { id: string; data: any }) => updateTVShow(id, data),
-    onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({ queryKey: ['tv-shows'] });
-      queryClient.invalidateQueries({ queryKey: ['tv-show', variables.id] });
-    },
-  });
-};
-
-export const useDeleteTVShow = () => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: deleteTVShow,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['tv-shows'] });
-    },
-  });
-};
-
-export const useUpdateTVShowStatus = () => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({ id, data }: { id: string; data: { status: string; rejectionReason?: string } }) =>
-      updateTVShowStatus(id, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['tv-shows'] });
-    },
-  });
-};
-
-export const useToggleTVShowFeatured = () => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: toggleTVShowFeatured,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['tv-shows'] });
-    },
-  });
-};
-
-export const useToggleTVShowTrending = () => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: toggleTVShowTrending,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['tv-shows'] });
-    },
-  });
-};
-
-// ─── EPISODES API ─────────────────────────────────────────────────────────────
-
-export const getEpisodes = async (options?: {
-  page?: number;
-  limit?: number;
-  tvShowId?: string;
-  season?: number;
-  search?: string;
-}) => {
-  const params = new URLSearchParams();
-  if (options?.page) params.append('page', options.page.toString());
-  if (options?.limit) params.append('limit', options.limit.toString());
-  if (options?.tvShowId && options.tvShowId !== 'all') params.append('tvShowId', options.tvShowId);
-  if (options?.season) params.append('season', options.season.toString());
-  if (options?.search) params.append('search', options.search);
-  return api(`/episodes?${params.toString()}`);
-};
-
-export const getEpisodeById = async (id: string) => {
-  return api(`/episodes/${id}`);
-};
-
-export const createEpisode = async (data: any) => {
-  return api('/episodes', {
-    method: 'POST',
-    body: JSON.stringify(data),
-  });
-};
-
-export const updateEpisode = async (id: string, data: any) => {
-  return api(`/episodes/${id}`, {
-    method: 'PUT',
-    body: JSON.stringify(data),
-  });
-};
-
-export const deleteEpisode = async (id: string) => {
-  return api(`/episodes/${id}`, { method: 'DELETE' });
-};
-
-export const toggleEpisodeLock = async (id: string, isLocked: boolean) => {
-  return api(`/episodes/${id}/lock`, {
-    method: 'PATCH',
-    body: JSON.stringify({ isLocked }),
-  });
-};
-
-export const useGetEpisodes = (options?: {
-  page?: number;
-  limit?: number;
-  tvShowId?: string;
-  season?: number;
-  search?: string;
-}) => {
-  return useQuery({
-    queryKey: ['episodes', options],
-    queryFn: () => getEpisodes(options),
-  });
-};
-
-export const useGetEpisodeById = (id: string) => {
-  return useQuery({
-    queryKey: ['episode', id],
-    queryFn: () => getEpisodeById(id),
-    enabled: !!id,
-  });
-};
-
-export const useCreateEpisode = () => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: createEpisode,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['episodes'] });
-      queryClient.invalidateQueries({ queryKey: ['seasons'] });
-      queryClient.invalidateQueries({ queryKey: ['tv-shows'] });
-    },
-  });
-};
-
-export const useUpdateEpisode = () => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({ id, data }: { id: string; data: any }) => updateEpisode(id, data),
-    onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({ queryKey: ['episodes'] });
-      queryClient.invalidateQueries({ queryKey: ['episode', variables.id] });
-      queryClient.invalidateQueries({ queryKey: ['seasons'] });
-      queryClient.invalidateQueries({ queryKey: ['tv-shows'] });
-    },
-  });
-};
-
-export const useDeleteEpisode = () => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: deleteEpisode,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['episodes'] });
-      queryClient.invalidateQueries({ queryKey: ['seasons'] });
-      queryClient.invalidateQueries({ queryKey: ['tv-shows'] });
-    },
-  });
-};
-
-export const useToggleEpisodeLock = () => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({ id, isLocked }: { id: string; isLocked: boolean }) =>
-      toggleEpisodeLock(id, isLocked),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['episodes'] });
-    },
-  });
-};
-
-// ─── SEASONS API (Aggregated from Episodes) ──────────────────────────────────
-
-export const getSeasons = async (options?: { tvShowId?: string }) => {
-  const params = new URLSearchParams();
-  if (options?.tvShowId && options.tvShowId !== 'all') params.append('tvShowId', options.tvShowId);
-  return api(`/episodes/seasons?${params.toString()}`);
-};
-
-export const useGetSeasons = (options?: { tvShowId?: string }) => {
-  return useQuery({
-    queryKey: ['seasons', options],
-    queryFn: () => getSeasons(options),
-  });
-};
-
-// ─── WATCH / PLAYBACK API ─────────────────────────────────────────────────────
-
-export const getWatchContent = async (
-  contentId: string,
-  options?: { season?: number; episode?: number; episodeId?: string }
-) => {
-  const params = new URLSearchParams();
-  if (options?.season) params.append('season', options.season.toString());
-  if (options?.episode) params.append('episode', options.episode.toString());
-  if (options?.episodeId) params.append('episodeId', options.episodeId);
-  const q = params.toString();
-  return api(`/watch/${contentId}${q ? `?${q}` : ''}`);
-};
-
-export const useGetWatchContent = (
-  contentId?: string,
-  options?: { season?: number; episode?: number; episodeId?: string }
-) => {
-  return useQuery({
-    queryKey: ['watch-content', contentId, options?.season, options?.episode, options?.episodeId],
-    queryFn: () => getWatchContent(contentId!, options),
-    enabled: !!contentId,
   });
 };
 
@@ -4383,5 +4081,355 @@ export const useGetAppNotifications = () => {
       return res?.data || [];
     },
     staleTime: 60 * 1000,
+  });
+};
+
+// ─── TV Shows API ──────────────────────────────────────────────────────────────
+
+export const getTVShows = async (options?: {
+  page?: number;
+  limit?: number;
+  search?: string;
+  status?: string;
+  genre?: string;
+  category?: string;
+  language?: string;
+  featured?: string;
+  trending?: string;
+  year?: string;
+  contentType?: string;
+}) => {
+  const params = new URLSearchParams();
+  if (options?.page) params.append('page', options.page.toString());
+  if (options?.limit) params.append('limit', options.limit.toString());
+  if (options?.search) params.append('search', options.search);
+  if (options?.status) params.append('status', options.status);
+  if (options?.genre) params.append('genre', options.genre);
+  if (options?.category) params.append('category', options.category);
+  if (options?.language) params.append('language', options.language);
+  if (options?.featured) params.append('featured', options.featured);
+  if (options?.trending) params.append('trending', options.trending);
+  if (options?.year) params.append('year', options.year);
+  if (options?.contentType) params.append('contentType', options.contentType);
+  return api(`/tv-shows?${params.toString()}`);
+};
+
+export const getTVShowById = async (id: string) => {
+  return api(`/tv-shows/${id}`);
+};
+
+export const createTVShow = async (data: any) => {
+  return api('/tv-shows', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+};
+
+export const updateTVShow = async (id: string, data: any) => {
+  return api(`/tv-shows/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+};
+
+export const deleteTVShow = async (id: string) => {
+  return api(`/tv-shows/${id}`, { method: 'DELETE' });
+};
+
+export const updateTVShowStatus = async (id: string, data: { status: string; rejectionReason?: string }) => {
+  return api(`/tv-shows/${id}/status`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+};
+
+export const toggleTVShowFeatured = async (id: string) => {
+  return api(`/tv-shows/${id}/featured`, { method: 'PATCH' });
+};
+
+export const toggleTVShowTrending = async (id: string) => {
+  return api(`/tv-shows/${id}/trending`, { method: 'PATCH' });
+};
+
+export const getTVShowProcessingStatus = async (id: string) => {
+  return api(`/tv-shows/${id}/processing-status`);
+};
+
+export const useTVShowProcessingStatus = (id: string, enabled = true) => {
+  return useQuery({
+    queryKey: ['tvshow-processing-status', id],
+    queryFn: () => getTVShowProcessingStatus(id),
+    enabled: !!id && enabled,
+    refetchInterval: (data: any) => {
+      const status = data?.data?.processingStatus;
+      if (status === 'ready' || status === 'failed') return false;
+      return 5000;
+    },
+    refetchIntervalInBackground: false,
+  });
+};
+
+export const useGetTVShows = (options?: {
+  page?: number;
+  limit?: number;
+  search?: string;
+  status?: string;
+  genre?: string;
+  category?: string;
+  language?: string;
+  featured?: string;
+  trending?: string;
+  year?: string;
+  contentType?: string;
+}) => {
+  return useQuery({
+    queryKey: ['tv-shows', options],
+    queryFn: () => getTVShows(options),
+  });
+};
+
+export const useGetTVShowById = (id: string) => {
+  return useQuery({
+    queryKey: ['tv-show', id],
+    queryFn: () => getTVShowById(id),
+    enabled: !!id,
+  });
+};
+
+export const useCreateTVShow = () => {
+  const queryClient = useQueryClient();
+  return useMutation<any, Error, any>({
+    mutationFn: createTVShow,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['tv-shows'] });
+    },
+  });
+};
+
+export const useUpdateTVShow = () => {
+  const queryClient = useQueryClient();
+  return useMutation<any, Error, { id: string; data: any }>({
+    mutationFn: ({ id, data }) => updateTVShow(id, data),
+    onSuccess: async (_, variables) => {
+      await queryClient.invalidateQueries({ queryKey: ['tv-shows'] });
+      await queryClient.invalidateQueries({ queryKey: ['tv-show', variables.id] });
+    },
+  });
+};
+
+export const useDeleteTVShow = () => {
+  const queryClient = useQueryClient();
+  return useMutation<any, Error, string>({
+    mutationFn: deleteTVShow,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['tv-shows'] });
+    },
+  });
+};
+
+export const useUpdateTVShowStatus = () => {
+  const queryClient = useQueryClient();
+  return useMutation<any, Error, { id: string; data: { status: string; rejectionReason?: string } }>({
+    mutationFn: ({ id, data }) => updateTVShowStatus(id, data),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['tv-shows'] });
+    },
+  });
+};
+
+export const useToggleTVShowFeatured = () => {
+  const queryClient = useQueryClient();
+  return useMutation<any, Error, string>({
+    mutationFn: toggleTVShowFeatured,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tv-shows'] });
+    },
+  });
+};
+
+export const useToggleTVShowTrending = () => {
+  const queryClient = useQueryClient();
+  return useMutation<any, Error, string>({
+    mutationFn: toggleTVShowTrending,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tv-shows'] });
+    },
+  });
+};
+
+// ─── Episodes API ──────────────────────────────────────────────────────────────
+
+export const getEpisodeList = async (options: any = {}) => {
+  const params = new URLSearchParams();
+  if (options?.page) params.set('page', options.page.toString());
+  if (options?.limit) params.set('limit', options.limit.toString());
+  if (options?.tvShowId) params.set('tvShowId', options.tvShowId);
+  if (options?.season) params.set('season', options.season.toString());
+  if (options?.search) params.set('search', options.search);
+  return api(`/episodes?${params.toString()}`);
+};
+
+export const getSeasonList = async (options: any = {}) => {
+  const params = new URLSearchParams();
+  if (options?.tvShowId) params.set('tvShowId', options.tvShowId);
+  return api(`/episodes/seasons?${params.toString()}`);
+};
+
+export const getEpisodeById = async (id: string) => {
+  return api(`/episodes/${id}`);
+};
+
+export const createEpisode = async (data: any) => {
+  return api('/episodes', {
+    method: 'POST',
+    body: JSON.stringify(data),
+    headers: { 'Content-Type': 'application/json' },
+  });
+};
+
+export const updateEpisode = async (id: string, data: any) => {
+  return api(`/episodes/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+    headers: { 'Content-Type': 'application/json' },
+  });
+};
+
+export const deleteEpisode = async (id: string) => {
+  return api(`/episodes/${id}`, { method: 'DELETE' });
+};
+
+export const toggleEpisodeLock = async (id: string, isLocked: boolean) => {
+  return api(`/episodes/${id}/lock`, {
+    method: 'PATCH',
+    body: JSON.stringify({ isLocked }),
+    headers: { 'Content-Type': 'application/json' },
+  });
+};
+
+export const useGetEpisodeList = (options: any = {}) => {
+  return useQuery({
+    queryKey: ['episode-list', options],
+    queryFn: () => getEpisodeList(options),
+  });
+};
+
+export const useGetSeasonList = (options: any = {}) => {
+  return useQuery({
+    queryKey: ['season-list', options],
+    queryFn: () => getSeasonList(options),
+  });
+};
+
+export const useGetEpisodeById = (id: string) => {
+  return useQuery({
+    queryKey: ['episode', id],
+    queryFn: async () => {
+      const result = await getEpisodeById(id);
+      return result.data;
+    },
+    enabled: !!id,
+  });
+};
+
+export const useCreateEpisode = () => {
+  const queryClient = useQueryClient();
+  return useMutation<any, Error, any>({
+    mutationFn: (data: any) => createEpisode(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['episode-list'] });
+      queryClient.invalidateQueries({ queryKey: ['season-list'] });
+      queryClient.invalidateQueries({ queryKey: ['tv-shows'] });
+      queryClient.invalidateQueries({ queryKey: ['app-series'] });
+    },
+  });
+};
+
+export const useUpdateEpisode = () => {
+  const queryClient = useQueryClient();
+  return useMutation<any, Error, any>({
+    mutationFn: ({ id, data }: { id: string; data: any }) => updateEpisode(id, data),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['episode-list'] });
+      queryClient.invalidateQueries({ queryKey: ['episode', variables.id] });
+      queryClient.invalidateQueries({ queryKey: ['season-list'] });
+      queryClient.invalidateQueries({ queryKey: ['tv-shows'] });
+      queryClient.invalidateQueries({ queryKey: ['app-series'] });
+    },
+  });
+};
+
+export const useDeleteEpisode = () => {
+  const queryClient = useQueryClient();
+  return useMutation<any, Error, any>({
+    mutationFn: (id: string) => deleteEpisode(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['episode-list'] });
+      queryClient.invalidateQueries({ queryKey: ['season-list'] });
+      queryClient.invalidateQueries({ queryKey: ['tv-shows'] });
+      queryClient.invalidateQueries({ queryKey: ['app-series'] });
+    },
+  });
+};
+
+export const useToggleEpisodeLock = () => {
+  const queryClient = useQueryClient();
+  return useMutation<any, Error, any>({
+    mutationFn: ({ id, isLocked }: { id: string; isLocked: boolean }) =>
+      toggleEpisodeLock(id, isLocked),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['episode-list'] });
+    },
+  });
+};
+
+export const getAppSeriesDetail = async (id: string) => {
+  return api(`/app/series/${id}`);
+};
+
+export const useGetAppSeriesDetail = (id: string) => {
+  return useQuery({
+    queryKey: ['app-series', id],
+    queryFn: async () => {
+      const res = await getAppSeriesDetail(id);
+      return res.data;
+    },
+    enabled: !!id,
+  });
+};
+
+// ─── Watch & Web Detail API ───────────────────────────────────────────────────
+
+export const getWatchData = async (
+  contentId: string,
+  options?: { episodeId?: string; season?: number; episode?: number }
+) => {
+  const params = new URLSearchParams();
+  if (options?.episodeId) params.set('episodeId', options.episodeId);
+  if (options?.season) params.set('season', options.season.toString());
+  if (options?.episode) params.set('episode', options.episode.toString());
+  const query = params.toString();
+  return api(`/watch/${contentId}${query ? `?${query}` : ''}`);
+};
+
+export const useGetWatchData = (
+  contentId: string,
+  options?: { episodeId?: string; season?: number; episode?: number }
+) => {
+  const token =
+    typeof window !== 'undefined'
+      ? localStorage.getItem('appAccessToken') || localStorage.getItem('accessToken')
+      : null;
+  return useQuery({
+    queryKey: ['watch-data', contentId, options, token],
+    queryFn: async () => {
+      const res = await getWatchData(contentId, options);
+      return res?.data;
+    },
+    refetchInterval: (query) => {
+      const status = query.state.data?.currentVideo?.processingStatus;
+      return status === 'queued' || status === 'processing' ? 5000 : false;
+    },
+    enabled: !!contentId,
   });
 };

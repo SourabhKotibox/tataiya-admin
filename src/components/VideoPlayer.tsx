@@ -315,6 +315,14 @@ export default function VideoPlayer({
           ref={videoRef}
           poster={poster}
           className="w-full h-full object-contain"
+          onError={() => {
+            const mediaError = videoRef.current?.error;
+            console.error("Video playback error", {
+              code: mediaError?.code,
+              message: mediaError?.message,
+              src: currentSrc,
+            });
+          }}
           onLoadedMetadata={() => {
             const v = videoRef.current;
             if (!v) return;

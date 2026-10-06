@@ -22,7 +22,7 @@ import { WebsiteReviews } from "@/components/WebsiteReviews";
 import { LandscapeCard, PortraitCard } from "@/components/ContentCard";
 import Hls from "hls.js";
 import SubscriptionPlansModal from "@/components/SubscriptionPlansModal";
-import { getAdminTvShows } from "@/data/tvShows";
+
 
 /* ─── TYPES ─── */
 interface ContentItem {
@@ -451,6 +451,11 @@ function Hero({ activeTab, onPlay, onSubscribeClick, isSubscribed }: { activeTab
       </div>
     );
   }
+
+  if (!item) {
+    return null;
+  }
+
   const planRequired = String(item?.planRequired || "free").toLowerCase().trim();
   const reqKey = planRequired.includes("vip")
     ? "vip"
@@ -1125,42 +1130,50 @@ function HomeTab({ onPlay, onSubscribeClick, isSubscribed, user, onSignIn }: {
   const cw = watchHistoryData?.items || [];
   const webSections = (sectionsData?.data || []).sort((a: any, b: any) => (a.position || 0) - (b.position || 0));
   const movies = allContentRes?.movies || [];
+  const tvShowsList: any[] = allContentRes?.tvShows || [];
 
   if (isHomeLoading || isSectionsLoading || isAllContentLoading || !homeData) return <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-amber-400" /></div>;
 
   return (
     <div className="pb-20 space-y-6 pt-6 sm:pt-8 relative z-10 bg-[#030306]">
       {/* Featured TV Shows Showcase */}
-      {getAdminTvShows().length > 0 && (
+      {tvShowsList.length > 0 && (
         <section className="px-3 sm:px-6 lg:px-8">
           <SectionHeader
             title="TV Shows"
             icon={<Tv className="w-4 h-4 text-amber-400" />}
             onSeeAll={() => setLocation("/tv-shows")}
-            count={getAdminTvShows().length}
+            count={tvShowsList.length}
           />
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2.5 sm:gap-4 pt-2">
-            {getAdminTvShows().slice(0, 6).map((show) => (
-              <div
-                key={show.id}
-                onClick={() => setLocation(`/tv-shows/${show.id}`)}
-                className="group relative cursor-pointer rounded-xl overflow-hidden bg-zinc-900 border border-white/5 hover:border-amber-400/50 transition-all duration-300 hover:scale-[1.03] shadow-lg"
-              >
-                <div className="aspect-[2/3] w-full overflow-hidden">
-                  <img
-                    src={show.poster}
-                    alt={show.title}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                    onError={(e) => { (e.target as HTMLImageElement).style.backgroundColor = "#111"; }}
-                  />
+            {tvShowsList.slice(0, 6).map((show: any) => {
+              const showId = show._id || show.id;
+              const posterUrl = getImageUrl(show.poster || show.thumbnail);
+              const genreName = Array.isArray(show.genres)
+                ? (typeof show.genres[0] === "string" ? show.genres[0] : show.genres[0]?.name || "Drama")
+                : (show.genre || "Drama");
+              return (
+                <div
+                  key={showId}
+                  onClick={() => setLocation(`/tv-shows/${showId}`)}
+                  className="group relative cursor-pointer rounded-xl overflow-hidden bg-zinc-900 border border-white/5 hover:border-amber-400/50 transition-all duration-300 hover:scale-[1.03] shadow-lg"
+                >
+                  <div className="aspect-[2/3] w-full overflow-hidden">
+                    <img
+                      src={posterUrl}
+                      alt={show.title || "TV Show"}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                      onError={(e) => { (e.target as HTMLImageElement).style.backgroundColor = "#111"; }}
+                    />
+                  </div>
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent pointer-events-none" />
+                  <div className="absolute bottom-0 left-0 right-0 p-2.5">
+                    <p className="text-white font-bold text-xs truncate leading-tight">{show.title}</p>
+                    <p className="text-amber-400 text-[10px] font-semibold mt-0.5">{genreName} • {show.year || 2026}</p>
+                  </div>
                 </div>
-                <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent pointer-events-none" />
-                <div className="absolute bottom-0 left-0 right-0 p-2.5">
-                  <p className="text-white font-bold text-xs truncate leading-tight">{show.title}</p>
-                  <p className="text-amber-400 text-[10px] font-semibold mt-0.5">{(show.genres && show.genres[0]) || "Drama"} • {show.year}</p>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </section>
       )}

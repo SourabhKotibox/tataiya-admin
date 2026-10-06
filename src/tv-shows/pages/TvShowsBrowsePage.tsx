@@ -10,14 +10,39 @@ import SubscriptionPlansModal from "@/components/SubscriptionPlansModal";
 import {
   TV_SHOW_GENRES,
   TV_SHOW_SORT_OPTIONS,
-  getTvShows,
-  getFeaturedTvShow,
   getContinueWatchingShows,
   ContinueWatchingRecord,
 } from "../data/tvShows";
 import { TvShow } from "../types";
 import { TvShowCard } from "../components/TvShowCard";
 import { TvShowBanner } from "../components/TvShowBanner";
+import { useGetWebAllContent, getImageUrl } from "@/lib/api-client";
+
+function normalizeTvShow(s: any): TvShow {
+  return {
+    id: s._id || s.id,
+    title: s.title || "Untitled",
+    description: s.description || s.overview || "",
+    poster: getImageUrl(s.poster || s.thumbnail || "https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?w=600&auto=format&fit=crop&q=80"),
+    backdrop: getImageUrl(s.backdrop || s.banner || s.poster || "https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?w=1200&auto=format&fit=crop&q=80"),
+    imdbRating: s.imdbRating ? String(s.imdbRating) : (s.rating ? String(s.rating) : "8.5"),
+    ageRating: s.ageRating || s.maturityRating || "16+",
+    year: s.releaseDate ? String(new Date(s.releaseDate).getFullYear()) : String(s.year || 2026),
+    genres: Array.isArray(s.genres)
+      ? s.genres.map((g: any) => (typeof g === "object" ? g.name : g))
+      : (s.genre ? [s.genre] : ["Drama"]),
+    featured: Boolean(s.featured || s.isFeatured),
+    isPremium: Boolean(s.isPremium ?? true),
+    badge: s.badge || (s.trending ? "TRENDING" : s.featured ? "TOP" : undefined),
+    seasonsCount: s.seasonsCount ?? s.totalSeasons ?? 1,
+    episodesCount: s.episodesCount ?? s.totalEpisodes ?? 1,
+    seasons: Array.isArray(s.seasons) ? s.seasons : [],
+    cast: Array.isArray(s.cast) ? s.cast : [],
+    releaseDate: s.releaseDate,
+    director: s.director,
+    language: s.language || "Hindi",
+  };
+}
 
 export default function TvShowsBrowsePage() {
   const [, setLocation] = useLocation();
@@ -31,6 +56,8 @@ export default function TvShowsBrowsePage() {
   const [plansModalOpen, setPlansModalOpen] = useState(false);
   const [user, setUser] = useState<any>(null);
   const [continueWatchingList, setContinueWatchingList] = useState<ContinueWatchingRecord[]>([]);
+
+  const { data: webContentData } = useGetWebAllContent();
 
   // Load user from localStorage
   useEffect(() => {
@@ -59,19 +86,37 @@ export default function TvShowsBrowsePage() {
     return () => window.removeEventListener("tvshows-continue-updated", handleContinueUpdate);
   }, []);
 
-  // Featured TV Show
-  const featuredShow = useMemo(() => getFeaturedTvShow(), []);
-
-  // Filtered TV Shows with pagination
-  const { items: shows, total, totalPages } = useMemo(() => {
-    return getTvShows({
-      genre: activeGenre,
-      search: searchTerm,
-      sortBy,
-      page,
-      limit: 12,
+  // Filtered TV Shows with pagination & Featured Show
+  const { shows, total, totalPages, featuredShow } = useMemo(() => {
+    const rawList: any[] = Array.isArray(webContentData?.tvShows) ? [...webContentData.tvShows] : [];
+    const query = searchTerm.trim().toLowerCase();
+    const filtered = rawList.filter((show) => {
+      const genres = Array.isArray(show.genres)
+        ? show.genres.map((genre: any) => typeof genre === "object" ? genre.name : genre)
+        : [];
+      const matchesGenre = activeGenre === "All" || genres.some((genre: string) => genre?.toLowerCase() === activeGenre.toLowerCase());
+      const matchesSearch = !query || `${show.title || ""} ${show.description || ""} ${genres.join(" ")}`.toLowerCase().includes(query);
+      return matchesGenre && matchesSearch;
     });
-  }, [activeGenre, searchTerm, sortBy, page]);
+
+    filtered.sort((a, b) => {
+      if (sortBy === "rated") return Number(b.imdbRating || b.rating || 0) - Number(a.imdbRating || a.rating || 0);
+      if (sortBy === "new") return new Date(b.releaseDate || b.createdAt || 0).getTime() - new Date(a.releaseDate || a.createdAt || 0).getTime();
+      if (sortBy === "az") return String(a.title || "").localeCompare(String(b.title || ""));
+      return Number(b.views || 0) - Number(a.views || 0);
+    });
+
+    const total = filtered.length;
+    const totalPages = Math.max(1, Math.ceil(total / 12));
+    const normalized = filtered.slice((page - 1) * 12, page * 12).map(normalizeTvShow);
+    const featured = normalized.find((s) => s.featured) || normalized[0] || null;
+    return {
+      shows: normalized,
+      total,
+      totalPages,
+      featuredShow: featured,
+    };
+  }, [webContentData, activeGenre, searchTerm, sortBy, page]);
 
   const handleCardClick = (show: TvShow) => {
     setLocation(`/tv-shows/${show.id}`);
@@ -84,14 +129,14 @@ export default function TvShowsBrowsePage() {
         setPlansModalOpen(true);
         return;
       }
-      setLocation(`/tv-shows/${show.id}/watch/${firstEp.episodeNumber}`);
+      setLocation(`/tv-shows/${show.id}/watch/${firstEp.episodeNumber}?season=${firstEp.season}`);
     } else {
       setLocation(`/tv-shows/${show.id}`);
     }
   };
 
   const handleResumeWatching = (record: ContinueWatchingRecord) => {
-    setLocation(`/tv-shows/${record.showId}/watch/${record.episodeNumber}`);
+    setLocation(`/tv-shows/${record.showId}/watch/${record.episodeNumber}?season=${record.seasonNumber}`);
   };
 
   const handleSignOut = () => {

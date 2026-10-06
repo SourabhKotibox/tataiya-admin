@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useParams, useLocation } from "wouter";
 import { ChevronLeft, Save, Tv, Sparkles, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -11,10 +11,13 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import {
-  getAdminTvShowById,
-  saveAdminTvShow,
-  AdminTvShow
-} from "@/data/tvShows";
+  useGetTVShowById,
+  useCreateTVShow,
+  useUpdateTVShow,
+  useGetGenres,
+  useGetLanguagesList,
+  getImageUrl,
+} from "@/lib/api-client";
 
 const AVAILABLE_GENRES = [
   "Action", "Drama", "Crime", "Sci-Fi", "Comedy",
@@ -27,6 +30,30 @@ export default function TvShowForm() {
   const isEdit = Boolean(id);
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+
+  const { data: serverShowData } = useGetTVShowById(id || "");
+  const createShowMutation = useCreateTVShow();
+  const updateShowMutation = useUpdateTVShow();
+  const { data: genresData } = useGetGenres({ page: 1, limit: 100, admin: true });
+  const { data: languagesData } = useGetLanguagesList();
+
+  const genresList: any[] = useMemo(() => {
+    return (genresData as any)?.data || [];
+  }, [genresData]);
+
+  const languagesList: any[] = useMemo(() => {
+    return (languagesData as any)?.data || [];
+  }, [languagesData]);
+
+  const dynamicGenres = useMemo(() => {
+    if (genresList.length > 0) {
+      return genresList.map((g: any) => ({
+        id: g._id || g.id || g.name,
+        name: g.name || String(g),
+      }));
+    }
+    return AVAILABLE_GENRES.map((name) => ({ id: name, name }));
+  }, [genresList]);
 
   const [title, setTitle] = useState("");
   const [shortDescription, setShortDescription] = useState("");
@@ -46,75 +73,113 @@ export default function TvShowForm() {
   const [director, setDirector] = useState("");
 
   useEffect(() => {
-    if (id) {
-      const existing = getAdminTvShowById(id);
-      if (existing) {
-        setTitle(existing.title);
-        setShortDescription(existing.shortDescription || "");
-        setFullDescription(existing.fullDescription || "");
-        setPoster(existing.poster || "");
-        setBackdrop(existing.backdrop || "");
-        setGenres(existing.genres || ["Drama"]);
-        setLanguage(existing.language || "Hindi");
-        setYear(existing.year || "2025");
-        setRating(existing.rating || "8.5");
-        setAgeRating(existing.ageRating || "16+");
-        setContentType(existing.contentType || "series");
-        setTagsInput((existing.tags || []).join(", "));
-        setIsPremium(Boolean(existing.isPremium));
-        setFeatured(Boolean(existing.featured));
-        setStatus(existing.status || "published");
-        setDirector(existing.director || "");
+    if (serverShowData?.data || serverShowData) {
+      const existing = serverShowData.data || serverShowData;
+      setTitle(existing.title || "");
+      setShortDescription(existing.shortDescription || "");
+      setFullDescription(existing.description || existing.fullDescription || "");
+      setPoster(existing.poster || existing.thumbnail || "");
+      setBackdrop(existing.bannerImage || existing.backdrop || "");
+      if (Array.isArray(existing.genres) && existing.genres.length > 0) {
+        setGenres(existing.genres.map((g: any) => (typeof g === "string" ? g : g?._id || g?.name || "")).filter(Boolean));
       }
+      if (Array.isArray(existing.languages) && existing.languages.length > 0) {
+        const firstLang = existing.languages[0];
+        setLanguage(typeof firstLang === "string" ? firstLang : firstLang?._id || firstLang?.name || "Hindi");
+      } else if (existing.language) {
+        setLanguage(existing.language);
+      }
+      setYear(existing.year ? String(existing.year) : "2026");
+      setRating(existing.rating ? String(existing.rating) : "8.5");
+      setAgeRating(existing.ageRating ? `${existing.ageRating}+` : "16+");
+      setContentType(existing.contentType === "drama" || existing.contentType === "short-drama" ? "short-drama" : "series");
+      setTagsInput(Array.isArray(existing.tags) ? existing.tags.join(", ") : "");
+      setIsPremium((existing.planRequired && existing.planRequired !== "free") || Boolean(existing.isPremium));
+      setFeatured(Boolean(existing.featured));
+      setStatus(existing.status === "draft" ? "draft" : "published");
+      setDirector(existing.producer || existing.director || "");
     }
-  }, [id]);
+  }, [serverShowData]);
 
-  const toggleGenre = (g: string) => {
-    setGenres((prev) =>
-      prev.includes(g) ? prev.filter((item) => item !== g) : [...prev, g]
-    );
+  const toggleGenre = (val: string) => {
+    setGenres((prev) => {
+      const matchItem = dynamicGenres.find((dg) => dg.id === val || dg.name.toLowerCase() === val.toLowerCase());
+      const targetId = matchItem?.id || val;
+      const targetName = matchItem?.name || val;
+      const alreadySelected = prev.some((p) => p === targetId || p.toLowerCase() === targetName.toLowerCase());
+      if (alreadySelected) {
+        return prev.filter((p) => p !== targetId && p.toLowerCase() !== targetName.toLowerCase());
+      } else {
+        return [...prev, targetId];
+      }
+    });
   };
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) {
       toast({ title: "Validation Error", description: "Title is required.", variant: "destructive" });
       return;
     }
 
-    const showId = id || `show-${Date.now()}`;
     const tags = tagsInput
       .split(",")
       .map((t) => t.trim())
       .filter(Boolean);
 
-    const savedShow: AdminTvShow = {
-      id: showId,
+    // Map genres to ObjectIds if available
+    const resolvedGenres = genres.map((g) => {
+      const match = genresList.find(
+        (item: any) => item._id === g || item.name?.toLowerCase() === g.toLowerCase()
+      );
+      return match ? match._id : g;
+    });
+
+    // Map language to ObjectId if available
+    const matchLang = languagesList.find(
+      (l: any) => l._id === language || l.name?.toLowerCase() === language.toLowerCase()
+    );
+    const resolvedLanguage = matchLang ? matchLang._id : language;
+
+    const payload: any = {
       title: title.trim(),
+      description: fullDescription.trim() || shortDescription.trim(),
       shortDescription: shortDescription.trim(),
-      fullDescription: fullDescription.trim(),
-      poster: poster.trim() || "https://images.unsplash.com/photo-1574375927938-d5a98e8ffe85?w=600&auto=format&fit=crop&q=80",
-      backdrop: backdrop.trim() || "https://images.unsplash.com/photo-1509198397868-475647b2a1e5?w=1600&auto=format&fit=crop&q=85",
-      genres: genres.length > 0 ? genres : ["Drama"],
-      language: language.trim() || "Hindi",
-      year: year.trim() || "2026",
+      thumbnail: poster.trim() || undefined,
+      poster: poster.trim() || undefined,
+      bannerImage: backdrop.trim() || undefined,
+      genres: resolvedGenres,
+      languages: [resolvedLanguage],
+      year: parseInt(year.trim(), 10) || new Date().getFullYear(),
       rating: rating.trim() || "8.0",
-      ageRating: ageRating.trim() || "13+",
-      contentType,
+      ageRating: parseInt(ageRating.replace(/\D/g, "") || "16", 10),
+      contentType: contentType === "short-drama" ? "short-drama" : "series",
       tags,
-      isPremium,
+      planRequired: isPremium ? "vip" : "free",
       featured,
       status,
-      createdAt: isEdit ? (getAdminTvShowById(showId)?.createdAt || "2025-01-01") : new Date().toISOString().split("T")[0],
       director: director.trim(),
+      producer: director.trim(),
     };
 
-    saveAdminTvShow(savedShow);
-    toast({
-      title: isEdit ? "TV Show Updated" : "TV Show Created",
-      description: `"${savedShow.title}" has been saved successfully.`,
-    });
-    setLocation("/admin/tv-shows");
+    try {
+      if (isEdit && id) {
+        await updateShowMutation.mutateAsync({ id, data: payload });
+      } else {
+        await createShowMutation.mutateAsync(payload);
+      }
+      toast({
+        title: isEdit ? "TV Show Updated" : "TV Show Created",
+        description: `"${payload.title}" has been saved successfully.`,
+      });
+      setLocation("/admin/tv-shows");
+    } catch (err: any) {
+      toast({
+        title: "Save Failed",
+        description: err?.message || "Could not save TV Show.",
+        variant: "destructive",
+      });
+    }
   };
 
   return (
@@ -181,13 +246,23 @@ export default function TvShowForm() {
                 <Label className="text-xs font-bold mb-1.5 block">Language</Label>
                 <Select value={language} onValueChange={setLanguage}>
                   <SelectTrigger className="h-10 text-xs">
-                    <SelectValue />
+                    <SelectValue placeholder="Select Language" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="Hindi">Hindi</SelectItem>
-                    <SelectItem value="English">English</SelectItem>
-                    <SelectItem value="Tamil">Tamil</SelectItem>
-                    <SelectItem value="Telugu">Telugu</SelectItem>
+                    {languagesList.length > 0 ? (
+                      languagesList.map((lang: any) => (
+                        <SelectItem key={lang._id || lang.name} value={lang._id || lang.name}>
+                          {lang.name}
+                        </SelectItem>
+                      ))
+                    ) : (
+                      <>
+                        <SelectItem value="Hindi">Hindi</SelectItem>
+                        <SelectItem value="English">English</SelectItem>
+                        <SelectItem value="Tamil">Tamil</SelectItem>
+                        <SelectItem value="Telugu">Telugu</SelectItem>
+                      </>
+                    )}
                   </SelectContent>
                 </Select>
               </div>
@@ -259,20 +334,22 @@ export default function TvShowForm() {
             <div>
               <Label className="text-xs font-bold mb-2 block">Genres (Select multiple)</Label>
               <div className="flex flex-wrap gap-2">
-                {AVAILABLE_GENRES.map((g) => {
-                  const selected = genres.includes(g);
+                {dynamicGenres.map((g) => {
+                  const selected = genres.some(
+                    (item) => item === g.id || item.toLowerCase() === g.name.toLowerCase()
+                  );
                   return (
                     <button
-                      key={g}
+                      key={g.id}
                       type="button"
-                      onClick={() => toggleGenre(g)}
+                      onClick={() => toggleGenre(g.id)}
                       className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer ${
                         selected
                           ? "bg-primary text-primary-foreground shadow-sm"
                           : "bg-muted text-muted-foreground hover:text-foreground"
                       }`}
                     >
-                      {g}
+                      {g.name}
                     </button>
                   );
                 })}

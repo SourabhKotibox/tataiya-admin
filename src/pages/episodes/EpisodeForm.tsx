@@ -11,10 +11,14 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import MediaPicker from "@/components/MediaPicker";
-import { getImageUrl } from "@/lib/api-client";
-import { getAdminEpisodeById, saveAdminEpisode, AdminEpisode } from "@/data/episodes";
-import { getAdminTvShows, getAdminTvShowById } from "@/data/tvShows";
-import { getAdminSeasons, getAdminSeasonsByShowId } from "@/data/seasons";
+import {
+  useGetEpisodeById,
+  useGetTVShows,
+  useGetSeasonList,
+  useCreateEpisode,
+  useUpdateEpisode,
+  getImageUrl,
+} from "@/lib/api-client";
 
 export default function EpisodeForm() {
   const params = useParams<{ id?: string }>();
@@ -23,10 +27,25 @@ export default function EpisodeForm() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
 
-  const tvShows = getAdminTvShows();
-  const allSeasons = getAdminSeasons();
+  const { data: serverShowsData } = useGetTVShows({ limit: 100 });
+  const { data: existingEpisodeData } = useGetEpisodeById(id || "");
+  const createEpisodeMutation = useCreateEpisode();
+  const updateEpisodeMutation = useUpdateEpisode();
 
-  const [tvShowId, setTvShowId] = useState<string>(tvShows[0]?.id || "");
+  const tvShows = useMemo(() => {
+    const raw: any[] = serverShowsData?.data || [];
+    if (raw.length > 0) {
+      return raw.map((s) => ({
+        id: s._id || s.id,
+        title: s.title || "Untitled",
+        poster: getImageUrl(s.poster || s.thumbnail),
+        backdrop: getImageUrl(s.backdrop || s.banner),
+      }));
+    }
+    return [];
+  }, [serverShowsData]);
+
+  const [tvShowId, setTvShowId] = useState<string>("");
   const [seasonId, setSeasonId] = useState<string>("");
   const [episodeNumber, setEpisodeNumber] = useState<number>(1);
   const [title, setTitle] = useState("");
@@ -37,17 +56,33 @@ export default function EpisodeForm() {
   const [videoUrl, setVideoUrl] = useState("");
   const [videoFilePath, setVideoFilePath] = useState("");
   const [videoPickerOpen, setVideoPickerOpen] = useState(false);
+  const [videoUploadPending, setVideoUploadPending] = useState(false);
   const [durationMinutes, setDurationMinutes] = useState<number>(45);
   const [releaseDate, setReleaseDate] = useState(new Date().toISOString().split("T")[0]);
   const [isFree, setIsFree] = useState(true);
   const [status, setStatus] = useState<"published" | "draft">("published");
   const [subtitleUrl, setSubtitleUrl] = useState("");
 
+  const { data: serverSeasonsData } = useGetSeasonList(tvShowId ? { tvShowId } : undefined);
+
+  useEffect(() => {
+    if (!tvShowId && tvShows.length > 0) {
+      setTvShowId(tvShows[0].id);
+    }
+  }, [tvShows, tvShowId]);
+
   // Seasons belonging to currently selected TV Show
   const availableSeasons = useMemo(() => {
-    if (!tvShowId) return [];
-    return getAdminSeasonsByShowId(tvShowId);
-  }, [tvShowId]);
+    const rawList: any[] = serverSeasonsData?.data || [];
+    if (rawList.length > 0) {
+      return rawList.map((s) => ({
+        id: s.seasonId || `${s.tvShowId?._id || s.tvShowId}-${s.season}`,
+        seasonNumber: s.season,
+        title: s.title || `Season ${s.season}`,
+      }));
+    }
+    return [{ id: "season-1", seasonNumber: 1, title: "Season 1" }];
+  }, [serverSeasonsData, tvShowId]);
 
   // Set default seasonId when availableSeasons changes
   useEffect(() => {
@@ -64,86 +99,130 @@ export default function EpisodeForm() {
   // Load existing episode if editing
   useEffect(() => {
     if (id) {
-      const existing = getAdminEpisodeById(id);
+      const existing = existingEpisodeData;
       if (existing) {
-        setTvShowId(existing.tvShowId);
-        setSeasonId(existing.seasonId);
-        setEpisodeNumber(existing.episodeNumber);
-        setTitle(existing.title);
-        setShortDescription(existing.shortDescription || "");
-        setFullDescription(existing.fullDescription || "");
-        setThumbnail(existing.thumbnail || "");
-        setVideoUrl(existing.videoUrl || "");
-        setVideoFilePath(existing.videoFilePath || "");
+        const sid = typeof existing.tvShowId === "object" ? existing.tvShowId?._id : existing.tvShowId;
+        if (sid) setTvShowId(sid);
+        setSeasonId(existing.seasonId || (existing.season ? String(existing.season) : ""));
+        setEpisodeNumber(existing.episodeNumber ?? existing.episode ?? 1);
+        setTitle(existing.title || "");
+        setShortDescription(existing.shortDescription || existing.description || "");
+        setFullDescription(existing.fullDescription || existing.description || "");
+        setThumbnail(existing.thumbnail || existing.poster || "");
+        setVideoUrl(existing.hlsUrl || existing.sourceVideoUrl || existing.videoUrl || "");
+        setVideoFilePath(existing.videoFilePath || existing.sourceVideoUrl || "");
         if (existing.videoUploadType) {
           setVideoUploadType(existing.videoUploadType);
-        } else if (existing.videoUrl?.includes(".m3u8")) {
+        } else if (existing.hlsUrl || existing.videoUrl?.includes(".m3u8")) {
           setVideoUploadType("hls");
-        } else if (existing.videoFilePath || existing.videoUrl?.startsWith("/uploads/") || existing.videoUrl?.includes("/media/")) {
+        } else if (
+          existing.videoFilePath ||
+          (existing.sourceVideoUrl && !/^https?:\/\//i.test(existing.sourceVideoUrl)) ||
+          existing.videoUrl?.startsWith("/uploads/") ||
+          existing.videoUrl?.includes("/media/")
+        ) {
           setVideoUploadType("local");
         } else {
           setVideoUploadType("url");
         }
         setDurationMinutes(Math.round((existing.duration || 2700) / 60));
-        setReleaseDate(existing.releaseDate || "");
-        setIsFree(Boolean(existing.isFree));
+        setReleaseDate(existing.releaseDate ? existing.releaseDate.split("T")[0] : new Date().toISOString().split("T")[0]);
+        setIsFree(existing.isFree ?? !existing.isLocked);
         setStatus(existing.status || "published");
         setSubtitleUrl(existing.subtitleUrl || "");
       }
     }
-  }, [id]);
+  }, [id, existingEpisodeData]);
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!tvShowId) {
       toast({ title: "Please select a TV Show", variant: "destructive" });
-      return;
-    }
-    if (!seasonId) {
-      toast({ title: "Please select a Season", description: "If none exists, create a season first in the Seasons section.", variant: "destructive" });
       return;
     }
     if (!title.trim()) {
       toast({ title: "Episode Title is required", variant: "destructive" });
       return;
     }
+    if (videoUploadPending) {
+      toast({ title: "Video upload is still in progress", description: "Wait for the upload to finish before saving.", variant: "destructive" });
+      return;
+    }
 
-    const episodeId = id || `ep-${Date.now()}`;
-    const selectedShow = getAdminTvShowById(tvShowId);
+    const selectedSeason = availableSeasons.find((s) => s.id === seasonId || String(s.seasonNumber) === seasonId);
+    const seasonNumberVal = selectedSeason ? selectedSeason.seasonNumber : (parseInt(seasonId) || 1);
 
     const resolvedVideoUrl = (
       videoUploadType === "local"
-        ? (videoFilePath ? getImageUrl(videoFilePath) : videoUrl)
+        ? (videoFilePath || videoUrl)
         : videoUrl
     ).trim();
+    const isHlsPlaylist = /\.m3u8(?:[?#]|$)/i.test(resolvedVideoUrl);
+    if (resolvedVideoUrl.startsWith("blob:")) {
+      toast({ title: "Video upload is not complete", description: "Select the video again and wait for the upload to finish.", variant: "destructive" });
+      return;
+    }
 
-    const savedEpisode: AdminEpisode = {
-      id: episodeId,
+    const episodePayload: any = {
       tvShowId,
-      seasonId,
-      episodeNumber: Number(episodeNumber) || 1,
+      season: seasonNumberVal,
+      episode: Number(episodeNumber) || 1,
       title: title.trim(),
       shortDescription: shortDescription.trim(),
       fullDescription: fullDescription.trim(),
-      thumbnail: thumbnail.trim() || selectedShow?.backdrop || selectedShow?.poster || "https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?w=600&auto=format&fit=crop&q=80",
-      videoUrl: resolvedVideoUrl || "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
-      videoUploadType,
-      videoFilePath: videoFilePath.trim(),
+      description: fullDescription.trim() || shortDescription.trim() || undefined,
+      thumbnail: thumbnail.trim() || undefined,
+      sourceVideoUrl: videoUploadType === "local" && resolvedVideoUrl && !isHlsPlaylist ? resolvedVideoUrl : undefined,
+      hlsUrl: resolvedVideoUrl && isHlsPlaylist ? resolvedVideoUrl : undefined,
       duration: (durationMinutes || 45) * 60,
-      releaseDate,
+      releaseDate: releaseDate || undefined,
       isFree,
       isLocked: !isFree,
       status,
-      subtitleUrl: subtitleUrl.trim(),
-      createdAt: isEdit ? (getAdminEpisodeById(episodeId)?.createdAt || releaseDate) : new Date().toISOString().split("T")[0],
+      subtitleUrl: subtitleUrl.trim() || undefined,
     };
 
-    saveAdminEpisode(savedEpisode);
-    toast({
-      title: isEdit ? "Episode Updated" : "Episode Created",
-      description: `"${savedEpisode.title}" (Episode ${savedEpisode.episodeNumber}) saved successfully.`,
-    });
-    setLocation("/admin/episodes");
+    try {
+      if (isEdit && id) {
+        await updateEpisodeMutation.mutateAsync({
+          id,
+          data: episodePayload,
+        });
+        toast({
+          title: "Episode Updated",
+          description: `"${title.trim()}" (Episode ${episodeNumber}) saved successfully.`,
+        });
+      } else {
+        await createEpisodeMutation.mutateAsync(episodePayload);
+        toast({
+          title: "Episode Created",
+          description: `"${title.trim()}" (Episode ${episodeNumber}) saved successfully.`,
+        });
+      }
+
+      setLocation("/admin/episodes");
+    } catch (err: any) {
+      console.error("Episode save error:", err);
+      if (
+        err?.status === 409 ||
+        err?.response?.status === 409 ||
+        err?.message?.includes("already exists") ||
+        err?.message?.includes("Conflict") ||
+        err?.message?.includes("409")
+      ) {
+        toast({
+          title: "Episode Conflict (409)",
+          description: err.message || `Episode ${episodeNumber} already exists in Season ${seasonNumberVal} for this TV Show. Please choose a different episode number.`,
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Error saving episode",
+          description: err.message || "Failed to save episode to server.",
+          variant: "destructive",
+        });
+      }
+    }
   };
 
   return (
@@ -433,10 +512,12 @@ export default function EpisodeForm() {
         <MediaPicker
           open={videoPickerOpen}
           onClose={() => setVideoPickerOpen(false)}
+          onUploadPendingChange={setVideoUploadPending}
           onSelect={(media) => {
             setVideoPickerOpen(false);
-            const chosenUrl = media.url || (media.filePath ? getImageUrl(media.filePath) : "");
-            setVideoFilePath(media.filePath || media.url || "");
+            const chosenUrl = media.filePath || media.s3Key || media.url || "";
+            setVideoUploadType("local");
+            setVideoFilePath(chosenUrl);
             setVideoUrl(chosenUrl);
             if (media.duration && (!durationMinutes || durationMinutes === 45)) {
               setDurationMinutes(Math.round(media.duration / 60));

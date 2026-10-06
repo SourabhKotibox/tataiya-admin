@@ -12,6 +12,7 @@ interface MediaPickerProps {
   open: boolean;
   onClose: () => void;
   onSelect: (media: any) => void;
+  onUploadPendingChange?: (pending: boolean) => void;
   source: string;
   accept?: string;
 }
@@ -25,7 +26,7 @@ function formatBytes(n: number) {
   return `${(n / Math.pow(1024, i)).toFixed(i ? 1 : 0)} ${u[i]}`;
 }
 
-export default function MediaPicker({ open, onClose, onSelect, source, accept = "image/*,video/*" }: MediaPickerProps) {
+export default function MediaPicker({ open, onClose, onSelect, onUploadPendingChange, source, accept = "image/*,video/*" }: MediaPickerProps) {
   const { toast } = useToast();
   const { startUpload } = useUploadQueue();
   const [mode, setMode] = useState<"library" | "upload">("library");
@@ -96,10 +97,7 @@ export default function MediaPicker({ open, onClose, onSelect, source, accept = 
           uploadedFile.hlsMasterPlaylistPath ||
           uploadedFile.filePath
       ),
-      filePath:
-        typeof uploadedFile.url === "string" && uploadedFile.url.startsWith("http")
-          ? uploadedFile.url
-          : uploadedFile.filePath || uploadedFile.url,
+      filePath: uploadedFile.filePath || uploadedFile.s3Key || uploadedFile.url,
     };
 
     // Attach to the form immediately — never wait on media list / HLS
@@ -127,10 +125,7 @@ export default function MediaPicker({ open, onClose, onSelect, source, accept = 
             selectedMedia.hlsMasterPlaylistPath ||
             selectedMedia.filePath
         ),
-        filePath:
-          typeof selectedMedia.url === "string" && selectedMedia.url.startsWith("http")
-            ? selectedMedia.url
-            : selectedMedia.filePath || selectedMedia.url,
+        filePath: selectedMedia.filePath || selectedMedia.s3Key || selectedMedia.url,
       });
       handleClose();
     } else if (mode === "upload" && selectedMedia?.file) {
@@ -152,8 +147,8 @@ export default function MediaPicker({ open, onClose, onSelect, source, accept = 
             description: `Saved ${formatCompressBytes(saved)} — same quality, faster upload.`,
           });
         }
-        if (uploadedFile) await finishWithUploadedFile(uploadedFile);
-        else onSelect({ url: preview || "", filePath: "", name: selectedMedia.name });
+        if (!uploadedFile) throw new Error("Upload completed without returning the stored video path.");
+        await finishWithUploadedFile(uploadedFile);
         handleClose();
       } catch (error: any) {
         toast({ title: "Upload failed", description: error.message, variant: "destructive" });
@@ -170,20 +165,34 @@ export default function MediaPicker({ open, onClose, onSelect, source, accept = 
 
     try {
       const folderId = await resolveFolderId();
+      onUploadPendingChange?.(true);
       startUpload({
         fileName: file.name,
         run: async (onProgress) => {
-          const result = await uploadMediaFiles(
-            folderId,
-            [file],
-            source,
-            ({ percent }) => onProgress(percent)
-          );
-          return result?.data?.[0];
+          try {
+            const result = await uploadMediaFiles(
+              folderId,
+              [file],
+              source,
+              ({ percent }) => onProgress(percent)
+            );
+            const uploadedFile = result?.data?.[0];
+            if (!uploadedFile) throw new Error("Upload completed without returning the stored video path.");
+            return uploadedFile;
+          } catch (error) {
+            onUploadPendingChange?.(false);
+            throw error;
+          }
         },
         onComplete: (uploadedFile) => {
-          if (!uploadedFile) return;
-          finishWithUploadedFile(uploadedFile).catch(() => {});
+          onUploadPendingChange?.(false);
+          if (!uploadedFile) {
+            toast({ title: "Upload failed", description: "The server did not return the stored video path.", variant: "destructive" });
+            return;
+          }
+          finishWithUploadedFile(uploadedFile).catch((error: any) => {
+            toast({ title: "Video could not be attached", description: error?.message || "The upload completed, but the video could not be attached.", variant: "destructive" });
+          });
         },
       });
 
@@ -194,6 +203,7 @@ export default function MediaPicker({ open, onClose, onSelect, source, accept = 
       });
       handleClose();
     } catch (error: any) {
+      onUploadPendingChange?.(false);
       toast({ title: "Could not start upload", description: error.message, variant: "destructive" });
     }
   };

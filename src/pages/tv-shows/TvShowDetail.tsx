@@ -1,27 +1,75 @@
 import { useParams, useLocation } from "wouter";
+import { useMemo } from "react";
 import {
   ChevronLeft, Edit2, Star, Crown, Tv, Layers, Film,
   Calendar, Globe, Shield, ExternalLink
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { getAdminTvShowById } from "@/data/tvShows";
-import { getAdminSeasonsByShowId } from "@/data/seasons";
-import { getAdminEpisodesByShowId } from "@/data/episodes";
+import {
+  useGetTVShowById,
+  useGetSeasonList,
+  useGetEpisodeList,
+  getImageUrl,
+} from "@/lib/api-client";
 
 export default function TvShowDetail() {
   const params = useParams<{ id: string }>();
   const id = params.id;
   const [, setLocation] = useLocation();
 
-  const show = id ? getAdminTvShowById(id) : undefined;
-  const seasons = id ? getAdminSeasonsByShowId(id) : [];
-  const episodes = id ? getAdminEpisodesByShowId(id) : [];
+  const { data: serverShowData, isLoading } = useGetTVShowById(id || "");
+  const { data: seasonsData } = useGetSeasonList(id ? { tvShowId: id } : {});
+  const { data: episodesData } = useGetEpisodeList(id ? { tvShowId: id, limit: 100 } : {});
 
-  if (!show) {
+  const show = useMemo(() => {
+    const raw = serverShowData?.data || serverShowData;
+    if (raw) {
+      return {
+        id: raw._id || raw.id,
+        title: raw.title || "Untitled Show",
+        shortDescription: raw.shortDescription || raw.description || "",
+        fullDescription: raw.description || raw.shortDescription || "",
+        poster: getImageUrl(raw.poster || raw.thumbnail || raw.bannerImage),
+        backdrop: getImageUrl(raw.bannerImage || raw.backdrop || raw.poster),
+        genres: Array.isArray(raw.genres)
+          ? raw.genres.map((g: any) => (typeof g === "string" ? g : g?.name || "")).filter(Boolean)
+          : [],
+        language: Array.isArray(raw.languages) && raw.languages.length > 0
+          ? (typeof raw.languages[0] === "string" ? raw.languages[0] : raw.languages[0]?.name || "Hindi")
+          : (raw.language || "Hindi"),
+        year: raw.year ? String(raw.year) : "2026",
+        rating: raw.rating ? String(raw.rating) : "8.0",
+        ageRating: raw.ageRating ? `${raw.ageRating}+` : "16+",
+        contentType: raw.contentType || "series",
+        tags: raw.tags || [],
+        isPremium: (raw.planRequired && raw.planRequired !== "free") || Boolean(raw.isPremium),
+        featured: Boolean(raw.featured),
+        status: raw.status || "draft",
+        createdAt: raw.createdAt ? new Date(raw.createdAt).toISOString().split("T")[0] : "2026-01-01",
+        director: raw.producer || raw.director || "",
+        totalSeasons: typeof raw.totalSeasons === "number" ? raw.totalSeasons : (raw.seasons?.length || 0),
+        totalEpisodes: typeof raw.totalEpisodes === "number" ? raw.totalEpisodes : (raw.episodes?.length || 0),
+      };
+    }
+    return undefined;
+  }, [serverShowData]);
+
+  const totalSeasonsCount = seasonsData?.data?.length ?? (show?.totalSeasons ?? 0);
+  const totalEpisodesCount = episodesData?.pagination?.total ?? episodesData?.data?.length ?? (show?.totalEpisodes ?? 0);
+
+  if (!show && !isLoading) {
     return (
       <div className="p-8 text-center space-y-4">
         <p className="text-muted-foreground">TV Show not found.</p>
         <Button onClick={() => setLocation("/admin/tv-shows")}>Back to List</Button>
+      </div>
+    );
+  }
+
+  if (!show) {
+    return (
+      <div className="p-8 text-center text-muted-foreground">
+        Loading TV Show details...
       </div>
     );
   }
@@ -150,7 +198,7 @@ export default function TvShowDetail() {
                 <Layers className="w-4 h-4 text-primary" />
                 <span>Total Seasons</span>
               </div>
-              <p className="text-3xl font-black mt-2 text-foreground">{seasons.length}</p>
+              <p className="text-3xl font-black mt-2 text-foreground">{totalSeasonsCount}</p>
               <p className="text-xs text-muted-foreground mt-1">
                 Managed in the Seasons section
               </p>
@@ -172,7 +220,7 @@ export default function TvShowDetail() {
                 <Film className="w-4 h-4 text-amber-500" />
                 <span>Total Episodes</span>
               </div>
-              <p className="text-3xl font-black mt-2 text-foreground">{episodes.length}</p>
+              <p className="text-3xl font-black mt-2 text-foreground">{totalEpisodesCount}</p>
               <p className="text-xs text-muted-foreground mt-1">
                 Managed in the Episodes section
               </p>

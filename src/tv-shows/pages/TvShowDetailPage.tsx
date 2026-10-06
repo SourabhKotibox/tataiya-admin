@@ -8,16 +8,20 @@ import { PublicHeader, PublicFooter } from "@/pages/streaming-home";
 import SubscriptionPlansModal from "@/components/SubscriptionPlansModal";
 import { useToast } from "@/hooks/use-toast";
 import {
-  getTvShowById,
   isTvShowWatchlisted,
   toggleTvShowWatchlist,
   isTvShowLiked,
   toggleTvShowLike,
 } from "../data/tvShows";
-import { Episode } from "../types";
+import { Episode, Season, TvShow } from "../types";
 import { SeasonSelector } from "../components/SeasonSelector";
 import { EpisodeCard } from "../components/EpisodeCard";
 import { CastList } from "../components/CastList";
+import {
+  useGetAppSeriesDetail,
+  useToggleWishlist,
+  getImageUrl,
+} from "@/lib/api-client";
 
 export default function TvShowDetailPage() {
   const params = useParams<{ id: string }>();
@@ -31,8 +35,80 @@ export default function TvShowDetailPage() {
   const [inWatchlist, setInWatchlist] = useState<boolean>(false);
   const [isLiked, setIsLiked] = useState<boolean>(false);
 
-  // Retrieve TV Show details from local mock data
-  const show = useMemo(() => (id ? getTvShowById(id) : undefined), [id]);
+  const { data: serverShowData } = useGetAppSeriesDetail(id || "");
+  const toggleWishlistMutation = useToggleWishlist();
+
+  // Retrieve TV Show details from server
+  const show: TvShow | undefined = useMemo(() => {
+    const raw = serverShowData?.data || serverShowData;
+    if (raw && (raw._id || raw.id)) {
+      const episodesRaw: any[] = raw.episodes || [];
+      const seasonsRaw: any[] = raw.seasons || [];
+
+      const seasonMap = new Map<number, Episode[]>();
+      episodesRaw.forEach((e) => {
+        const sNum = e.season || 1;
+        if (!seasonMap.has(sNum)) seasonMap.set(sNum, []);
+        seasonMap.get(sNum)!.push({
+          id: e._id || e.id,
+          season: sNum,
+          episodeNumber: e.episode ?? e.episodeNumber ?? 1,
+          title: e.title || `Episode ${e.episode || 1}`,
+          description: e.description || e.shortDescription || "",
+          duration: e.duration || 2700,
+          thumbnail: getImageUrl(e.thumbnail || e.poster || raw.backdrop || raw.poster),
+          isFree: e.isFree ?? !e.isLocked,
+          isLocked: e.isLocked ?? !e.isFree,
+          videoUrl: e.hlsUrl || e.videoUrl || "",
+        });
+      });
+
+      seasonMap.forEach((eps) => eps.sort((a, b) => a.episodeNumber - b.episodeNumber));
+
+      let seasons: Season[] = [];
+      if (seasonMap.size > 0) {
+        seasons = Array.from(seasonMap.entries())
+          .sort(([a], [b]) => a - b)
+          .map(([sNum, eps]) => ({
+            seasonNumber: sNum,
+            title: `Season ${sNum}`,
+            episodes: eps,
+          }));
+      } else if (seasonsRaw.length > 0) {
+        seasons = seasonsRaw.map((s) => ({
+          seasonNumber: s.season,
+          title: s.title || `Season ${s.season}`,
+          episodes: [],
+        }));
+      } else {
+        seasons = [{ seasonNumber: 1, title: "Season 1", episodes: [] }];
+      }
+
+      return {
+        id: raw._id || raw.id,
+        title: raw.title || "Untitled",
+        description: raw.description || raw.overview || "",
+        poster: getImageUrl(raw.poster || raw.thumbnail),
+        backdrop: getImageUrl(raw.backdrop || raw.bannerImage || raw.banner || raw.posterImage || raw.poster),
+        imdbRating: raw.imdbRating ? String(raw.imdbRating) : (raw.rating ? String(raw.rating) : "8.5"),
+        ageRating: raw.ageRating || raw.maturityRating || "16+",
+        year: raw.releaseDate ? String(new Date(raw.releaseDate).getFullYear()) : String(raw.year || 2026),
+        genres: Array.isArray(raw.genres)
+          ? raw.genres.map((g: any) => (typeof g === "object" ? g.name : g))
+          : (raw.genre ? [raw.genre] : ["Drama"]),
+        featured: Boolean(raw.featured || raw.isFeatured),
+        isPremium: Boolean(raw.isPremium ?? true),
+        seasonsCount: seasons.length || raw.seasonsCount || 1,
+        episodesCount: episodesRaw.length || raw.episodesCount || 1,
+        seasons,
+        cast: Array.isArray(raw.cast) ? raw.cast : [],
+        releaseDate: raw.releaseDate,
+        director: raw.director,
+        language: raw.language || "Hindi",
+      };
+    }
+    return undefined;
+  }, [serverShowData]);
 
   // Scroll to top on mount
   useEffect(() => {
@@ -123,8 +199,17 @@ export default function TvShowDetailPage() {
   const episodes = currentSeason?.episodes || [];
   const firstEpisode = seasons[0]?.episodes?.[0];
 
-  const handleToggleWatchlist = () => {
+  const handleToggleWatchlist = async () => {
     const added = toggleTvShowWatchlist(show.id);
+    setInWatchlist(added);
+    try {
+      await toggleWishlistMutation.mutateAsync({
+        contentId: show.id,
+        contentType: 'show',
+      });
+    } catch (e) {
+      console.warn("Backend toggleWishlist error:", e);
+    }
     toast({
       title: added ? "Added to Watchlist" : "Removed from Watchlist",
       description: added ? `"${show.title}" was saved to your list.` : `"${show.title}" was removed.`,
@@ -158,7 +243,7 @@ export default function TvShowDetailPage() {
   };
 
   const handlePlayEpisode = (ep: Episode) => {
-    setLocation(`/tv-shows/${show.id}/watch/${ep.episodeNumber}`);
+    setLocation(`/tv-shows/${show.id}/watch/${ep.episodeNumber}?season=${ep.season}`);
   };
 
   const handleLockedEpisodeClick = () => {

@@ -17,18 +17,26 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { getAdminEpisodes, deleteAdminEpisode, AdminEpisode } from "@/data/episodes";
-import { getAdminTvShows, getAdminTvShowById } from "@/data/tvShows";
-import { getAdminSeasons, getAdminSeasonById, getAdminSeasonsByShowId } from "@/data/seasons";
+import {
+  useGetEpisodeList,
+  useGetTVShows,
+  useGetSeasonList,
+  useDeleteEpisode,
+  getImageUrl,
+} from "@/lib/api-client";
 import { formatDuration } from "@/tv-shows/data/tvShows";
+import { getAdminTvShowById } from "@/data/tvShows";
+import { getAdminSeasonById } from "@/data/seasons";
+import { deleteAdminEpisode } from "@/data/episodes";
 
 export default function EpisodesList() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
 
-  const [episodes, setEpisodes] = useState<AdminEpisode[]>([]);
-  const [shows, setShows] = useState(getAdminTvShows());
-  const [seasons, setSeasons] = useState(getAdminSeasons());
+  const { data: serverEpisodesData } = useGetEpisodeList({ limit: 500 });
+  const { data: serverShowsData } = useGetTVShows({ limit: 100 });
+  const { data: serverSeasonsData } = useGetSeasonList({});
+  const deleteEpisodeMutation = useDeleteEpisode();
 
   const [search, setSearch] = useState("");
   const [showFilter, setShowFilter] = useState("all");
@@ -36,25 +44,51 @@ export default function EpisodesList() {
   const [planFilter, setPlanFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [sortBy, setSortBy] = useState("newest");
-  const [deleteTarget, setDeleteTarget] = useState<AdminEpisode | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
 
-  const loadData = () => {
-    setEpisodes(getAdminEpisodes());
-    setShows(getAdminTvShows());
-    setSeasons(getAdminSeasons());
-  };
+  const shows = useMemo(() => {
+    const raw: any[] = serverShowsData?.data || [];
+    return raw.map((s) => ({
+      id: s._id || s.id,
+      title: s.title || "Untitled",
+      poster: getImageUrl(s.poster || s.thumbnail),
+    }));
+  }, [serverShowsData]);
 
-  useEffect(() => {
-    loadData();
-    window.addEventListener("admin-episodes-updated", loadData);
-    window.addEventListener("admin-seasons-updated", loadData);
-    window.addEventListener("admin-tvshows-updated", loadData);
-    return () => {
-      window.removeEventListener("admin-episodes-updated", loadData);
-      window.removeEventListener("admin-seasons-updated", loadData);
-      window.removeEventListener("admin-tvshows-updated", loadData);
-    };
-  }, []);
+  const seasons = useMemo(() => {
+    const rawList: any[] = serverSeasonsData?.data || [];
+    return rawList.map((s) => ({
+      id: s.seasonId || `${s.tvShowId?._id || s.tvShowId}-${s.season}`,
+      tvShowId: s.tvShowId?._id || s.tvShowId,
+      seasonNumber: s.season,
+      title: `Season ${s.season}`,
+    }));
+  }, [serverSeasonsData]);
+
+  const episodes = useMemo(() => {
+    const raw: any[] = serverEpisodesData?.data || [];
+    return raw.map((e) => {
+      const showId = typeof e.tvShowId === "object" ? e.tvShowId?._id : e.tvShowId;
+      const matchingShow = shows.find((s) => s.id === showId);
+      return {
+        id: e._id || e.id,
+        tvShowId: showId || "",
+        seasonId: e.seasonId || `${showId}-${e.season}`,
+        episodeNumber: e.episode ?? e.episodeNumber ?? 1,
+        seasonNumber: e.season ?? 1,
+        title: e.title || "Episode",
+        shortDescription: e.description || e.shortDescription || "",
+        duration: e.duration || 0,
+        thumbnail: getImageUrl(e.thumbnail || e.poster),
+        videoUrl: e.videoUrl || e.hlsUrl || "",
+        isFree: e.isFree ?? !e.isLocked,
+        status: e.status || "published",
+        releaseDate: e.releaseDate || e.createdAt || "2026-01-01",
+        createdAt: e.createdAt || "2026-01-01",
+        showTitle: (typeof e.tvShowId === "object" ? e.tvShowId?.title : null) || matchingShow?.title || "TV Show",
+      };
+    });
+  }, [serverEpisodesData, shows]);
 
   // Summary counts
   const totalEpisodes = episodes.length;
@@ -65,7 +99,7 @@ export default function EpisodesList() {
   // Dynamically available seasons for selected show filter
   const availableSeasons = useMemo(() => {
     if (showFilter === "all") return seasons;
-    return getAdminSeasonsByShowId(showFilter);
+    return seasons.filter((s) => s.tvShowId === showFilter);
   }, [showFilter, seasons]);
 
   // Reset season filter if show filter changes
@@ -83,7 +117,7 @@ export default function EpisodesList() {
     if (search.trim()) {
       const q = search.trim().toLowerCase();
       list = list.filter((e) => {
-        const show = getAdminTvShowById(e.tvShowId);
+        const show = shows.find((s) => s.id === e.tvShowId) || getAdminTvShowById(e.tvShowId);
         return (
           e.title.toLowerCase().includes(q) ||
           e.shortDescription?.toLowerCase().includes(q) ||
@@ -98,7 +132,7 @@ export default function EpisodesList() {
     }
 
     if (seasonFilter !== "all") {
-      list = list.filter((e) => e.seasonId === seasonFilter);
+      list = list.filter((e) => e.seasonId === seasonFilter || `Season ${e.seasonNumber}` === seasonFilter || String(e.seasonNumber) === seasonFilter);
     }
 
     if (planFilter !== "all") {
@@ -120,7 +154,7 @@ export default function EpisodesList() {
     }
 
     return list;
-  }, [episodes, search, showFilter, seasonFilter, planFilter, statusFilter, sortBy]);
+  }, [episodes, search, showFilter, seasonFilter, planFilter, statusFilter, sortBy, shows]);
 
   const handleClearFilters = () => {
     setSearch("");
@@ -131,15 +165,23 @@ export default function EpisodesList() {
     setSortBy("newest");
   };
 
-  const handleConfirmDelete = () => {
+  const handleConfirmDelete = async () => {
     if (!deleteTarget) return;
-    deleteAdminEpisode(deleteTarget.id);
-    toast({
-      title: "Episode Deleted",
-      description: `"${deleteTarget.title}" was removed.`,
-    });
+    try {
+      await deleteEpisodeMutation.mutateAsync(deleteTarget.id);
+      deleteAdminEpisode(deleteTarget.id);
+      toast({
+        title: "Episode Deleted",
+        description: `"${deleteTarget.title}" was removed.`,
+      });
+    } catch (err: any) {
+      toast({
+        title: "Failed to delete episode",
+        description: err.message || "An error occurred",
+        variant: "destructive",
+      });
+    }
     setDeleteTarget(null);
-    loadData();
   };
 
   return (
@@ -318,8 +360,8 @@ export default function EpisodesList() {
                   </TableRow>
                 ) : (
                   filteredEpisodes.map((ep) => {
-                    const tvShow = getAdminTvShowById(ep.tvShowId);
-                    const season = getAdminSeasonById(ep.seasonId);
+                    const tvShow = shows.find((s) => s.id === ep.tvShowId) || getAdminTvShowById(ep.tvShowId);
+                    const season = seasons.find((s) => s.id === ep.seasonId || s.seasonNumber === ep.seasonNumber) || getAdminSeasonById(ep.seasonId);
 
                     return (
                       <TableRow key={ep.id} className="hover:bg-muted/30">

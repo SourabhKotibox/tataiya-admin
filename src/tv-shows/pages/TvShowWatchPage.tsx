@@ -6,13 +6,19 @@ import {
 } from "lucide-react";
 import VideoPlayer from "@/components/VideoPlayer";
 import SubscriptionPlansModal from "@/components/SubscriptionPlansModal";
-import { getTvShowById, recordTvShowProgress, formatDuration } from "../data/tvShows";
+import { recordTvShowProgress, formatDuration } from "../data/tvShows";
 import { Episode } from "../types";
+import {
+  useGetAppSeriesDetail,
+  useGetWatchData,
+  getImageUrl,
+} from "@/lib/api-client";
 
 export default function TvShowWatchPage() {
   const params = useParams<{ id: string; epNum?: string }>();
   const id = params.id;
   const epNum = parseInt(params.epNum || "1", 10);
+  const requestedSeason = parseInt(new URLSearchParams(window.location.search).get("season") || "1", 10);
   const [, setLocation] = useLocation();
 
   const [plansModalOpen, setPlansModalOpen] = useState(false);
@@ -31,18 +37,50 @@ export default function TvShowWatchPage() {
     user && (user.subscription === true || (user.subscriptionStatus === "active" && user.subscriptionPlan !== "free"))
   );
 
-  const show = useMemo(() => (id ? getTvShowById(id) : undefined), [id]);
+  const { data: serverShowData } = useGetAppSeriesDetail(id || "");
+
+  const show = useMemo(() => {
+    const raw = serverShowData?.data || serverShowData;
+    if (raw && (raw._id || raw.id)) {
+      return {
+        id: raw._id || raw.id,
+        title: raw.title || "Untitled",
+        description: raw.description || "",
+        poster: getImageUrl(raw.poster || raw.thumbnail),
+        backdrop: getImageUrl(raw.backdrop || raw.bannerImage || raw.banner || raw.posterImage || raw.poster),
+        seasons: raw.seasons || [],
+      };
+    }
+    return undefined;
+  }, [serverShowData]);
 
   // Find all episodes across all seasons
   const allEpisodes = useMemo(() => {
-    if (!show?.seasons) return [];
-    return show.seasons.flatMap((s) => s.episodes);
-  }, [show]);
+    const raw = serverShowData?.data || serverShowData;
+    const rawList: any[] = raw?.episodes || [];
+    return rawList.map((e) => ({
+      id: e._id || e.id,
+      season: e.season || 1,
+      episodeNumber: e.episode ?? e.episodeNumber ?? 1,
+      title: e.title || `Episode ${e.episode || 1}`,
+      description: e.description || e.shortDescription || "",
+      duration: e.duration || 2700,
+      thumbnail: getImageUrl(e.thumbnail || e.poster || show?.backdrop || show?.poster),
+      isFree: e.isFree ?? !e.isLocked,
+      isLocked: e.isLocked ?? !e.isFree,
+      videoUrl: e.hlsUrl || e.videoUrl || "",
+    })).sort((a, b) => {
+      if (a.season !== b.season) return a.season - b.season;
+      return a.episodeNumber - b.episodeNumber;
+    });
+  }, [serverShowData, show]);
 
   // Find current episode (matching episodeNumber)
   const currentEpisode: Episode | undefined = useMemo(() => {
-    return allEpisodes.find((e) => e.episodeNumber === epNum) || allEpisodes[0];
-  }, [allEpisodes, epNum]);
+    return allEpisodes.find((e) => e.season === requestedSeason && e.episodeNumber === epNum) ||
+      allEpisodes.find((e) => e.episodeNumber === epNum) ||
+      allEpisodes[0];
+  }, [allEpisodes, epNum, requestedSeason]);
 
   // Next episode
   const nextEpisode: Episode | undefined = useMemo(() => {
@@ -52,6 +90,24 @@ export default function TvShowWatchPage() {
       ? allEpisodes[currentIndex + 1]
       : undefined;
   }, [allEpisodes, currentEpisode]);
+
+  // Secure watch data query
+  const { data: watchData, isLoading: watchDataLoading, error: watchDataError } = useGetWatchData(id || "", {
+    episodeId: currentEpisode?.id,
+    season: currentEpisode?.season,
+    episode: currentEpisode?.episodeNumber,
+  });
+
+  const watchVideo = watchData?.currentEpisode || watchData?.currentVideo;
+  const hlsUrl = watchVideo?.hlsUrl;
+  const isBackendLocked = watchVideo ? Boolean(watchVideo.isLocked) : Boolean(currentEpisode?.isLocked && !currentEpisode?.isFree);
+
+  // Check if current episode is locked
+  const isLocked = Boolean(
+    isBackendLocked && !isSubscribed
+  );
+
+  const videoStreamSrc = hlsUrl || "";
 
   // Record continue watching entry on episode change
   useEffect(() => {
@@ -67,11 +123,6 @@ export default function TvShowWatchPage() {
       });
     }
   }, [show, currentEpisode]);
-
-  // Check if current episode is locked
-  const isLocked = Boolean(
-    currentEpisode?.isLocked && !currentEpisode?.isFree && !isSubscribed
-  );
 
   if (!show || !currentEpisode) {
     return (
@@ -96,7 +147,7 @@ export default function TvShowWatchPage() {
       setPlansModalOpen(true);
       return;
     }
-    setLocation(`/tv-shows/${show.id}/watch/${ep.episodeNumber}`);
+    setLocation(`/tv-shows/${show.id}/watch/${ep.episodeNumber}?season=${ep.season}`);
     setPlaylistOpen(false);
   };
 
@@ -194,16 +245,33 @@ export default function TvShowWatchPage() {
                 </button>
               </div>
             </div>
-          ) : (
+          ) : videoStreamSrc ? (
             <div className="w-full h-full min-h-[60vh] flex items-center justify-center bg-black">
               <VideoPlayer
-                src={currentEpisode.videoUrl}
+                src={videoStreamSrc}
                 poster={currentEpisode.thumbnail || show.backdrop}
                 title={`${show.title} - S${currentEpisode.season}:E${currentEpisode.episodeNumber}`}
                 subtitle={currentEpisode.title}
                 contentId={`tvshow-${show.id}-s${currentEpisode.season}-e${currentEpisode.episodeNumber}`}
                 onClose={() => setLocation(`/tv-shows/${show.id}`)}
               />
+            </div>
+          ) : (
+            <div className="w-full h-full min-h-[60vh] flex flex-col items-center justify-center gap-3 bg-black text-center px-6">
+              <Film className="w-10 h-10 text-amber-400" />
+              <p className="text-sm font-bold text-white">
+                {watchVideo?.processingStatus === "queued" || watchVideo?.processingStatus === "processing"
+                  ? "Episode video is processing. Please check back shortly."
+                  : watchVideo?.processingStatus === "failed"
+                    ? watchVideo.processingError || "Episode video processing failed."
+                    : watchVideo?.processingStatus === "ready"
+                      ? "A playback playlist is not available for this episode."
+                      : watchDataError
+                        ? "Could not load episode playback details. Please try again."
+                        : watchDataLoading
+                          ? "Loading episode video..."
+                          : "Episode playback is unavailable."}
+              </p>
             </div>
           )}
         </div>

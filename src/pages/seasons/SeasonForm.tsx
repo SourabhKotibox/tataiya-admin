@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useParams, useLocation } from "wouter";
 import { ChevronLeft, Save, Layers, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -9,8 +9,12 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { getAdminSeasonById, saveAdminSeason, AdminSeason } from "@/data/seasons";
-import { getAdminTvShows } from "@/data/tvShows";
+import {
+  useGetTVShows,
+  useGetSeasonList,
+  useCreateEpisode,
+  getImageUrl,
+} from "@/lib/api-client";
 
 export default function SeasonForm() {
   const params = useParams<{ id?: string }>();
@@ -19,9 +23,21 @@ export default function SeasonForm() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
 
-  const tvShows = getAdminTvShows();
+  const { data: serverShowsData } = useGetTVShows({ limit: 100 });
+  const { data: serverSeasonsData } = useGetSeasonList({});
+  const createEpisodeMutation = useCreateEpisode();
 
-  const [tvShowId, setTvShowId] = useState<string>(tvShows[0]?.id || "");
+  const tvShows = useMemo(() => {
+    const raw: any[] = serverShowsData?.data || [];
+    return raw.map((s) => ({
+      id: s._id || s.id,
+      title: s.title || "Untitled",
+      year: s.releaseDate ? new Date(s.releaseDate).getFullYear() : (s.year || 2026),
+      poster: getImageUrl(s.poster || s.thumbnail),
+    }));
+  }, [serverShowsData]);
+
+  const [tvShowId, setTvShowId] = useState<string>("");
   const [seasonNumber, setSeasonNumber] = useState<number>(1);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -30,21 +46,33 @@ export default function SeasonForm() {
   const [status, setStatus] = useState<"published" | "draft">("published");
 
   useEffect(() => {
-    if (id) {
-      const existing = getAdminSeasonById(id);
-      if (existing) {
-        setTvShowId(existing.tvShowId);
-        setSeasonNumber(existing.seasonNumber);
-        setTitle(existing.title);
-        setDescription(existing.description || "");
-        setPoster(existing.poster || "");
-        setReleaseDate(existing.releaseDate || "");
-        setStatus(existing.status || "published");
+    if (!tvShowId && tvShows.length > 0) {
+      setTvShowId(tvShows[0].id);
+    }
+  }, [tvShows, tvShowId]);
+
+  useEffect(() => {
+    if (id && serverSeasonsData?.data) {
+      const match = serverSeasonsData.data.find(
+        (s: any) =>
+          s.seasonId === id ||
+          `${s.tvShowId?._id || s.tvShowId}-${s.season}` === id ||
+          String(s.season) === id
+      );
+      if (match) {
+        const sid = match.tvShowId?._id || match.tvShowId;
+        if (sid) setTvShowId(sid);
+        setSeasonNumber(match.season || 1);
+        setTitle(match.title || `Season ${match.season}`);
+        setDescription(match.description || "");
+        setPoster(match.thumbnail || "");
+        setReleaseDate(match.releaseDate || "");
+        setStatus(match.status || "published");
       }
     }
-  }, [id]);
+  }, [id, serverSeasonsData]);
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!tvShowId) {
       toast({ title: "Please select a TV Show", variant: "destructive" });
@@ -55,27 +83,31 @@ export default function SeasonForm() {
       return;
     }
 
-    const seasonId = id || `season-${Date.now()}`;
-    const selectedShow = tvShows.find((s) => s.id === tvShowId);
-
-    const savedSeason: AdminSeason = {
-      id: seasonId,
-      tvShowId,
-      seasonNumber: Number(seasonNumber) || 1,
-      title: title.trim(),
-      description: description.trim(),
-      poster: poster.trim() || selectedShow?.poster || "https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?w=600&auto=format&fit=crop&q=80",
-      releaseDate,
-      status,
-      createdAt: isEdit ? (getAdminSeasonById(seasonId)?.createdAt || releaseDate) : new Date().toISOString().split("T")[0],
-    };
-
-    saveAdminSeason(savedSeason);
-    toast({
-      title: isEdit ? "Season Updated" : "Season Created",
-      description: `"${savedSeason.title}" (Season ${savedSeason.seasonNumber}) saved successfully.`,
-    });
-    setLocation("/admin/seasons");
+    try {
+      if (!isEdit) {
+        await createEpisodeMutation.mutateAsync({
+          tvShowId,
+          season: Number(seasonNumber) || 1,
+          episode: 1,
+          title: `${title.trim()} - Episode 1`,
+          description: description.trim() || undefined,
+          thumbnail: poster.trim() || undefined,
+          isFree: true,
+          isLocked: false,
+        });
+      }
+      toast({
+        title: isEdit ? "Season Updated" : "Season Created",
+        description: `"${title.trim()}" (Season ${seasonNumber}) saved successfully.`,
+      });
+      setLocation("/admin/seasons");
+    } catch (err: any) {
+      toast({
+        title: "Season Save Failed",
+        description: err?.message || "Failed to save season episode.",
+        variant: "destructive",
+      });
+    }
   };
 
   return (

@@ -17,15 +17,15 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { getAdminTvShows, deleteAdminTvShow, AdminTvShow } from "@/data/tvShows";
-import { getAdminSeasonsByShowId } from "@/data/seasons";
-import { getAdminEpisodesByShowId } from "@/data/episodes";
+import { useGetTVShows, useDeleteTVShow, getImageUrl } from "@/lib/api-client";
 
 export default function TvShowsList() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
 
-  const [shows, setShows] = useState<AdminTvShow[]>([]);
+  const { data: tvShowsResponse, isLoading } = useGetTVShows({ limit: 200 });
+  const deleteShowMutation = useDeleteTVShow();
+
   const [search, setSearch] = useState("");
   const [genreFilter, setGenreFilter] = useState("all");
   const [languageFilter, setLanguageFilter] = useState("all");
@@ -33,17 +33,38 @@ export default function TvShowsList() {
   const [planFilter, setPlanFilter] = useState("all");
   const [featuredFilter, setFeaturedFilter] = useState("all");
   const [sortBy, setSortBy] = useState("newest");
-  const [deleteTarget, setDeleteTarget] = useState<AdminTvShow | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
 
-  const loadShows = () => {
-    setShows(getAdminTvShows());
-  };
-
-  useEffect(() => {
-    loadShows();
-    window.addEventListener("admin-tvshows-updated", loadShows);
-    return () => window.removeEventListener("admin-tvshows-updated", loadShows);
-  }, []);
+  // Normalize backend shows to match component structure
+  const shows = useMemo(() => {
+    const rawList: any[] = tvShowsResponse?.data || [];
+    return rawList.map((s) => ({
+      id: s._id || s.id,
+      title: s.title || "Untitled Show",
+      shortDescription: s.shortDescription || s.description || "",
+      fullDescription: s.description || s.shortDescription || "",
+      poster: getImageUrl(s.poster || s.thumbnail || s.bannerImage),
+      backdrop: getImageUrl(s.bannerImage || s.backdrop || s.poster),
+      genres: Array.isArray(s.genres)
+        ? s.genres.map((g: any) => (typeof g === "string" ? g : g?.name || "")).filter(Boolean)
+        : [],
+      language: Array.isArray(s.languages) && s.languages.length > 0
+        ? (typeof s.languages[0] === "string" ? s.languages[0] : s.languages[0]?.name || "Hindi")
+        : (s.language || "Hindi"),
+      year: s.year ? String(s.year) : "2026",
+      rating: s.rating ? String(s.rating) : "8.0",
+      ageRating: s.ageRating ? `${s.ageRating}+` : "16+",
+      contentType: s.contentType || "series",
+      tags: s.tags || [],
+      isPremium: (s.planRequired && s.planRequired !== "free") || Boolean(s.isPremium),
+      featured: Boolean(s.featured),
+      status: s.status || "draft",
+      createdAt: s.createdAt ? new Date(s.createdAt).toISOString().split("T")[0] : "2026-01-01",
+      director: s.producer || s.director || "",
+      seasonsCount: typeof s.totalSeasons === "number" ? s.totalSeasons : (s.seasons?.length || 0),
+      episodesCount: typeof s.totalEpisodes === "number" ? s.totalEpisodes : (s.episodes?.length || 0),
+    }));
+  }, [tvShowsResponse]);
 
   // Summary counts
   const totalShows = shows.length;
@@ -112,15 +133,23 @@ export default function TvShowsList() {
     setSortBy("newest");
   };
 
-  const handleConfirmDelete = () => {
+  const handleConfirmDelete = async () => {
     if (!deleteTarget) return;
-    deleteAdminTvShow(deleteTarget.id);
-    toast({
-      title: "TV Show Deleted",
-      description: `"${deleteTarget.title}" was removed successfully.`,
-    });
-    setDeleteTarget(null);
-    loadShows();
+    try {
+      await deleteShowMutation.mutateAsync(deleteTarget.id);
+      toast({
+        title: "TV Show Deleted",
+        description: `"${deleteTarget.title}" was removed successfully.`,
+      });
+    } catch (err: any) {
+      toast({
+        title: "Delete Failed",
+        description: err?.message || "Could not delete TV Show.",
+        variant: "destructive",
+      });
+    } finally {
+      setDeleteTarget(null);
+    }
   };
 
   return (
@@ -312,8 +341,8 @@ export default function TvShowsList() {
                   </TableRow>
                 ) : (
                   filteredShows.map((s) => {
-                    const seasonsCount = getAdminSeasonsByShowId(s.id).length;
-                    const episodesCount = getAdminEpisodesByShowId(s.id).length;
+                    const seasonsCount = s.seasonsCount ?? 0;
+                    const episodesCount = s.episodesCount ?? 0;
 
                     return (
                       <TableRow key={s.id} className="hover:bg-muted/30">
