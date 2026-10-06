@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { useParams, useLocation } from "wouter";
-import { ChevronLeft, Save, Film, Play, Lock, AlertCircle, ImageIcon, Upload } from "lucide-react";
+import { ChevronLeft, Save, Film, Play, Lock, AlertCircle, ImageIcon, Upload, Loader2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -18,6 +18,8 @@ import {
   useCreateEpisode,
   useUpdateEpisode,
   getImageUrl,
+  useEpisodeProcessingStatus,
+  useReprocessEpisodeHls,
 } from "@/lib/api-client";
 
 export default function EpisodeForm() {
@@ -31,6 +33,15 @@ export default function EpisodeForm() {
   const { data: existingEpisodeData } = useGetEpisodeById(id || "");
   const createEpisodeMutation = useCreateEpisode();
   const updateEpisodeMutation = useUpdateEpisode();
+
+  const episode = (existingEpisodeData as any)?.data;
+  const { data: hlsStatusData } = useEpisodeProcessingStatus(isEdit ? id! : "", !!isEdit && !!id);
+  const reprocessHlsMutation = useReprocessEpisodeHls();
+
+  const hlsPoll = (hlsStatusData as any)?.data;
+  const liveHlsStatus = hlsPoll?.processingStatus || episode?.processingStatus;
+  const liveHlsUrl = hlsPoll?.hlsUrl || episode?.hlsUrl;
+  const liveHlsError = hlsPoll?.processingError || episode?.processingError;
 
   const tvShows = useMemo(() => {
     const raw: any[] = serverShowsData?.data || [];
@@ -477,6 +488,66 @@ export default function EpisodeForm() {
               )}
             </div>
           </div>
+
+          {isEdit && (
+            <div className="bg-muted/10 border border-border rounded-xl p-4 my-2">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <h4 className="text-sm font-bold text-foreground">HLS Processing Status</h4>
+                  <p className="text-xs text-muted-foreground mt-0.5 max-w-xl">
+                    When you upload an MP4 video, our server automatically transcodes it into HLS (HTTP Live Streaming) format for adaptive bitrate playback.
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  disabled={reprocessHlsMutation.isPending || ["queued", "processing"].includes(String(liveHlsStatus || "").toLowerCase())}
+                  onClick={async () => {
+                    const source =
+                      [videoFilePath, videoUrl, episode?.sourceVideoUrl, episode?.videoUrl]
+                        .map((u) => String(u || "").trim())
+                        .find((u) => u && !/\.m3u8(?:[?#]|$)/i.test(u)) || "";
+
+                    if (!source) {
+                      toast({ title: "No valid MP4 source video available to transcode", variant: "destructive" });
+                      return;
+                    }
+
+                    try {
+                      await reprocessHlsMutation.mutateAsync(id!);
+                      toast({ title: "HLS reprocessing queued" });
+                    } catch (err: any) {
+                      toast({ title: "Failed to queue reprocessing", description: err.message, variant: "destructive" });
+                    }
+                  }}
+                  className="bg-amber-400 hover:bg-amber-300 text-black font-semibold shrink-0"
+                >
+                  {reprocessHlsMutation.isPending || ["queued", "processing"].includes(String(liveHlsStatus || "").toLowerCase()) ? (
+                    <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Generating…</>
+                  ) : (
+                    <><RefreshCw className="w-4 h-4 mr-2" /> Generate HLS</>
+                  )}
+                </Button>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                <span className="text-muted-foreground">Status:</span>
+                {/\.m3u8/i.test(String(liveHlsUrl || "")) && String(liveHlsStatus).toLowerCase() === "ready" ? (
+                  <span className="px-2 py-0.5 rounded bg-green-500/20 text-green-400 font-medium">Ready</span>
+                ) : String(liveHlsStatus).toLowerCase() === "failed" ? (
+                  <span className="px-2 py-0.5 rounded bg-red-500/20 text-red-400 font-medium">
+                    Failed{liveHlsError ? `: ${liveHlsError}` : ""}
+                  </span>
+                ) : ["queued", "processing"].includes(String(liveHlsStatus || "").toLowerCase()) ? (
+                  <span className="px-2 py-0.5 rounded bg-blue-500/20 text-blue-400 font-medium inline-flex items-center gap-1">
+                    <Loader2 className="w-3 h-3 animate-spin" /> {liveHlsStatus}
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded bg-zinc-500/20 text-foreground/70 font-medium">Not generated yet</span>
+                )}
+              </div>
+            </div>
+          )}
+
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>

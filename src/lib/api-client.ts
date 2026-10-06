@@ -4522,3 +4522,39 @@ export const useGetWatchData = (
     enabled: !!contentId,
   });
 };
+
+
+// ─── EPISODE PROCESSING ──────────────────────────────────────────────────────────
+
+export const getEpisodeProcessingStatus = async (id: string) => {
+  return api(`/episodes/${id}/processing-status`);
+};
+
+export const reprocessEpisodeHls = async (id: string) => {
+  return api(`/episodes/${id}/reprocess`, {
+    method: "POST"
+  });
+};
+
+export const useEpisodeProcessingStatus = (id: string, enabled = true) => {
+  return useQuery({
+    queryKey: ['episodeProcessingStatus', id],
+    queryFn: () => getEpisodeProcessingStatus(id),
+    enabled: enabled && !!id,
+    refetchInterval: (query) => {
+      const data: any = query.state.data;
+      const status = data?.data?.processingStatus;
+      if (status === 'processing' || status === 'queued') {
+        return 3000;
+      }
+      return false;
+    },
+    retry: 2,
+  });
+};
+
+export const useReprocessEpisodeHls = () => {
+  return useMutation({
+    mutationFn: reprocessEpisodeHls,
+  });
+};

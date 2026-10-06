@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import {
   Play, Pause, Volume2, VolumeX, Maximize, Minimize,
-  SkipBack, SkipForward, Settings, X, Smartphone, Monitor,
+  SkipBack, SkipForward, Settings, X,
   RotateCcw, RotateCw, ChevronRight, FastForward, Circle,
 } from "lucide-react";
 import Hls from "hls.js";
@@ -20,7 +20,6 @@ interface VideoPlayerProps {
   title?: string;
   subtitle?: string;
   onClose?: () => void;
-  defaultOrientation?: "landscape" | "portrait";
   contentId?: string;
   videoQualities?: VideoQuality[];
 }
@@ -43,7 +42,6 @@ export default function VideoPlayer({
   title,
   subtitle,
   onClose,
-  defaultOrientation = "landscape",
   contentId,
   videoQualities,
 }: VideoPlayerProps) {
@@ -65,7 +63,6 @@ export default function VideoPlayer({
   const [showQualityMenu, setShowQualityMenu] = useState(false);
   const [speed, setSpeed] = useState(1);
   const [loading, setLoading] = useState(true);
-  const [orientation, setOrientation] = useState<"landscape" | "portrait">(defaultOrientation);
   const [showSkipAnim, setShowSkipAnim] = useState<"left" | "right" | null>(null);
   const [currentSrc, setCurrentSrc] = useState(src);
 
@@ -319,23 +316,16 @@ export default function VideoPlayer({
   }, [contentId, showPreroll]);
 
 
-  const aspectRatio = orientation === "landscape" ? "16/9" : "9/16";
-  const maxWidth = orientation === "landscape" ? "min(100vw, 960px)" : "min(100vw, 360px)";
   const allQualities = videoQualities?.length ? videoQualities : [{ label: 'Auto', src }];
   const currentQualityLabel = allQualities.find(q => q.src === currentSrc)?.label || 'Auto';
 
   return (
     <div
-      className="fixed inset-0 z-[300] flex items-center justify-center bg-black/90 backdrop-blur-sm"
-      onClick={(e) => { if (e.target === e.currentTarget) onClose?.(); }}
+      ref={containerRef}
+      className="relative bg-black overflow-hidden shadow-2xl w-full h-full"
+      onMouseMove={resetHideTimer}
+      onClick={(e) => { if (e.currentTarget === e.target) togglePlay(); }}
     >
-      <div
-        ref={containerRef}
-        className="relative bg-black overflow-hidden shadow-2xl"
-        style={{ width: maxWidth, aspectRatio, maxHeight: "100vh" }}
-        onMouseMove={resetHideTimer}
-        onClick={(e) => { if (e.currentTarget === e.target) togglePlay(); }}
-      >
         {/* Video */}
         <video
           ref={videoRef}
@@ -541,14 +531,6 @@ export default function VideoPlayer({
 
               {/* Right Controls */}
               <div className="flex items-center gap-2 relative" onClick={(e) => e.stopPropagation()}>
-                {/* Orientation Toggle */}
-                <button
-                  onClick={() => setOrientation(o => o === "landscape" ? "portrait" : "landscape")}
-                  className="text-foreground/80 hover:text-foreground transition-colors p-1"
-                  title={orientation === "landscape" ? "Switch to Portrait" : "Switch to Landscape"}
-                >
-                  {orientation === "landscape" ? <Smartphone className="w-4 h-4" /> : <Monitor className="w-4 h-4" />}
-                </button>
 
                 {/* Speed */}
                 <div className="relative">
@@ -619,8 +601,6 @@ export default function VideoPlayer({
           </div>
         </div>
 
-
-      </div>
 
       <style>{`
         input[type=range]::-webkit-slider-thumb {
