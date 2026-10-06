@@ -1,12 +1,13 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import {
   Play, Pause, Volume2, VolumeX, Maximize, Minimize,
   SkipBack, SkipForward, Settings, X, Smartphone, Monitor,
   RotateCcw, RotateCw, ChevronRight, FastForward, Circle,
 } from "lucide-react";
 import Hls from "hls.js";
-import { useAdPlayback } from "@/hooks/useAdPlayback";
-import AdOverlay from "@/components/AdOverlay";
+import { PlayerPrerollAd } from "@/components/AdComponents";
+import { useGetPublicAds } from "@/lib/api-client";
+import { useSettings } from "@/contexts/SettingsContext";
 
 export interface VideoQuality {
   label: string;
@@ -75,7 +76,31 @@ export default function VideoPlayer({
   const [showResumePrompt, setShowResumePrompt] = useState(false);
   const [resumeTime, setResumeTime] = useState(0);
 
+  const { settings } = useSettings();
+  const { data: adsData, isSuccess: isAdsSuccess } = useGetPublicAds({ placement: 'Player' });
+  const activeAds: any[] = adsData?.data || [];
+  const vastUrl = settings?.vastPrerollUrl;
+
+  const isSubscribed = useMemo(() => {
+    try {
+      const stored = localStorage.getItem("appUser") || localStorage.getItem("user");
+      if (!stored) return false;
+      const u = JSON.parse(stored);
+      return Boolean(
+        u && (u.subscription === true || (u.subscriptionStatus === "active" && u.subscriptionPlan !== "free"))
+      );
+    } catch {
+      return false;
+    }
+  }, []);
+
+  const hasApplicableAd = !isSubscribed && (activeAds.length > 0 || Boolean(vastUrl));
+  const [showPreroll, setShowPreroll] = useState(false);
+  const [adFinished, setAdFinished] = useState(false);
+
   const handleAdComplete = useCallback(() => {
+    setShowPreroll(false);
+    setAdFinished(true);
     const v = videoRef.current;
     if (v) {
       v.play().catch(() => {});
@@ -83,20 +108,7 @@ export default function VideoPlayer({
     }
   }, []);
 
-  const {
-    phase: adPhase,
-    timer: adTimer,
-    canSkip: adCanSkip,
-    startAd,
-    skipAd,
-    reset: resetAd,
-    isActive: adIsActive,
-  } = useAdPlayback({
-    onAdComplete: handleAdComplete,
-    onAdSkip: handleAdComplete,
-  });
-
-  // Initialize: check resume and start pre-roll
+  // Initialize: check resume and pre-roll ad eligibility
   useEffect(() => {
     if (contentId) {
       try {
@@ -114,9 +126,15 @@ export default function VideoPlayer({
         }
       } catch {}
     }
-    // Start pre-roll ad if no resume prompt
-    startAd('preroll');
-  }, [contentId, startAd]);
+
+    if (isAdsSuccess) {
+      if (hasApplicableAd && !adFinished) {
+        setShowPreroll(true);
+      } else {
+        setAdFinished(true);
+      }
+    }
+  }, [contentId, isAdsSuccess, hasApplicableAd, adFinished]);
 
   const handleResume = (resume: boolean) => {
     setShowResumePrompt(false);
@@ -126,7 +144,15 @@ export default function VideoPlayer({
       setCurrentTime(resumeTime);
       setProgress(duration ? (resumeTime / duration) * 100 : 0);
     }
-    startAd('preroll');
+    if (hasApplicableAd && !adFinished) {
+      setShowPreroll(true);
+    } else {
+      setAdFinished(true);
+      if (v) {
+        v.play().catch(() => {});
+        setPlaying(true);
+      }
+    }
   };
 
   const resetHideTimer = useCallback(() => {
@@ -174,20 +200,20 @@ export default function VideoPlayer({
 
   const togglePlay = useCallback(() => {
     const v = videoRef.current;
-    if (!v || adIsActive) return;
+    if (!v || showPreroll) return;
     if (v.paused) { v.play(); setPlaying(true); }
     else { v.pause(); setPlaying(false); }
     resetHideTimer();
-  }, [resetHideTimer, adIsActive]);
+  }, [resetHideTimer, showPreroll]);
 
   const skip = useCallback((sec: number) => {
     const v = videoRef.current;
-    if (!v || adIsActive) return;
+    if (!v || showPreroll) return;
     v.currentTime = Math.max(0, Math.min(v.duration, v.currentTime + sec));
     setShowSkipAnim(sec > 0 ? "right" : "left");
     setTimeout(() => setShowSkipAnim(null), 700);
     resetHideTimer();
-  }, [resetHideTimer, adIsActive]);
+  }, [resetHideTimer, showPreroll]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -276,7 +302,7 @@ export default function VideoPlayer({
 
   // Save watch progress every 5 seconds
   useEffect(() => {
-    if (!contentId || adIsActive) return;
+    if (!contentId || showPreroll) return;
     progressSaveTimer.current = setInterval(() => {
       const v = videoRef.current;
       if (v && v.currentTime && v.duration) {
@@ -290,7 +316,7 @@ export default function VideoPlayer({
     return () => {
       if (progressSaveTimer.current) clearInterval(progressSaveTimer.current);
     };
-  }, [contentId, adIsActive]);
+  }, [contentId, showPreroll]);
 
 
   const aspectRatio = orientation === "landscape" ? "16/9" : "9/16";
@@ -337,14 +363,11 @@ export default function VideoPlayer({
           onClick={togglePlay}
         />
 
-        {/* Ad Overlay */}
-        {adIsActive && (
-          <AdOverlay
-            timer={adTimer}
-            canSkip={adCanSkip}
-            onSkip={skipAd}
-            label="Advertisement"
-          />
+        {/* Pre-roll Ad Overlay */}
+        {showPreroll && (
+          <div className="absolute inset-0 z-[400] bg-black">
+            <PlayerPrerollAd onFinished={handleAdComplete} />
+          </div>
         )}
 
         {/* Resume Prompt */}
@@ -375,7 +398,7 @@ export default function VideoPlayer({
 
 
         {/* Loading Spinner */}
-        {loading && !adIsActive && (
+        {loading && !showPreroll && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
             <div className="w-14 h-14 rounded-full border-4 border-white/20 border-t-white animate-spin" />
           </div>
