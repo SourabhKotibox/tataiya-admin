@@ -313,7 +313,7 @@ export default function SeasonsList() {
                         {/* Poster */}
                         <TableCell className="py-2.5 px-4">
                           <img
-                            src={s.poster || tvShow?.poster}
+                            src={getImageUrl(s.poster || s.posterImage || tvShow?.poster)}
                             alt={s.title}
                             className="w-12 h-16 object-cover rounded-md bg-zinc-800 border border-border"
                             onError={(e) => {

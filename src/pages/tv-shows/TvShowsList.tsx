@@ -349,7 +349,7 @@ export default function TvShowsList() {
                         {/* Poster */}
                         <TableCell className="py-2.5 px-4">
                           <img
-                            src={s.poster}
+                            src={getImageUrl(s.poster || s.posterImage || s.thumbnail || s.backdrop)}
                             alt={s.title}
                             className="w-10 h-14 object-cover rounded-md bg-zinc-800 border border-border"
                             onError={(e) => {

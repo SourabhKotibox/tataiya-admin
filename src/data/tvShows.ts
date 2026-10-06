@@ -3,8 +3,11 @@ export interface AdminTvShow {
   title: string;
   shortDescription: string;
   fullDescription: string;
+  thumbnail?: string;
   poster: string;
+  posterImage?: string;
   backdrop: string;
+  bannerImage?: string;
   genres: string[];
   language: string;
   year: string;

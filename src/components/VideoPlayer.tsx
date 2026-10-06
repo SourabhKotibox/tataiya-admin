@@ -619,12 +619,7 @@ export default function VideoPlayer({
           </div>
         </div>
 
-        {/* Orientation label */}
-        <div className="absolute top-3 left-3 pointer-events-none">
-          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${orientation === "portrait" ? "bg-purple-600/80 text-white" : "bg-blue-600/80 text-white"}`}>
-            {orientation === "portrait" ? "Portrait 9:16" : "Landscape 16:9"}
-          </span>
-        </div>
+
       </div>
 
       <style>{`

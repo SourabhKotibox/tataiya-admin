@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { useParams, useLocation } from "wouter";
-import { ChevronLeft, Save, Film, Play, Lock, AlertCircle } from "lucide-react";
+import { ChevronLeft, Save, Film, Play, Lock, AlertCircle, ImageIcon, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -51,7 +51,11 @@ export default function EpisodeForm() {
   const [title, setTitle] = useState("");
   const [shortDescription, setShortDescription] = useState("");
   const [fullDescription, setFullDescription] = useState("");
-  const [thumbnail, setThumbnail] = useState("");
+  
+  // Episode Thumbnail state & picker
+  const [thumbnail, setThumbnail] = useState({ filePath: "", preview: "" });
+  const [thumbnailPickerOpen, setThumbnailPickerOpen] = useState(false);
+
   const [videoUploadType, setVideoUploadType] = useState<string>("url");
   const [videoUrl, setVideoUrl] = useState("");
   const [videoFilePath, setVideoFilePath] = useState("");
@@ -108,7 +112,13 @@ export default function EpisodeForm() {
         setTitle(existing.title || "");
         setShortDescription(existing.shortDescription || existing.description || "");
         setFullDescription(existing.fullDescription || existing.description || "");
-        setThumbnail(existing.thumbnail || existing.poster || "");
+        
+        const existingThumb = existing.thumbnail || existing.poster || "";
+        setThumbnail({
+          filePath: existingThumb,
+          preview: existingThumb ? getImageUrl(existingThumb) : "",
+        });
+
         setVideoUrl(existing.hlsUrl || existing.sourceVideoUrl || existing.videoUrl || "");
         setVideoFilePath(existing.videoFilePath || existing.sourceVideoUrl || "");
         if (existing.videoUploadType) {
@@ -163,6 +173,8 @@ export default function EpisodeForm() {
       return;
     }
 
+    const resolvedThumb = thumbnail.filePath || thumbnail.preview || "";
+
     const episodePayload: any = {
       tvShowId,
       season: seasonNumberVal,
@@ -171,9 +183,13 @@ export default function EpisodeForm() {
       shortDescription: shortDescription.trim(),
       fullDescription: fullDescription.trim(),
       description: fullDescription.trim() || shortDescription.trim() || undefined,
-      thumbnail: thumbnail.trim() || undefined,
+      thumbnail: resolvedThumb.trim() || undefined,
+      poster: resolvedThumb.trim() || undefined,
+      videoUrl: resolvedVideoUrl || undefined,
       sourceVideoUrl: videoUploadType === "local" && resolvedVideoUrl && !isHlsPlaylist ? resolvedVideoUrl : undefined,
       hlsUrl: resolvedVideoUrl && isHlsPlaylist ? resolvedVideoUrl : undefined,
+      videoUploadType,
+      videoFilePath: videoFilePath.trim() || undefined,
       duration: (durationMinutes || 45) * 60,
       releaseDate: releaseDate || undefined,
       isFree,
@@ -227,305 +243,363 @@ export default function EpisodeForm() {
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
-        {/* Navigation Bar */}
-        <div className="flex items-center justify-between">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setLocation("/admin/episodes")}
-            className="gap-1.5 text-muted-foreground hover:text-foreground cursor-pointer"
-          >
-            <ChevronLeft className="w-4 h-4" /> Back to Episodes
-          </Button>
+      {/* Navigation Bar */}
+      <div className="flex items-center justify-between">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => setLocation("/admin/episodes")}
+          className="gap-1.5 text-muted-foreground hover:text-foreground cursor-pointer"
+        >
+          <ChevronLeft className="w-4 h-4" /> Back to Episodes
+        </Button>
 
-          <h1 className="text-xl sm:text-2xl font-black text-foreground">
-            {isEdit ? "Edit Episode" : "Add New Episode"}
-          </h1>
-        </div>
+        <h1 className="text-xl sm:text-2xl font-black text-foreground">
+          {isEdit ? "Edit Episode" : "Add New Episode"}
+        </h1>
+      </div>
 
-        {/* Note */}
-        <div className="bg-primary/10 border border-primary/20 rounded-2xl p-4 flex items-start gap-3">
-          <Film className="w-5 h-5 text-primary flex-shrink-0 mt-0.5" />
-          <p className="text-xs text-muted-foreground leading-relaxed">
-            <strong className="text-foreground">Episodes Section Only:</strong> Select an existing TV Show and Season.
-            This form manages episode streaming files, playback durations, and paywall locks.
-          </p>
-        </div>
+      {/* Note */}
+      <div className="bg-primary/10 border border-primary/20 rounded-2xl p-4 flex items-start gap-3">
+        <Film className="w-5 h-5 text-primary flex-shrink-0 mt-0.5" />
+        <p className="text-xs text-muted-foreground leading-relaxed">
+          <strong className="text-foreground">Episodes Section Only:</strong> Select an existing TV Show and Season.
+          This form manages episode streaming files, playback durations, and paywall locks.
+        </p>
+      </div>
 
-        {/* Form Container */}
-        <form onSubmit={handleSave} className="bg-card border border-border rounded-3xl p-6 sm:p-8 space-y-6 shadow-sm">
-          {/* Section: Association */}
-          <div className="space-y-4">
-            <h3 className="text-sm font-black text-foreground uppercase tracking-wider border-b border-border pb-2">
-              Series Association
-            </h3>
+      {/* Form Container */}
+      <form onSubmit={handleSave} className="bg-card border border-border rounded-3xl p-6 sm:p-8 space-y-6 shadow-sm">
+        {/* Section: Episode Details & Artwork (matches Screenshot 2) */}
+        <div className="space-y-4">
+          <h3 className="text-sm font-black text-foreground uppercase tracking-wider border-b border-border pb-2">
+            Episode Details
+          </h3>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <Label className="text-xs font-bold mb-1.5 block">Select TV Show *</Label>
-                <Select value={tvShowId} onValueChange={setTvShowId}>
+          {/* Episode Thumbnail Box */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs font-bold block">Episode Thumbnail</Label>
+              {thumbnail.preview && (
+                <button
+                  type="button"
+                  onClick={() => setThumbnail({ filePath: "", preview: "" })}
+                  className="text-xs text-red-400 hover:text-red-300 transition-colors cursor-pointer"
+                >
+                  Clear Thumbnail
+                </button>
+              )}
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-4 items-start">
+              <div
+                onClick={() => setThumbnailPickerOpen(true)}
+                className="w-48 aspect-[16/9] border-2 border-dashed border-border rounded-xl flex items-center justify-center cursor-pointer hover:border-primary/40 bg-muted/20 transition-colors overflow-hidden relative group flex-shrink-0"
+              >
+                {thumbnail.preview ? (
+                  <>
+                    <img src={thumbnail.preview} alt="Episode thumbnail preview" className="w-full h-full object-cover" />
+                    <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                      <span className="text-[11px] font-semibold text-white bg-black/70 px-2 py-1 rounded-full border border-white/20 flex items-center gap-1">
+                        <Upload className="w-3 h-3" /> Change
+                      </span>
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex flex-col items-center gap-1.5 p-2 text-center">
+                    <ImageIcon className="h-8 w-8 text-muted-foreground" />
+                    <span className="text-[11px] text-muted-foreground">Select Thumbnail</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex-1 space-y-2 w-full">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setThumbnailPickerOpen(true)}
+                  className="gap-2 text-xs h-9 cursor-pointer"
+                >
+                  <Upload className="w-3.5 h-3.5" /> Pick Thumbnail from Library
+                </Button>
+                <Input
+                  value={thumbnail.filePath}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setThumbnail({ filePath: val, preview: val ? getImageUrl(val) : "" });
+                  }}
+                  placeholder="Or paste image URL (https://...)"
+                  className="h-9 text-xs"
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  Recommended aspect ratio: 16:9 (e.g. 1280x720).
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Association Row: TV Show, Season, Episode Number */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
+            <div>
+              <Label className="text-xs font-bold mb-1.5 block">Web Series / TV Show *</Label>
+              <Select value={tvShowId} onValueChange={setTvShowId}>
+                <SelectTrigger className="h-10 text-xs">
+                  <SelectValue placeholder="Select Web Series..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {tvShows.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>
+                      {s.title}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label className="text-xs font-bold mb-1.5 block">Season *</Label>
+              {availableSeasons.length === 0 ? (
+                <div className="flex items-center gap-2 p-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-500 h-10">
+                  <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                  <span className="truncate">No seasons found.</span>
+                </div>
+              ) : (
+                <Select value={seasonId} onValueChange={setSeasonId}>
                   <SelectTrigger className="h-10 text-xs">
-                    <SelectValue placeholder="Select TV Show..." />
+                    <SelectValue placeholder="Select Season..." />
                   </SelectTrigger>
                   <SelectContent>
-                    {tvShows.map((s) => (
+                    {availableSeasons.map((s) => (
                       <SelectItem key={s.id} value={s.id}>
-                        {s.title}
+                        Season {s.seasonNumber}: {s.title}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-              </div>
-
-              <div>
-                <Label className="text-xs font-bold mb-1.5 block">Select Season *</Label>
-                {availableSeasons.length === 0 ? (
-                  <div className="flex items-center gap-2 p-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-500">
-                    <AlertCircle className="w-4 h-4" />
-                    <span>No seasons found. Create a season in Seasons section first.</span>
-                  </div>
-                ) : (
-                  <Select value={seasonId} onValueChange={setSeasonId}>
-                    <SelectTrigger className="h-10 text-xs">
-                      <SelectValue placeholder="Select Season..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {availableSeasons.map((s) => (
-                        <SelectItem key={s.id} value={s.id}>
-                          Season {s.seasonNumber}: {s.title}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Section: Episode Details */}
-          <div className="space-y-4 pt-4 border-t border-border">
-            <h3 className="text-sm font-black text-foreground uppercase tracking-wider border-b border-border pb-2">
-              Episode Details
-            </h3>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div>
-                <Label className="text-xs font-bold mb-1.5 block">Episode Number *</Label>
-                <Input
-                  type="number"
-                  min={1}
-                  required
-                  value={episodeNumber}
-                  onChange={(e) => setEpisodeNumber(parseInt(e.target.value) || 1)}
-                  className="h-10"
-                />
-              </div>
-
-              <div className="sm:col-span-2">
-                <Label className="text-xs font-bold mb-1.5 block">Episode Title *</Label>
-                <Input
-                  required
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  placeholder="e.g. Dark Signal"
-                  className="h-10"
-                />
-              </div>
-            </div>
-
-            <div>
-              <Label className="text-xs font-bold mb-1.5 block">Short Logline</Label>
-              <Input
-                value={shortDescription}
-                onChange={(e) => setShortDescription(e.target.value)}
-                placeholder="Brief summary of episode events..."
-              />
-            </div>
-
-            <div>
-              <Label className="text-xs font-bold mb-1.5 block">Full Description</Label>
-              <Textarea
-                rows={3}
-                value={fullDescription}
-                onChange={(e) => setFullDescription(e.target.value)}
-                placeholder="In-depth episode storyline..."
-              />
-            </div>
-          </div>
-
-          {/* Section: Media & Video Playback */}
-          <div className="space-y-4 pt-4 border-t border-border">
-            <h3 className="text-sm font-black text-foreground uppercase tracking-wider border-b border-border pb-2">
-              Video & Artwork
-            </h3>
-
-            <div>
-              <Label className="text-xs font-bold mb-1.5 block">Episode Thumbnail URL (16:9)</Label>
-              <Input
-                value={thumbnail}
-                onChange={(e) => setThumbnail(e.target.value)}
-                placeholder="https://..."
-                className="h-10 text-xs"
-              />
-              {thumbnail && (
-                <div className="mt-2 w-40 h-24 rounded-lg overflow-hidden border border-border bg-zinc-900">
-                  <img src={thumbnail} alt="Thumbnail preview" className="w-full h-full object-cover" />
-                </div>
               )}
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <Label className="text-xs font-bold mb-1.5 block">Video Upload Type</Label>
-                <Select value={videoUploadType} onValueChange={setVideoUploadType}>
-                  <SelectTrigger className="h-10 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="url">External URL</SelectItem>
-                    <SelectItem value="hls">HLS / M3U8 URL</SelectItem>
-                    <SelectItem value="local">Local (Media Library)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+            <div>
+              <Label className="text-xs font-bold mb-1.5 block">Episode Number *</Label>
+              <Input
+                type="number"
+                min={1}
+                required
+                value={episodeNumber}
+                onChange={(e) => setEpisodeNumber(parseInt(e.target.value) || 1)}
+                className="h-10 text-xs"
+              />
+            </div>
+          </div>
 
-              <div>
-                <Label className="text-xs font-bold mb-1.5 block">Video</Label>
-                {videoUploadType === "local" ? (
-                  <div
-                    onClick={() => setVideoPickerOpen(true)}
-                    className="border-2 border-dashed border-border rounded-lg h-10 flex items-center justify-center cursor-pointer hover:border-primary/40 bg-muted/20 transition-colors overflow-hidden w-full"
-                  >
-                    {videoFilePath || (videoUrl && !videoUrl.startsWith("http")) ? (
-                      <span className="text-xs sm:text-sm text-foreground truncate px-3 w-full text-center block" title={getImageUrl(videoFilePath || videoUrl)}>
-                        {getImageUrl(videoFilePath || videoUrl)}
-                      </span>
-                    ) : (
-                      <span className="text-xs sm:text-sm text-muted-foreground">Click to select from media library</span>
-                    )}
-                  </div>
-                ) : videoUploadType === "hls" ? (
-                  <Input
-                    value={videoUrl}
-                    onChange={(e) => setVideoUrl(e.target.value)}
-                    placeholder="https://cdn.example.com/video.m3u8"
-                    className="h-10 text-xs"
-                  />
+          <div>
+            <Label className="text-xs font-bold mb-1.5 block">Episode Title *</Label>
+            <Input
+              required
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="e.g. The Beginning"
+              className="h-10"
+            />
+          </div>
+
+          <div>
+            <Label className="text-xs font-bold mb-1.5 block">Short Logline</Label>
+            <Input
+              value={shortDescription}
+              onChange={(e) => setShortDescription(e.target.value)}
+              placeholder="Brief summary of episode events..."
+            />
+          </div>
+
+          <div>
+            <Label className="text-xs font-bold mb-1.5 block">Description</Label>
+            <Textarea
+              rows={3}
+              value={fullDescription}
+              onChange={(e) => setFullDescription(e.target.value)}
+              placeholder="In-depth episode storyline..."
+            />
+          </div>
+        </div>
+
+        {/* Section: Media & Video Playback */}
+        <div className="space-y-4 pt-4 border-t border-border">
+          <h3 className="text-sm font-black text-foreground uppercase tracking-wider border-b border-border pb-2">
+            Video & Playback Source
+          </h3>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <Label className="text-xs font-bold mb-1.5 block">Video Upload Type</Label>
+              <Select value={videoUploadType} onValueChange={setVideoUploadType}>
+                <SelectTrigger className="h-10 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="url">External URL</SelectItem>
+                  <SelectItem value="hls">HLS / M3U8 URL</SelectItem>
+                  <SelectItem value="local">Local (Media Library)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label className="text-xs font-bold mb-1.5 block">Video</Label>
+              {videoUploadType === "local" ? (
+                <div
+                  onClick={() => setVideoPickerOpen(true)}
+                  className="border-2 border-dashed border-border rounded-lg h-10 flex items-center justify-center cursor-pointer hover:border-primary/40 bg-muted/20 transition-colors overflow-hidden w-full"
+                >
+                  {videoFilePath || (videoUrl && !videoUrl.startsWith("http")) ? (
+                    <span className="text-xs sm:text-sm text-foreground truncate px-3 w-full text-center block" title={getImageUrl(videoFilePath || videoUrl)}>
+                      {getImageUrl(videoFilePath || videoUrl)}
+                    </span>
+                  ) : (
+                    <span className="text-xs sm:text-sm text-muted-foreground">Click to select from media library</span>
+                  )}
+                </div>
+              ) : videoUploadType === "hls" ? (
+                <Input
+                  value={videoUrl}
+                  onChange={(e) => setVideoUrl(e.target.value)}
+                  placeholder="https://cdn.example.com/video.m3u8"
+                  className="h-10 text-xs"
+                />
+              ) : (
+                <Input
+                  value={videoUrl}
+                  onChange={(e) => setVideoUrl(e.target.value)}
+                  placeholder="https://..."
+                  className="h-10 text-xs"
+                />
+              )}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div>
+              <Label className="text-xs font-bold mb-1.5 block">Duration (Minutes)</Label>
+              <Input
+                type="number"
+                min={1}
+                value={durationMinutes}
+                onChange={(e) => setDurationMinutes(parseInt(e.target.value) || 45)}
+                placeholder="45"
+                className="h-10 text-xs"
+              />
+            </div>
+
+            <div>
+              <Label className="text-xs font-bold mb-1.5 block">Release Date</Label>
+              <Input
+                type="date"
+                value={releaseDate}
+                onChange={(e) => setReleaseDate(e.target.value)}
+                className="h-10 text-xs"
+              />
+            </div>
+
+            <div>
+              <Label className="text-xs font-bold mb-1.5 block">Status</Label>
+              <Select value={status} onValueChange={(v: any) => setStatus(v)}>
+                <SelectTrigger className="h-10 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="published">Published</SelectItem>
+                  <SelectItem value="draft">Draft</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div>
+            <Label className="text-xs font-bold mb-1.5 block">Subtitle URL (optional)</Label>
+            <Input
+              value={subtitleUrl}
+              onChange={(e) => setSubtitleUrl(e.target.value)}
+              placeholder="https://example.com/subs.vtt"
+              className="h-10 text-xs"
+            />
+          </div>
+        </div>
+
+        {/* Section: Paywall & Access Controls */}
+        <div className="space-y-4 pt-4 border-t border-border">
+          <h3 className="text-sm font-black text-foreground uppercase tracking-wider border-b border-border pb-2">
+            Paywall & Monetization
+          </h3>
+
+          <div className="flex items-center justify-between p-4 rounded-2xl bg-muted/30 border border-border">
+            <div className="space-y-0.5">
+              <div className="flex items-center gap-2">
+                <Label className="text-sm font-bold">Free Episode (No Subscription Needed)</Label>
+                {isFree ? (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-500/20 text-emerald-500">
+                    OPEN ACCESS
+                  </span>
                 ) : (
-                  <Input
-                    value={videoUrl}
-                    onChange={(e) => setVideoUrl(e.target.value)}
-                    placeholder="https://..."
-                    className="h-10 text-xs"
-                  />
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-500/20 text-amber-500 flex items-center gap-1">
+                    <Lock className="w-3 h-3" /> VIP LOCKED
+                  </span>
                 )}
               </div>
+              <p className="text-xs text-muted-foreground">
+                Toggle ON to let all users stream this episode without requiring a premium subscription plan.
+              </p>
             </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div>
-                <Label className="text-xs font-bold mb-1.5 block">Duration (Minutes)</Label>
-                <Input
-                  type="number"
-                  min={1}
-                  value={durationMinutes}
-                  onChange={(e) => setDurationMinutes(parseInt(e.target.value) || 45)}
-                  placeholder="45"
-                  className="h-10 text-xs"
-                />
-              </div>
-
-              <div>
-                <Label className="text-xs font-bold mb-1.5 block">Release Date</Label>
-                <Input
-                  type="date"
-                  value={releaseDate}
-                  onChange={(e) => setReleaseDate(e.target.value)}
-                  className="h-10 text-xs"
-                />
-              </div>
-
-              <div>
-                <Label className="text-xs font-bold mb-1.5 block">Subtitle / VTT URL (optional)</Label>
-                <Input
-                  value={subtitleUrl}
-                  onChange={(e) => setSubtitleUrl(e.target.value)}
-                  placeholder="https://.../sub.vtt"
-                  className="h-10 text-xs"
-                />
-              </div>
-            </div>
+            <Switch checked={isFree} onCheckedChange={setIsFree} />
           </div>
+        </div>
 
-          {/* Section: Access & Publishing */}
-          <div className="space-y-4 pt-4 border-t border-border">
-            <h3 className="text-sm font-black text-foreground uppercase tracking-wider border-b border-border pb-2">
-              Access & Publishing
-            </h3>
+        {/* Action Buttons */}
+        <div className="flex items-center justify-end gap-3 pt-4 border-t border-border">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setLocation("/admin/episodes")}
+            className="cursor-pointer"
+          >
+            Cancel
+          </Button>
+          <Button
+            type="submit"
+            className="gap-2 bg-primary hover:bg-primary/90 text-primary-foreground font-bold shadow-md cursor-pointer"
+          >
+            <Save className="w-4 h-4" /> {isEdit ? "Update Episode" : "Create Episode"}
+          </Button>
+        </div>
+      </form>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-              <div className="flex items-center justify-between p-3.5 rounded-2xl bg-muted/30 border border-border">
-                <div>
-                  <Label className="text-xs font-bold block">Free Episode</Label>
-                  <p className="text-[11px] text-muted-foreground mt-0.5">Allow streaming without subscription</p>
-                </div>
-                <Switch
-                  checked={isFree}
-                  onCheckedChange={setIsFree}
-                />
-              </div>
+      {/* Thumbnail Media Picker Modal */}
+      <MediaPicker
+        open={thumbnailPickerOpen}
+        onClose={() => setThumbnailPickerOpen(false)}
+        onSelect={(m) => setThumbnail({ filePath: m.filePath, preview: m.url })}
+        source="episodes"
+        accept="image/*"
+      />
 
-              <div>
-                <Label className="text-xs font-bold mb-1.5 block">Status</Label>
-                <Select value={status} onValueChange={(v: any) => setStatus(v)}>
-                  <SelectTrigger className="h-10 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="published">Published</SelectItem>
-                    <SelectItem value="draft">Draft</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-          </div>
-
-          {/* Action Buttons */}
-          <div className="flex items-center justify-end gap-3 pt-6 border-t border-border">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setLocation("/admin/episodes")}
-              className="cursor-pointer"
-            >
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              className="gap-2 bg-primary hover:bg-primary/90 text-primary-foreground font-bold shadow-md cursor-pointer"
-            >
-              <Save className="w-4 h-4" /> {isEdit ? "Update Episode" : "Create Episode"}
-            </Button>
-          </div>
-        </form>
-
-        <MediaPicker
-          open={videoPickerOpen}
-          onClose={() => setVideoPickerOpen(false)}
-          onUploadPendingChange={setVideoUploadPending}
-          onSelect={(media) => {
-            setVideoPickerOpen(false);
-            const chosenUrl = media.filePath || media.s3Key || media.url || "";
-            setVideoUploadType("local");
-            setVideoFilePath(chosenUrl);
-            setVideoUrl(chosenUrl);
-            if (media.duration && (!durationMinutes || durationMinutes === 45)) {
-              setDurationMinutes(Math.round(media.duration / 60));
-            }
-          }}
-          source="episodes"
-          accept="video/*"
-        />
-      </div>
+      {/* Video Media Picker Modal */}
+      <MediaPicker
+        open={videoPickerOpen}
+        onClose={() => setVideoPickerOpen(false)}
+        onUploadPendingChange={setVideoUploadPending}
+        onSelect={(media) => {
+          setVideoPickerOpen(false);
+          const chosenUrl = media.filePath || media.s3Key || media.url || "";
+          setVideoUploadType("local");
+          setVideoFilePath(chosenUrl);
+          setVideoUrl(chosenUrl);
+          if (media.duration && (!durationMinutes || durationMinutes === 45)) {
+            setDurationMinutes(Math.round(media.duration / 60));
+          }
+        }}
+        source="episodes"
+        accept="video/*"
+      />
+    </div>
   );
 }

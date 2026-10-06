@@ -316,6 +316,7 @@ function AdminRoutes() {
               <Route path="/movies" component={MoviesPage} />
 
               {/* TV Shows Admin Section */}
+              <Route path="/admin/tv-shows/new" component={TvShowForm} />
               <Route path="/admin/tv-shows/add" component={TvShowForm} />
               <Route path="/admin/tv-shows/:id/edit" component={TvShowForm} />
               <Route path="/admin/tv-shows/:id" component={TvShowAdminDetail} />
@@ -323,11 +324,17 @@ function AdminRoutes() {
               <Route path="/tv-shows-admin" component={TvShowsList} />
 
               {/* Seasons Admin Section */}
+              <Route path="/admin/seasons/new" component={SeasonForm} />
               <Route path="/admin/seasons/add" component={SeasonForm} />
               <Route path="/admin/seasons/:id/edit" component={SeasonForm} />
               <Route path="/admin/seasons" component={SeasonsList} />
+              <Route path="/seasons/new" component={SeasonForm} />
+              <Route path="/seasons/add" component={SeasonForm} />
+              <Route path="/seasons/:id/edit" component={SeasonForm} />
+              <Route path="/seasons" component={SeasonsList} />
 
               {/* Episodes Admin Section */}
+              <Route path="/admin/episodes/new" component={EpisodeForm} />
               <Route path="/admin/episodes/add" component={EpisodeForm} />
               <Route path="/admin/episodes/:id/edit" component={EpisodeForm} />
               <Route path="/admin/episodes" component={EpisodesList} />

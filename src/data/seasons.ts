@@ -5,6 +5,7 @@ export interface AdminSeason {
   title: string;
   description: string;
   poster: string;
+  posterImage?: string;
   releaseDate: string;
   status: "published" | "draft";
   createdAt: string;

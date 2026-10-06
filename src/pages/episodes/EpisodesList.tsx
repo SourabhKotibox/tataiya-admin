@@ -368,7 +368,7 @@ export default function EpisodesList() {
                         {/* Thumbnail */}
                         <TableCell className="py-2.5 px-4">
                           <img
-                            src={ep.thumbnail}
+                            src={getImageUrl(ep.thumbnail || tvShow?.backdrop || tvShow?.poster)}
                             alt={ep.title}
                             className="w-16 h-10 object-cover rounded-md bg-zinc-800 border border-border"
                             onError={(e) => {
