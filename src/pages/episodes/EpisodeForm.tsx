@@ -10,6 +10,8 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import MediaPicker from "@/components/MediaPicker";
+import { getImageUrl } from "@/lib/api-client";
 import { getAdminEpisodeById, saveAdminEpisode, AdminEpisode } from "@/data/episodes";
 import { getAdminTvShows, getAdminTvShowById } from "@/data/tvShows";
 import { getAdminSeasons, getAdminSeasonsByShowId } from "@/data/seasons";
@@ -31,7 +33,10 @@ export default function EpisodeForm() {
   const [shortDescription, setShortDescription] = useState("");
   const [fullDescription, setFullDescription] = useState("");
   const [thumbnail, setThumbnail] = useState("");
+  const [videoUploadType, setVideoUploadType] = useState<string>("url");
   const [videoUrl, setVideoUrl] = useState("");
+  const [videoFilePath, setVideoFilePath] = useState("");
+  const [videoPickerOpen, setVideoPickerOpen] = useState(false);
   const [durationMinutes, setDurationMinutes] = useState<number>(45);
   const [releaseDate, setReleaseDate] = useState(new Date().toISOString().split("T")[0]);
   const [isFree, setIsFree] = useState(true);
@@ -69,6 +74,16 @@ export default function EpisodeForm() {
         setFullDescription(existing.fullDescription || "");
         setThumbnail(existing.thumbnail || "");
         setVideoUrl(existing.videoUrl || "");
+        setVideoFilePath(existing.videoFilePath || "");
+        if (existing.videoUploadType) {
+          setVideoUploadType(existing.videoUploadType);
+        } else if (existing.videoUrl?.includes(".m3u8")) {
+          setVideoUploadType("hls");
+        } else if (existing.videoFilePath || existing.videoUrl?.startsWith("/uploads/") || existing.videoUrl?.includes("/media/")) {
+          setVideoUploadType("local");
+        } else {
+          setVideoUploadType("url");
+        }
         setDurationMinutes(Math.round((existing.duration || 2700) / 60));
         setReleaseDate(existing.releaseDate || "");
         setIsFree(Boolean(existing.isFree));
@@ -96,6 +111,12 @@ export default function EpisodeForm() {
     const episodeId = id || `ep-${Date.now()}`;
     const selectedShow = getAdminTvShowById(tvShowId);
 
+    const resolvedVideoUrl = (
+      videoUploadType === "local"
+        ? (videoFilePath ? getImageUrl(videoFilePath) : videoUrl)
+        : videoUrl
+    ).trim();
+
     const savedEpisode: AdminEpisode = {
       id: episodeId,
       tvShowId,
@@ -105,7 +126,9 @@ export default function EpisodeForm() {
       shortDescription: shortDescription.trim(),
       fullDescription: fullDescription.trim(),
       thumbnail: thumbnail.trim() || selectedShow?.backdrop || selectedShow?.poster || "https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?w=600&auto=format&fit=crop&q=80",
-      videoUrl: videoUrl.trim() || "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
+      videoUrl: resolvedVideoUrl || "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
+      videoUploadType,
+      videoFilePath: videoFilePath.trim(),
       duration: (durationMinutes || 45) * 60,
       releaseDate,
       isFree,
@@ -257,31 +280,66 @@ export default function EpisodeForm() {
               Video & Artwork
             </h3>
 
+            <div>
+              <Label className="text-xs font-bold mb-1.5 block">Episode Thumbnail URL (16:9)</Label>
+              <Input
+                value={thumbnail}
+                onChange={(e) => setThumbnail(e.target.value)}
+                placeholder="https://..."
+                className="h-10 text-xs"
+              />
+              {thumbnail && (
+                <div className="mt-2 w-40 h-24 rounded-lg overflow-hidden border border-border bg-zinc-900">
+                  <img src={thumbnail} alt="Thumbnail preview" className="w-full h-full object-cover" />
+                </div>
+              )}
+            </div>
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <Label className="text-xs font-bold mb-1.5 block">Episode Thumbnail URL (16:9)</Label>
-                <Input
-                  value={thumbnail}
-                  onChange={(e) => setThumbnail(e.target.value)}
-                  placeholder="https://..."
-                />
-                {thumbnail && (
-                  <div className="mt-2 w-40 h-24 rounded-lg overflow-hidden border border-border bg-zinc-900">
-                    <img src={thumbnail} alt="Thumbnail preview" className="w-full h-full object-cover" />
-                  </div>
-                )}
+                <Label className="text-xs font-bold mb-1.5 block">Video Upload Type</Label>
+                <Select value={videoUploadType} onValueChange={setVideoUploadType}>
+                  <SelectTrigger className="h-10 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="url">External URL</SelectItem>
+                    <SelectItem value="hls">HLS / M3U8 URL</SelectItem>
+                    <SelectItem value="local">Local (Media Library)</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
 
               <div>
-                <Label className="text-xs font-bold mb-1.5 block">Video Stream URL (MP4 / HLS m3u8)</Label>
-                <Input
-                  value={videoUrl}
-                  onChange={(e) => setVideoUrl(e.target.value)}
-                  placeholder="https://commondatastorage.googleapis.com/.../sample.mp4"
-                />
-                <p className="text-[11px] text-muted-foreground mt-1">
-                  Local demo MP4 or external streaming link.
-                </p>
+                <Label className="text-xs font-bold mb-1.5 block">Video</Label>
+                {videoUploadType === "local" ? (
+                  <div
+                    onClick={() => setVideoPickerOpen(true)}
+                    className="border-2 border-dashed border-border rounded-lg h-10 flex items-center justify-center cursor-pointer hover:border-primary/40 bg-muted/20 transition-colors overflow-hidden w-full"
+                  >
+                    {videoFilePath || (videoUrl && !videoUrl.startsWith("http")) ? (
+                      <span className="text-xs sm:text-sm text-foreground truncate px-3 w-full text-center block" title={getImageUrl(videoFilePath || videoUrl)}>
+                        {getImageUrl(videoFilePath || videoUrl)}
+                      </span>
+                    ) : (
+                      <span className="text-xs sm:text-sm text-muted-foreground">Click to select from media library</span>
+                    )}
+                  </div>
+                ) : videoUploadType === "hls" ? (
+                  <Input
+                    value={videoUrl}
+                    onChange={(e) => setVideoUrl(e.target.value)}
+                    placeholder="https://cdn.example.com/video.m3u8"
+                    className="h-10 text-xs"
+                  />
+                ) : (
+                  <Input
+                    value={videoUrl}
+                    onChange={(e) => setVideoUrl(e.target.value)}
+                    placeholder="https://..."
+                    className="h-10 text-xs"
+                  />
+                )}
               </div>
             </div>
 
@@ -294,6 +352,7 @@ export default function EpisodeForm() {
                   value={durationMinutes}
                   onChange={(e) => setDurationMinutes(parseInt(e.target.value) || 45)}
                   placeholder="45"
+                  className="h-10 text-xs"
                 />
               </div>
 
@@ -303,6 +362,7 @@ export default function EpisodeForm() {
                   type="date"
                   value={releaseDate}
                   onChange={(e) => setReleaseDate(e.target.value)}
+                  className="h-10 text-xs"
                 />
               </div>
 
@@ -312,6 +372,7 @@ export default function EpisodeForm() {
                   value={subtitleUrl}
                   onChange={(e) => setSubtitleUrl(e.target.value)}
                   placeholder="https://.../sub.vtt"
+                  className="h-10 text-xs"
                 />
               </div>
             </div>
@@ -368,6 +429,22 @@ export default function EpisodeForm() {
             </Button>
           </div>
         </form>
+
+        <MediaPicker
+          open={videoPickerOpen}
+          onClose={() => setVideoPickerOpen(false)}
+          onSelect={(media) => {
+            setVideoPickerOpen(false);
+            const chosenUrl = media.url || (media.filePath ? getImageUrl(media.filePath) : "");
+            setVideoFilePath(media.filePath || media.url || "");
+            setVideoUrl(chosenUrl);
+            if (media.duration && (!durationMinutes || durationMinutes === 45)) {
+              setDurationMinutes(Math.round(media.duration / 60));
+            }
+          }}
+          source="episodes"
+          accept="video/*"
+        />
       </div>
   );
 }

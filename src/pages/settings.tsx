@@ -270,6 +270,7 @@ export default function Settings() {
 
   // ── Misc Settings ──────────────────────────────────────────────────────
   const [misc, setMisc] = useState({
+    moduleMovies: ctxSettings.moduleMovies ?? true,
     maintenanceMode: ctxSettings.maintenanceMode ?? false,
     userRegistration: ctxSettings.userRegistration ?? true,
     socialLogin: ctxSettings.socialLogin ?? true,
@@ -284,6 +285,7 @@ export default function Settings() {
 
   useEffect(() => {
     setMisc({
+      moduleMovies: ctxSettings.moduleMovies ?? true,
       maintenanceMode: ctxSettings.maintenanceMode ?? false,
       userRegistration: ctxSettings.userRegistration ?? true,
       socialLogin: ctxSettings.socialLogin ?? true,
@@ -296,6 +298,7 @@ export default function Settings() {
       appleKeyId: ctxSettings.appleKeyId || '',
     });
   }, [
+    ctxSettings.moduleMovies,
     ctxSettings.maintenanceMode,
     ctxSettings.userRegistration,
     ctxSettings.socialLogin,
@@ -312,6 +315,7 @@ export default function Settings() {
     setSaving(true);
     try {
       await updateSettingsMutation.mutateAsync({
+        moduleMovies: misc.moduleMovies,
         maintenanceMode: misc.maintenanceMode,
         userRegistration: misc.userRegistration,
         socialLogin: misc.socialLogin,
@@ -324,6 +328,7 @@ export default function Settings() {
         appleKeyId: misc.appleKeyId.trim(),
       });
       updateCtx({
+        moduleMovies: misc.moduleMovies,
         maintenanceMode: misc.maintenanceMode,
         userRegistration: misc.userRegistration,
         socialLogin: misc.socialLogin,
@@ -1140,6 +1145,7 @@ export default function Settings() {
       {/* Toggle switches */}
       <div className="space-y-3 mb-7">
         {([
+          { key: "moduleMovies", label: "Movie Section", desc: "Control Movie section visibility on the frontend website" },
           { key: "maintenanceMode", label: "Maintenance Mode", desc: "Block login & registration — users see a maintenance message" },
           { key: "userRegistration", label: "User Registration", desc: "Allow new users to create accounts on the web" },
           { key: "socialLogin", label: "Social Login", desc: "Show Google / Apple sign-in buttons on the web auth page" },

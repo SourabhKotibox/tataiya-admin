@@ -331,6 +331,11 @@ function AdminRoutes() {
               <Route path="/admin/episodes/add" component={EpisodeForm} />
               <Route path="/admin/episodes/:id/edit" component={EpisodeForm} />
               <Route path="/admin/episodes" component={EpisodesList} />
+              <Route path="/episodes/new" component={EpisodeForm} />
+              <Route path="/episodes/add" component={EpisodeForm} />
+              <Route path="/episodes/:id/edit" component={EpisodeForm} />
+              <Route path="/episodes/:id" component={EpisodeForm} />
+              <Route path="/episodes" component={EpisodesList} />
               <Route path="/ads/:id" component={AdForm} />
               <Route path="/ads" component={AdsPage} />
               <Route path="/google-ads" component={GoogleAdsPage} />

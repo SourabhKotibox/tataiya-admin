@@ -8,6 +8,8 @@ export interface AdminEpisode {
   fullDescription: string;
   thumbnail: string;
   videoUrl: string;
+  videoUploadType?: "url" | "hls" | "local" | string;
+  videoFilePath?: string;
   duration: number; // in seconds
   releaseDate: string;
   isFree: boolean;

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useSearch, useLocation, useParams } from "wouter";
 import {
   Search, X, Loader2, Film, Flame,
@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import { PublicHeader, PublicFooter } from "./streaming-home";
 import { useGetWebBrowse, useGetGenres } from "@/lib/api-client";
+import { useSettings } from "@/contexts/SettingsContext";
 import SubscriptionPlansModal from "@/components/SubscriptionPlansModal";
 import { LandscapeCard } from "@/components/ContentCard";
 
@@ -29,6 +30,11 @@ const TAB_TO_TYPE: Record<string, ContentType> = {
 export default function CategoriesBrowsePage() {
   const searchString = useSearch();
   const [, setLocation] = useLocation();
+  const { settings } = useSettings();
+  const showMovieSection = settings.moduleMovies !== false;
+  const contentTypes = useMemo(() => {
+    return showMovieSection ? CONTENT_TYPES : CONTENT_TYPES.filter((c) => c.key !== "movie");
+  }, [showMovieSection]);
   const params = useParams<{ tab?: string }>();
   const [activeTab, setActiveTab] = useState<"home" | "movies" | "new">("home");
   const [plansModalOpen, setPlansModalOpen] = useState(false);
@@ -53,11 +59,19 @@ export default function CategoriesBrowsePage() {
     ? (TAB_TO_TYPE[(params as any).tab] || "all")
     : "all";
 
-  const [contentType, setContentType] = useState<ContentType>(initialType);
+  const [contentType, setContentType] = useState<ContentType>(
+    !showMovieSection && initialType === "movie" ? "all" : initialType
+  );
   const [activeGenre, setActiveGenre] = useState(genreParam ? genreParam : isAction ? "Action" : "All");
   const [page, setPage] = useState(1);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
   const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!showMovieSection && contentType === "movie") {
+      setContentType("all");
+    }
+  }, [showMovieSection, contentType]);
 
   useEffect(() => {
     const stored = localStorage.getItem("appUser");
@@ -191,7 +205,7 @@ export default function CategoriesBrowsePage() {
         {/* Content Type Tabs */}
         <div className="px-4 sm:px-8 lg:px-14 mb-5">
           <div className="flex items-center gap-2 flex-wrap">
-            {CONTENT_TYPES.map(({ key, label, icon }) => (
+            {contentTypes.map(({ key, label, icon }) => (
               <button
                 key={key}
                 onClick={() => { 

@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import {
-  Edit2, Eye, Trash2, Search, Plus, Download, Upload,
+  Edit2, Eye, EyeOff, Trash2, Search, Plus, Download, Upload,
   SlidersHorizontal, ImageIcon, Loader2, RefreshCw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -30,7 +30,9 @@ import {
   useGetLanguagesList,
   useGetSubscriptionPlans,
   useReprocessMovieHls,
+  useUpdateSettings,
 } from "@/lib/api-client";
+import { useSettings } from "@/contexts/SettingsContext";
 import { getImageUrl } from "@/lib/api-client";
 
 type MovieRow = {
@@ -276,6 +278,33 @@ export default function MoviesPage() {
     }
   };
 
+  const { settings, updateSettings, refreshSettings } = useSettings();
+  const updateSettingsMutation = useUpdateSettings();
+  const [togglingMovieVisibility, setTogglingMovieVisibility] = useState(false);
+
+  const handleToggleMovieVisibility = async (enabled: boolean) => {
+    setTogglingMovieVisibility(true);
+    try {
+      await updateSettingsMutation.mutateAsync({ moduleMovies: enabled });
+      updateSettings({ moduleMovies: enabled });
+      await refreshSettings();
+      toast({
+        title: enabled ? "Movie section enabled" : "Movie section disabled",
+        description: enabled
+          ? "The Movie section is now visible on the website."
+          : "The Movie section is now hidden from the website.",
+      });
+    } catch (err: any) {
+      toast({
+        title: "Failed to update Movie section visibility",
+        description: err?.message || "Something went wrong",
+        variant: "destructive",
+      });
+    } finally {
+      setTogglingMovieVisibility(false);
+    }
+  };
+
   return (
     <div className="space-y-5">
       {/* Breadcrumb */}
@@ -283,6 +312,25 @@ export default function MoviesPage() {
         <span>Dashboard</span>
         <span>/</span>
         <span className="text-foreground font-medium">Movies</span>
+      </div>
+
+      {/* Movie Section Visibility Toggle */}
+      <div className="flex items-center justify-between gap-4 p-4 rounded-xl border border-border bg-card">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-foreground flex items-center gap-2">
+            {settings.moduleMovies !== false ? <Eye className="w-4 h-4 text-emerald-500" /> : <EyeOff className="w-4 h-4 text-muted-foreground" />}
+            Movie Section
+          </p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Control Movie section visibility on the frontend website.
+          </p>
+        </div>
+        <Switch
+          checked={settings.moduleMovies !== false}
+          disabled={togglingMovieVisibility}
+          onCheckedChange={handleToggleMovieVisibility}
+          className="data-[state=checked]:bg-primary shrink-0"
+        />
       </div>
 
       {/* Toolbar */}

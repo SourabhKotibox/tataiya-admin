@@ -1114,6 +1114,8 @@ function HomeTab({ onPlay, onSubscribeClick, isSubscribed, user, onSignIn }: {
   onSignIn?: () => void;
 }) {
   const [, setLocation] = useLocation();
+  const { settings } = useSettings();
+  const showMovieSection = settings.moduleMovies !== false;
   const cwScrollRef = useRef<HTMLDivElement>(null);
   const { data: homeData, isLoading: isHomeLoading } = useGetWebHome();
   const { data: watchHistoryData } = useGetWatchHistory({ limit: 10 });
@@ -1214,7 +1216,14 @@ function HomeTab({ onPlay, onSubscribeClick, isSubscribed, user, onSignIn }: {
       )}
 
       {webSections.length > 0 ? (
-        webSections.map((section: any, index: number) => {
+        webSections
+          .filter((section: any) => {
+            if (!showMovieSection) {
+              if (section.contentType === 'movie' || section.type === 'movie') return false;
+            }
+            return true;
+          })
+          .map((section: any, index: number) => {
           if (section.layout === 'ad') {
             return (
               <Fragment key={section._id || index}>
@@ -1270,14 +1279,14 @@ function HomeTab({ onPlay, onSubscribeClick, isSubscribed, user, onSignIn }: {
 
           {!isSubscribed && <SubscribeBanner onSubscribeClick={onSubscribeClick} />}
 
-          {homeData.topRated?.length > 0 && (
+          {showMovieSection && homeData.topRated?.length > 0 && (
             <FeaturedRow title="Top Rated Movies" icon={<Star className="w-4 h-4" />} items={homeData.topRated} onPlay={onPlay} size="lg" onSeeAll={() => setLocation("/browse?top-rated")} />
           )}
 
           {/* ── SECOND AD BANNER (mid-content) ── */}
           <HomeBannerAd />
 
-          {homeData.actionMovies?.length > 0 && (
+          {showMovieSection && homeData.actionMovies?.length > 0 && (
             <FeaturedRow title="Action & Adventure" icon={<Flame className="w-4 h-4" />} items={homeData.actionMovies} onPlay={onPlay} onSeeAll={() => setLocation("/browse?action")} />
           )}
           
@@ -1718,6 +1727,12 @@ const NAV_TABS: { label: string; tab: Tab; icon: React.ReactNode }[] = [
 export function PublicHeader({ activeTab, setActiveTab, onSignIn, onSignOut, user, onSubscribeClick }: {
   activeTab?: any; setActiveTab?: (t: any) => void; onSignIn?: () => void; onSignOut?: () => void; user?: any; onSubscribeClick?: () => void;
 }) {
+  const { settings } = useSettings();
+  const showMovieSection = settings.moduleMovies !== false;
+  const navTabs = useMemo(() => {
+    return showMovieSection ? NAV_TABS : NAV_TABS.filter((t) => t.tab !== "movies");
+  }, [showMovieSection]);
+
   const [scrolled, setScrolled] = useState(false);
   const isSubscribed = isUserSubscribed(user);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -1752,7 +1767,6 @@ export function PublicHeader({ activeTab, setActiveTab, onSignIn, onSignOut, use
   const avatarRef = useRef<HTMLDivElement>(null);
   const notificationsRef = useRef<HTMLDivElement>(null);
 
-  const { settings } = useSettings();
   const { resolvedTheme } = useTheme();
 
   const getLogoUrl = () => {
@@ -1886,7 +1900,7 @@ export function PublicHeader({ activeTab, setActiveTab, onSignIn, onSignOut, use
               </Link>
 
               <nav className="hidden lg:flex items-center gap-1">
-                {NAV_TABS.map(({ label, tab, icon }) => (
+                {navTabs.map(({ label, tab, icon }) => (
                   <button
                     key={tab}
                     onClick={() => {
@@ -2087,7 +2101,7 @@ export function PublicHeader({ activeTab, setActiveTab, onSignIn, onSignOut, use
 
         <div className={`lg:hidden overflow-hidden transition-all duration-300 ${mobileOpen ? "max-h-96 opacity-100" : "max-h-0 opacity-0"}`}>
           <div className="bg-[#0a0a10]/98 backdrop-blur-md border-t border-zinc-800 px-3 sm:px-4 py-3 space-y-1.5">
-            {NAV_TABS.map(({ label, tab, icon }) => (
+            {navTabs.map(({ label, tab, icon }) => (
               <button
                 key={tab}
                 type="button"
@@ -2175,11 +2189,11 @@ export function PublicFooter() {
                   <div className="w-8 h-8 rounded-lg bg-amber-400 flex items-center justify-center shadow-lg shadow-amber-500/40">
                     <Play className="w-4 h-4 text-white fill-white ml-0.5" />
                   </div>
-                  <span className="text-white font-bold text-xl tracking-tight">{settings.platformName || "StreamIT"}</span>
+                  <span className="text-white font-bold text-xl tracking-tight">{(settings.platformName || "Tataiya").replace(/Ashqe/gi, "Tataiya")}</span>
                 </>
               )}
             </div>
-            <p className="text-white text-xs leading-relaxed max-w-xs">{settings.siteDescription || "Your premium OTT destination for movies."}</p>
+            <p className="text-white text-xs leading-relaxed max-w-xs">{(settings.siteDescription || "Your premium OTT destination for movies.").replace(/Ashqe/gi, "Tataiya")}</p>
             <div className="flex items-center gap-2 pt-2">
               {socialLinks.map((s) => (
                 <a key={s.label} href={s.url} target="_blank" rel="noopener noreferrer" aria-label={s.label} className="w-8 h-8 flex items-center justify-center rounded-xl border border-zinc-800 text-white hover:border-amber-400 hover:bg-amber-400/5 transition-all">
@@ -2195,7 +2209,7 @@ export function PublicFooter() {
             <h4 className="text-white font-bold text-[11px] tracking-widest uppercase">Browse Catalog</h4>
             <ul className="space-y-2.5">
               {[
-                { label: "Movies", href: "/browse" },
+                ...(settings.moduleMovies !== false ? [{ label: "Movies", href: "/browse" }] : []),
                 { label: "New & Hot", href: "/browse" },
               ].map((itm) => (
                 <li key={itm.label}>
@@ -2254,7 +2268,7 @@ export function PublicFooter() {
         </div>
 
         <div className="pt-8 border-t border-zinc-900 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <p className="text-white/80 text-xs font-medium">{settings.copyrightText || "2025 StreamIT. All Rights Reserved."}</p>
+          <p className="text-white/80 text-xs font-medium">{(settings.copyrightText || "© 2026 Tataiya. All Rights Reserved.").replace(/Ashqe/gi, "Tataiya").replace(/StreamIT/gi, "Tataiya")}</p>
           <div className="flex flex-wrap items-center justify-center sm:justify-end gap-x-5 gap-y-2">
             {pages.map((p: any) => (
               <button 
@@ -2293,20 +2307,27 @@ export default function StreamingHomePage() {
   // Prefetch player ads so we know if pre-roll exists before showing it
   const { data: playerAdsData } = useGetPublicAds({ placement: 'Player' });
   const { settings } = useSettings();
+  const showMovieSection = settings.moduleMovies !== false;
   const hasPlayerAds = (playerAdsData?.data?.length ?? 0) > 0 || !!settings?.vastPrerollUrl;
 
   const { data: homeData } = useGetWebHome();
   const rawBanners = homeData?.heroContent || [];
   const hasHeroForTab = useMemo(() => {
     if (activeTab === "home" || activeTab === "new") return rawBanners.length > 0;
-    if (activeTab === "movies") return rawBanners.some((b: any) => b.type === "movie" || b.contentType === "movie");
+    if (activeTab === "movies" && showMovieSection) return rawBanners.some((b: any) => b.type === "movie" || b.contentType === "movie");
     return false;
-  }, [rawBanners, activeTab]);
+  }, [rawBanners, activeTab, showMovieSection]);
 
   const showToast = (msg: string) => {
     setToastMsg(msg);
     setTimeout(() => setToastMsg(""), 3500);
   };
+
+  useEffect(() => {
+    if (!showMovieSection && activeTab === "movies") {
+      setActiveTab("home");
+    }
+  }, [showMovieSection, activeTab]);
 
   useEffect(() => {
     const loadUser = () => {
@@ -2448,7 +2469,7 @@ export default function StreamingHomePage() {
             onSignIn={() => setShowSignIn(true)}
           />
         )}
-        {activeTab === "movies" && (
+        {activeTab === "movies" && showMovieSection && (
           <MoviesTab onPlay={handlePlay} />
         )}
         {activeTab === "new" && <NewHotTab onPlay={handlePlay} showToast={showToast} />}

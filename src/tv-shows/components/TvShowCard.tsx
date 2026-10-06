@@ -26,8 +26,8 @@ export function TvShowCard({ show, onClick, onPlay, fullWidth = true }: TvShowCa
     >
       {/* Poster Image Container */}
       <div
-        className="relative overflow-hidden rounded-xl sm:rounded-2xl bg-zinc-900 border border-white/5 group-hover:border-amber-400/50 group-hover:ring-2 group-hover:ring-amber-400/30 transition-all duration-300 shadow-md group-hover:shadow-amber-500/10"
-        style={{ aspectRatio: "9/16" }}
+        className="relative overflow-hidden rounded-xl bg-zinc-900 border border-white/5 group-hover:border-amber-400/50 group-hover:ring-2 group-hover:ring-amber-400/30 transition-all duration-300 shadow-md group-hover:shadow-amber-500/10"
+        style={{ aspectRatio: "2/3" }}
       >
         <img
           src={show.poster}
