@@ -121,6 +121,10 @@ export default function TvShowForm() {
   const [thumbnailPickerOpen, setThumbnailPickerOpen] = useState(false);
   const [posterPickerOpen, setPosterPickerOpen] = useState(false);
   const [bannerPickerOpen, setBannerPickerOpen] = useState(false);
+  const [trailerPickerOpen, setTrailerPickerOpen] = useState(false);
+  const [trailerUrlType, setTrailerUrlType] = useState("url");
+  const [trailerUrl, setTrailerUrl] = useState("");
+  const [trailerFilePath, setTrailerFilePath] = useState("");
 
   const [genres, setGenres] = useState<string[]>(["Drama"]);
   const [language, setLanguage] = useState("Hindi");
@@ -161,6 +165,16 @@ export default function TvShowForm() {
         filePath: existingBanner,
         preview: existingBanner ? getImageUrl(existingBanner) : "",
       });
+      
+      if (existing.trailerUrl) {
+        if (existing.trailerUrl.startsWith("http://") || existing.trailerUrl.startsWith("https://")) {
+          setTrailerUrlType("url");
+          setTrailerUrl(existing.trailerUrl);
+        } else {
+          setTrailerUrlType("local");
+          setTrailerFilePath(existing.trailerUrl);
+        }
+      }
 
       if (Array.isArray(existing.genres) && existing.genres.length > 0) {
         setGenres(existing.genres.map((g: any) => (typeof g === "string" ? g : g?._id || g?.name || "")).filter(Boolean));
@@ -239,6 +253,7 @@ export default function TvShowForm() {
       poster: resolvedPoster || undefined,
       bannerImage: resolvedBanner || undefined,
       backdrop: resolvedBanner || undefined,
+      trailerUrl: trailerUrlType === "local" ? trailerFilePath : trailerUrl,
       genres: resolvedGenres,
       languages: [resolvedLanguage],
       year: parseInt(year.trim(), 10) || new Date().getFullYear(),
@@ -581,6 +596,13 @@ export default function TvShowForm() {
         onSelect={(m) => setBanner({ filePath: m.filePath, preview: m.url })}
         source="tv-shows"
         accept="image/*"
+      />
+      <MediaPicker
+        open={trailerPickerOpen}
+        onClose={() => setTrailerPickerOpen(false)}
+        onSelect={(m) => setTrailerFilePath(m.filePath)}
+        source="tv-shows"
+        accept="video/*"
       />
     </div>
   );

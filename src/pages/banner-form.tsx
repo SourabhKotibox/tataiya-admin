@@ -35,6 +35,7 @@ import {
   useCreateBannerFromContent,
   useUpdateBanner,
   useGetMovies,
+  useGetTVShows,
   getImageUrl,
 } from "../lib/api-client";
 import MediaPicker from "@/components/MediaPicker";
@@ -42,7 +43,7 @@ import MediaPicker from "@/components/MediaPicker";
 /* ------------------------------------------------------------------ */
 /*  Types                                                               */
 /* ------------------------------------------------------------------ */
-type ContentType = "movie";
+type ContentType = "movie" | "tvShow";
 
 type ContentItem = {
   id: string;
@@ -65,7 +66,7 @@ const CONTENT_TYPES: {
   icon: React.ReactNode;
   description: string;
   color: string;
-  apiSource: "movie";
+  apiSource: "movie" | "tvShow";
 }[] = [
   {
     key: "movie",
@@ -74,6 +75,14 @@ const CONTENT_TYPES: {
     description: "Feature films already in your library",
     color: "from-violet-500/20 to-purple-600/10 border-violet-500/40",
     apiSource: "movie",
+  },
+  {
+    key: "tvShow",
+    label: "TV Show",
+    icon: <Tv className="w-7 h-7" />,
+    description: "TV Series and Seasons",
+    color: "from-blue-500/20 to-cyan-600/10 border-blue-500/40",
+    apiSource: "tvShow",
   },
 ];
 
@@ -137,12 +146,23 @@ export default function BannerForm() {
   /* ---- queries for content search ---- */
   const cfg = CONTENT_TYPES.find((c) => c.key === contentType);
   const moviesQuery = useGetMovies(
-    contentType ? { search: searchQuery, limit: 50 } : undefined
+    contentType === "movie" ? { search: searchQuery, limit: 50 } : { limit: 0, enabled: false }
+  );
+  const tvShowsQuery = useGetTVShows(
+    contentType === "tvShow" ? { search: searchQuery, limit: 50 } : { limit: 0, enabled: false }
   );
 
   const contentItems: ContentItem[] = (() => {
     if (!contentType) return [];
-    return (moviesQuery.data?.data || []).map((m: any) => ({
+    
+    let rawData: any[] = [];
+    if (contentType === "movie" && moviesQuery.data?.data) {
+      rawData = moviesQuery.data.data;
+    } else if (contentType === "tvShow" && tvShowsQuery.data?.data) {
+      rawData = tvShowsQuery.data.data;
+    }
+    
+    return rawData.map((m: any) => ({
       id: m._id || m.id,
       title: m.title,
       thumbnail: m.thumbnail || m.bannerImage,
@@ -151,6 +171,7 @@ export default function BannerForm() {
       status: m.status,
       year: m.year,
       duration: m.duration,
+      contentType: contentType
     }));
   })();
 
@@ -361,7 +382,7 @@ export default function BannerForm() {
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 max-h-[420px] overflow-y-auto pr-1">
                 {(contentItems.length === 0) && (
                   <div className="col-span-full text-center py-12 text-muted-foreground text-sm">
-                    {moviesQuery.isLoading
+                    {(moviesQuery.isLoading || tvShowsQuery.isLoading)
                       ? "Loading…"
                       : "No content found. Try a different search."}
                   </div>

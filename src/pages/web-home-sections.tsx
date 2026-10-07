@@ -29,6 +29,7 @@ import {
   useDeleteSection,
   useReorderSections,
   useGetMovies,
+  useGetTVShows,
   useGetPublicAds,
 } from '@/lib/api-client';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -154,6 +155,9 @@ export default function WebHomeSections() {
   const reorderMutation = useReorderSections();
 
   const { data: moviesRes } = useGetMovies({ limit: 500 });
+  const { data: tvShowsRes } = useGetTVShows({ limit: 500 });
+
+  const combinedContent = [...(moviesRes?.data || []), ...(tvShowsRes?.data || [])];
   const { data: adsRes } = useGetPublicAds({ placement: 'Home Page' });
 
   const [localSections, setLocalSections] = useState<any[]>([]);
@@ -588,7 +592,7 @@ export default function WebHomeSections() {
                       <SelectValue placeholder="Click to add a title..." />
                     </SelectTrigger>
                     <SelectContent>
-                      {moviesRes?.data?.map((item: any) => (
+                      {combinedContent.map((item: any) => (
                         <SelectItem key={item._id} value={item._id}>{item.title}</SelectItem>
                       ))}
                     </SelectContent>
@@ -597,7 +601,7 @@ export default function WebHomeSections() {
                   {selectedItems.length > 0 && (
                     <div className="flex flex-col gap-2 mt-3 bg-muted/30 dark:bg-black/20 border border-border dark:border-white/5 p-2 rounded-md max-h-48 overflow-y-auto">
                       {selectedItems.map(id => {
-                        const matchedItem = moviesRes?.data?.find((i: any) => i._id === id);
+                        const matchedItem = combinedContent.find((i: any) => i._id === id);
                         return (
                           <div key={id} className="flex items-center justify-between bg-muted/50 px-3 py-2 rounded-md text-sm border border-border/50">
                             <span className="truncate pr-4">{matchedItem ? matchedItem.title : 'Unknown Title'}</span>

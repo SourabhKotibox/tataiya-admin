@@ -29,6 +29,7 @@ import {
   useDeleteSection,
   useReorderSections,
   useGetMovies,
+  useGetTVShows,
   useGetHomeTabsConfig,
   useUpdateHomeTabsConfig,
 } from '@/lib/api-client';
@@ -154,6 +155,9 @@ export default function HomeSections() {
   const reorderMutation = useReorderSections();
 
   const { data: moviesRes } = useGetMovies({ limit: 500 });
+  const { data: tvShowsRes } = useGetTVShows({ limit: 500 });
+
+  const combinedContent = [...(moviesRes?.data || []), ...(tvShowsRes?.data || [])];
 
   const { data: tabsConfigRes } = useGetHomeTabsConfig();
   const updateTabsMutation = useUpdateHomeTabsConfig();
