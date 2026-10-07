@@ -4,7 +4,7 @@ import { useParams, useLocation } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   ChevronLeft,
-  Film,
+  Film, Tv,
   Search,
   CheckCircle2,
   AlertCircle,
