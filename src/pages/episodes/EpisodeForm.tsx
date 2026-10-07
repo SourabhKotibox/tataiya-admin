@@ -67,6 +67,12 @@ export default function EpisodeForm() {
   const [thumbnail, setThumbnail] = useState({ filePath: "", preview: "" });
   const [thumbnailPickerOpen, setThumbnailPickerOpen] = useState(false);
 
+  // Trailer state
+  const [trailerPickerOpen, setTrailerPickerOpen] = useState(false);
+  const [trailerUrlType, setTrailerUrlType] = useState("url");
+  const [trailerUrl, setTrailerUrl] = useState("");
+  const [trailerFilePath, setTrailerFilePath] = useState("");
+
   const [videoUploadType, setVideoUploadType] = useState<string>("url");
   const [videoUrl, setVideoUrl] = useState("");
   const [videoFilePath, setVideoFilePath] = useState("");
@@ -123,6 +129,16 @@ export default function EpisodeForm() {
         setTitle(existing.title || "");
         setShortDescription(existing.shortDescription || existing.description || "");
         setFullDescription(existing.fullDescription || existing.description || "");
+        
+        if (existing.trailerUrl) {
+          if (existing.trailerUrl.startsWith("http://") || existing.trailerUrl.startsWith("https://")) {
+            setTrailerUrlType("url");
+            setTrailerUrl(existing.trailerUrl);
+          } else {
+            setTrailerUrlType("local");
+            setTrailerFilePath(existing.trailerUrl);
+          }
+        }
         
         const existingThumb = existing.thumbnail || existing.poster || "";
         setThumbnail({
@@ -489,6 +505,48 @@ export default function EpisodeForm() {
             </div>
           </div>
 
+          <h3 className="text-sm font-black text-foreground uppercase tracking-wider border-b border-border pb-2 mt-6">
+            Trailer
+          </h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <Label className="text-xs font-bold mb-1.5 block">Trailer URL Type</Label>
+              <Select value={trailerUrlType} onValueChange={setTrailerUrlType}>
+                <SelectTrigger className="h-10 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="url">External URL</SelectItem>
+                  <SelectItem value="local">Local (Media Library)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs font-bold mb-1.5 block">Trailer Video</Label>
+              {trailerUrlType === "local" ? (
+                <div
+                  onClick={() => setTrailerPickerOpen(true)}
+                  className="border-2 border-dashed border-border rounded-lg h-10 flex items-center justify-center cursor-pointer hover:border-primary/40 bg-muted/20 transition-colors overflow-hidden"
+                >
+                  {trailerFilePath ? (
+                    <span className="text-xs sm:text-sm text-foreground truncate px-3 w-full text-center block">
+                      {getImageUrl(trailerFilePath)}
+                    </span>
+                  ) : (
+                    <span className="text-xs sm:text-sm text-muted-foreground">Click to select trailer</span>
+                  )}
+                </div>
+              ) : (
+                <Input
+                  value={trailerUrl}
+                  onChange={(e) => setTrailerUrl(e.target.value)}
+                  placeholder="https://..."
+                  className="h-10 text-xs"
+                />
+              )}
+            </div>
+          </div>
+
           {isEdit && (
             <div className="bg-muted/10 border border-border rounded-xl p-4 my-2">
               <div className="flex items-center justify-between mb-3">
@@ -668,6 +726,13 @@ export default function EpisodeForm() {
             setDurationMinutes(Math.round(media.duration / 60));
           }
         }}
+        source="episodes"
+        accept="video/*"
+      />
+      <MediaPicker
+        open={trailerPickerOpen}
+        onClose={() => setTrailerPickerOpen(false)}
+        onSelect={(m) => setTrailerFilePath(m.filePath)}
         source="episodes"
         accept="video/*"
       />
