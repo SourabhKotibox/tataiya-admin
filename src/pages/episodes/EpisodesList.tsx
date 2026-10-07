@@ -367,13 +367,14 @@ export default function EpisodesList() {
                   <TableHead className="py-3 px-4">Duration</TableHead>
                   <TableHead className="py-3 px-4">Access</TableHead>
                   <TableHead className="py-3 px-4">Status</TableHead>
+                  <TableHead className="py-3 px-4">HLS Status</TableHead>
                   <TableHead className="py-3 px-4 text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredEpisodes.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={9} className="py-12 text-center text-muted-foreground">
+                    <TableCell colSpan={10} className="py-12 text-center text-muted-foreground">
                       No Episodes found.
                     </TableCell>
                   </TableRow>
@@ -448,6 +449,21 @@ export default function EpisodesList() {
                             }`}
                           >
                             {ep.status === "published" ? "Published" : "Draft"}
+                          </span>
+                        </TableCell>
+
+                        {/* HLS Status */}
+                        <TableCell className="py-2.5 px-4">
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                              ep.processingStatus === "ready"
+                                ? "bg-blue-500/20 text-blue-400"
+                                : ep.processingStatus === "failed"
+                                ? "bg-red-500/20 text-red-400"
+                                : "bg-amber-500/20 text-amber-400 animate-pulse"
+                            }`}
+                          >
+                            {(ep.processingStatus || "ready").toUpperCase()}
                           </span>
                         </TableCell>
 
