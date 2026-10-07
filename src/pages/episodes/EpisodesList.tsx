@@ -22,6 +22,7 @@ import {
   useGetTVShows,
   useGetEpisodeSeasonList,
   useDeleteEpisode,
+  useReprocessEpisodeHls,
   getImageUrl,
 } from "@/lib/api-client";
 import { formatDuration } from "@/tv-shows/data/tvShows";
@@ -163,6 +164,24 @@ export default function EpisodesList() {
     setPlanFilter("all");
     setStatusFilter("all");
     setSortBy("newest");
+  };
+
+  const reprocessMutation = useReprocessEpisodeHls();
+
+  const handleReprocess = async (ep: any) => {
+    try {
+      await reprocessMutation.mutateAsync(ep.id);
+      toast({
+        title: "Transcoding Started",
+        description: `Started reprocessing HLS for "${ep.title}".`,
+      });
+    } catch (err: any) {
+      toast({
+        title: "Failed to transcode",
+        description: err?.message || "An error occurred",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleConfirmDelete = async () => {
