@@ -361,7 +361,7 @@ export default function EpisodesList() {
                 ) : (
                   filteredEpisodes.map((ep) => {
                     const tvShow = shows.find((s) => s.id === ep.tvShowId) || getAdminTvShowById(ep.tvShowId);
-                    const season = seasons.find((s) => s.id === ep.seasonId || s.seasonNumber === ep.seasonNumber);
+                    const season = seasons.find((s) => s.id === ep.seasonId || (s.seasonNumber === ep.seasonNumber && s.tvShowId === ep.tvShowId));
 
                     return (
                       <TableRow key={ep.id} className="hover:bg-muted/30">
@@ -435,6 +435,16 @@ export default function EpisodesList() {
                         {/* Actions */}
                         <TableCell className="py-2.5 px-4 text-right">
                           <div className="flex items-center justify-end gap-1">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleReprocess(ep)}
+                              className="h-8 w-8 text-blue-500 hover:text-blue-400 hover:bg-blue-500/10 cursor-pointer"
+                              title="Transcode HLS"
+                              disabled={reprocessMutation.isPending}
+                            >
+                              <Layers className="w-4 h-4" />
+                            </Button>
                             <Button
                               variant="ghost"
                               size="icon"
