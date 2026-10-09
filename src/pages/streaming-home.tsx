@@ -50,7 +50,7 @@ interface ContentItem {
   planRequired?: string;
 }
 
-type Tab = "home" | "movies" | "new" | "tvshows";
+type Tab = "home" | "tvshows" | "new";
 
 const PLAN_LEVEL: Record<string, number> = { free: 0, basic: 1, standard: 2, premium: 3 };
 
@@ -1738,7 +1738,6 @@ function SignInModal({ onClose }: { onClose: () => void }) {
 /* ─── HEADER ─── */
 const NAV_TABS: { label: string; tab: Tab; icon: React.ReactNode }[] = [
   { label: "Home", tab: "home", icon: null },
-  { label: "Movies", tab: "movies", icon: <Film className="w-3.5 h-3.5" /> },
   { label: "TV Shows", tab: "tvshows", icon: <Tv className="w-3.5 h-3.5" /> },
   { label: "New & Hot", tab: "new", icon: <Flame className="w-3.5 h-3.5" /> },
 ];
@@ -1747,10 +1746,7 @@ export function PublicHeader({ activeTab, setActiveTab, onSignIn, onSignOut, use
   activeTab?: any; setActiveTab?: (t: any) => void; onSignIn?: () => void; onSignOut?: () => void; user?: any; onSubscribeClick?: () => void;
 }) {
   const { settings } = useSettings();
-  const showMovieSection = settings.moduleMovies !== false;
-  const navTabs = useMemo(() => {
-    return showMovieSection ? NAV_TABS : NAV_TABS.filter((t) => t.tab !== "movies");
-  }, [showMovieSection]);
+  const navTabs = NAV_TABS;
 
   const [scrolled, setScrolled] = useState(false);
   const isSubscribed = isUserSubscribed(user);
@@ -2533,9 +2529,6 @@ export default function StreamingHomePage() {
             user={user}
             onSignIn={() => setShowSignIn(true)}
           />
-        )}
-        {activeTab === "movies" && showMovieSection && (
-          <MoviesTab onPlay={handlePlay} />
         )}
         {activeTab === "new" && <NewHotTab onPlay={handlePlay} showToast={showToast} />}
       </main>

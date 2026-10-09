@@ -154,10 +154,9 @@ export default function WebHomeSections() {
   const deleteMutation = useDeleteSection();
   const reorderMutation = useReorderSections();
 
-  const { data: moviesRes } = useGetMovies({ limit: 500 });
+  // Only TV Shows — movies are no longer managed in the Web Layout Builder
   const { data: tvShowsRes } = useGetTVShows({ limit: 500 });
-
-  const combinedContent = [...(moviesRes?.data || []), ...(tvShowsRes?.data || [])];
+  const tvShows = tvShowsRes?.data || [];
   const { data: adsRes } = useGetPublicAds({ placement: 'Home Page' });
 
   const [localSections, setLocalSections] = useState<any[]>([]);
@@ -293,7 +292,7 @@ export default function WebHomeSections() {
       key: formData.key || `section-${Date.now()}`,
       title: formData.title,
       category: formData.category || formData.title,
-      contentType: 'mixed', // Web home sections mix both types
+      contentType: 'tvShow', // Web home sections only use TV Shows now
       layout: formData.layout,
       itemType: formData.itemType,
       limit: Number(formData.limit) || 10,
@@ -592,7 +591,7 @@ export default function WebHomeSections() {
                       <SelectValue placeholder="Click to add a title..." />
                     </SelectTrigger>
                     <SelectContent>
-                      {combinedContent.map((item: any) => (
+                      {tvShows.map((item: any) => (
                         <SelectItem key={item._id} value={item._id}>{item.title}</SelectItem>
                       ))}
                     </SelectContent>
@@ -601,7 +600,7 @@ export default function WebHomeSections() {
                   {selectedItems.length > 0 && (
                     <div className="flex flex-col gap-2 mt-3 bg-muted/30 dark:bg-black/20 border border-border dark:border-white/5 p-2 rounded-md max-h-48 overflow-y-auto">
                       {selectedItems.map(id => {
-                        const matchedItem = combinedContent.find((i: any) => i._id === id);
+                        const matchedItem = tvShows.find((i: any) => i._id === id);
                         return (
                           <div key={id} className="flex items-center justify-between bg-muted/50 px-3 py-2 rounded-md text-sm border border-border/50">
                             <span className="truncate pr-4">{matchedItem ? matchedItem.title : 'Unknown Title'}</span>

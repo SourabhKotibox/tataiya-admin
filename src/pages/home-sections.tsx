@@ -149,7 +149,6 @@ const SortableSection = ({ section, onToggle, onEdit, onDelete }: SortableSectio
 
 export default function HomeSections() {
   const { toast } = useToast();
-  const activeTab = 'movie' as const;
   
   const { data: sectionsData, isLoading } = useGetSections({});
   const createMutation = useCreateSection();
@@ -157,10 +156,9 @@ export default function HomeSections() {
   const deleteMutation = useDeleteSection();
   const reorderMutation = useReorderSections();
 
-  const { data: moviesRes } = useGetMovies({ limit: 500 });
+  // Only TV Shows — movies are no longer managed in the App Layout Builder
   const { data: tvShowsRes } = useGetTVShows({ limit: 500 });
-
-  const combinedContent = [...(moviesRes?.data || []), ...(tvShowsRes?.data || [])];
+  const tvShows = tvShowsRes?.data || [];
 
   const { data: tabsConfigRes } = useGetHomeTabsConfig();
   const updateTabsMutation = useUpdateHomeTabsConfig();
@@ -171,9 +169,9 @@ export default function HomeSections() {
   const [tabNameInput, setTabNameInput] = useState('');
 
   const tabsConfig = tabsConfigRes?.data || [
-    { id: 'movie', name: 'Movies' }
+    { id: 'tvShow', name: 'TV Shows' }
   ];
-  const activeTabName = tabsConfig.find((t: any) => t.id === activeTab)?.name || 'Movies';
+  const activeTabName = tabsConfig.find((t: any) => t.id === 'tvShow')?.name || 'TV Shows';
 
   const handleSaveTabName = () => {
     if (!tabNameInput.trim()) return;
@@ -391,7 +389,7 @@ export default function HomeSections() {
             onClick={() => { setIsEditingTabName(false); }}
             className="flex items-center gap-2 px-5 py-2 rounded-md text-sm font-bold transition-all bg-primary text-primary-foreground dark:text-white shadow-sm"
           >
-            <Film className="w-4 h-4" /> {tabsConfig.find((t: any) => t.id === 'movie')?.name || 'Movies'}
+            <Tv className="w-4 h-4" /> {activeTabName}
           </button>
         </div>
         
@@ -462,19 +460,7 @@ export default function HomeSections() {
               />
             </div>
             
-            <div className="grid gap-2">
-              <Label>Content Type</Label>
-              <Select value={formData.contentType} onValueChange={(v) => setFormData({ ...formData, contentType: v })}>
-                <SelectTrigger className="bg-muted border-border">
-                  <SelectValue placeholder="Select content type" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="tvShow">TV Shows</SelectItem>
-                  <SelectItem value="movie">Movies</SelectItem>
-                  <SelectItem value="mixed">Mixed (Shows & Movies)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+
             
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2">
@@ -616,12 +602,7 @@ export default function HomeSections() {
                       <SelectValue placeholder="Click to add a title..." />
                     </SelectTrigger>
                     <SelectContent>
-                      {combinedContent
-                        .filter(item => {
-                          if (formData.contentType === 'movie') return (moviesRes?.data || []).some(m => m._id === item._id);
-                          if (formData.contentType === 'tvShow') return (tvShowsRes?.data || []).some(m => m._id === item._id);
-                          return true;
-                        })
+                      {tvShows
                         .map((item: any) => (
                         <SelectItem key={item._id} value={item._id}>
                           {item.title}
@@ -633,7 +614,7 @@ export default function HomeSections() {
                   {selectedItems.length > 0 && (
                     <div className="flex flex-col gap-2 mt-3 bg-muted/30 dark:bg-black/20 border border-border dark:border-white/5 p-2 rounded-md max-h-48 overflow-y-auto">
                       {selectedItems.map(id => {
-                        const matchedItem = combinedContent?.find((i: any) => i._id === id);
+                        const matchedItem = tvShows?.find((i: any) => i._id === id);
                         return (
                           <div key={id} className="flex items-center justify-between bg-muted/50 px-3 py-2 rounded-md text-sm border border-border/50">
                             <span className="truncate pr-4">{matchedItem ? matchedItem.title : 'Unknown Title'}</span>
