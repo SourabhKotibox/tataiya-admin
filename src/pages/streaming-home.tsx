@@ -2457,7 +2457,8 @@ export default function StreamingHomePage() {
 
   const navigateToContent = useCallback((item: any) => {
     const id = item.contentId || item.id || item._id;
-    setLocation(`/movie/${id}`);
+    const isShow = item.type === "show" || item.contentType === "tvShow" || item._webKind === "show";
+    setLocation(isShow ? `/tv-show/${id}` : `/movie/${id}`);
   }, [setLocation]);
 
   const handlePlay = useCallback((item: any) => {

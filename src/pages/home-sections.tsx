@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import {
-  Plus, Trash2, Edit2, GripVertical, Check, Globe, EyeOff, LayoutGrid, List, Film, Layers, MonitorPlay, Save, X
+  Plus, Trash2, Edit2, GripVertical, Check, Globe, EyeOff, LayoutGrid, List, Film, Layers, MonitorPlay, Save, X, Tv
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
@@ -109,8 +109,11 @@ const SortableSection = ({ section, onToggle, onEdit, onDelete }: SortableSectio
               <span className="flex items-center gap-1 bg-muted px-2 py-0.5 rounded-md">
                 {getLayoutIcon(section.layout)} {section.layout}
               </span>
+              <span className="flex items-center gap-1 bg-muted px-2 py-0.5 rounded-md capitalize">
+                {section.contentType === 'movie' ? <Film className="w-3 h-3" /> : section.contentType === 'mixed' ? <MonitorPlay className="w-3 h-3" /> : <Tv className="w-3 h-3" />}
+                {section.contentType || 'tvShow'}
+              </span>
               <span>Limit: {section.limit}</span>
-              <span className="capitalize">Type: {section.itemType}</span>
             </div>
           </div>
         </div>
@@ -148,7 +151,7 @@ export default function HomeSections() {
   const { toast } = useToast();
   const activeTab = 'movie' as const;
   
-  const { data: sectionsData, isLoading } = useGetSections({ contentType: activeTab });
+  const { data: sectionsData, isLoading } = useGetSections({});
   const createMutation = useCreateSection();
   const updateMutation = useUpdateSection();
   const deleteMutation = useDeleteSection();
@@ -195,6 +198,7 @@ export default function HomeSections() {
     key: '',
     title: '',
     category: '',
+    contentType: 'tvShow',
     layout: 'horizontal',
     itemType: 'poster',
     limit: 10,
@@ -301,6 +305,7 @@ export default function HomeSections() {
       filterValue: fVal,
       sortKey: sKey,
       sortDir: sDir,
+      contentType: section.contentType || 'tvShow',
       contentSelection: section.contentSelection || (selected.length > 0 ? 'manual' : 'dynamic'),
     });
     setModalOpen(true);
@@ -313,7 +318,7 @@ export default function HomeSections() {
       key: formData.key || `section-${Date.now()}`,
       title: formData.title,
       category: formData.category || formData.title,
-      contentType: activeTab,
+      contentType: formData.contentType || 'tvShow',
       layout: formData.layout,
       itemType: formData.itemType,
       limit: Number(formData.limit) || 10,
@@ -457,6 +462,20 @@ export default function HomeSections() {
               />
             </div>
             
+            <div className="grid gap-2">
+              <Label>Content Type</Label>
+              <Select value={formData.contentType} onValueChange={(v) => setFormData({ ...formData, contentType: v })}>
+                <SelectTrigger className="bg-muted border-border">
+                  <SelectValue placeholder="Select content type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="tvShow">TV Shows</SelectItem>
+                  <SelectItem value="movie">Movies</SelectItem>
+                  <SelectItem value="mixed">Mixed (Shows & Movies)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2">
                 <Label>Layout Style</Label>
@@ -597,8 +616,13 @@ export default function HomeSections() {
                       <SelectValue placeholder="Click to add a title..." />
                     </SelectTrigger>
                     <SelectContent>
-                      {((moviesRes?.data || [])
-                      ).map((item: any) => (
+                      {combinedContent
+                        .filter(item => {
+                          if (formData.contentType === 'movie') return (moviesRes?.data || []).some(m => m._id === item._id);
+                          if (formData.contentType === 'tvShow') return (tvShowsRes?.data || []).some(m => m._id === item._id);
+                          return true;
+                        })
+                        .map((item: any) => (
                         <SelectItem key={item._id} value={item._id}>
                           {item.title}
                         </SelectItem>
@@ -609,8 +633,7 @@ export default function HomeSections() {
                   {selectedItems.length > 0 && (
                     <div className="flex flex-col gap-2 mt-3 bg-muted/30 dark:bg-black/20 border border-border dark:border-white/5 p-2 rounded-md max-h-48 overflow-y-auto">
                       {selectedItems.map(id => {
-                        const allItems = moviesRes?.data || [];
-                        const matchedItem = allItems?.find((i: any) => i._id === id);
+                        const matchedItem = combinedContent?.find((i: any) => i._id === id);
                         return (
                           <div key={id} className="flex items-center justify-between bg-muted/50 px-3 py-2 rounded-md text-sm border border-border/50">
                             <span className="truncate pr-4">{matchedItem ? matchedItem.title : 'Unknown Title'}</span>
