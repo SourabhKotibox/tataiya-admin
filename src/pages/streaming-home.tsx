@@ -2408,9 +2408,17 @@ export default function StreamingHomePage() {
   const isSubscribed = isUserSubscribed(user);
 
   const navigateToContent = useCallback((item: any) => {
+    if (item.ctaLink) {
+      if (item.ctaLink.startsWith("http")) {
+        window.open(item.ctaLink, "_blank");
+      } else {
+        setLocation(item.ctaLink);
+      }
+      return;
+    }
     const id = item.contentId || item.id || item._id;
     const isShow = item.type === "show" || item.contentType === "tvShow" || item._webKind === "show";
-    setLocation(isShow ? `/tv-show/${id}` : `/movie/${id}`);
+    setLocation(isShow ? `/tv-shows/${id}` : `/movie/${id}`);
   }, [setLocation]);
 
   const handlePlay = useCallback((item: any) => {
