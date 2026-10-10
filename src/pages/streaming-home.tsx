@@ -22,6 +22,12 @@ import { WebsiteReviews } from "@/components/WebsiteReviews";
 import { LandscapeCard, PortraitCard } from "@/components/ContentCard";
 import Hls from "hls.js";
 import SubscriptionPlansModal from "@/components/SubscriptionPlansModal";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "@/components/ui/dropdown-menu";
 
 
 /* ─── TYPES ─── */
