@@ -22,12 +22,7 @@ import { WebsiteReviews } from "@/components/WebsiteReviews";
 import { LandscapeCard, PortraitCard } from "@/components/ContentCard";
 import Hls from "hls.js";
 import SubscriptionPlansModal from "@/components/SubscriptionPlansModal";
-import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuItem,
-} from "@/components/ui/dropdown-menu";
+
 
 
 /* ─── TYPES ─── */
@@ -1921,28 +1916,6 @@ export function PublicHeader({ activeTab, setActiveTab, onSignIn, onSignOut, use
               </Link>
 
               <nav className="hidden lg:flex items-center gap-1">
-                <div className="flex flex-col space-y-1.5 border-b border-white/5 pb-2 mb-2">
-              <button
-                type="button"
-                onClick={() => setLocation("/browse?section=music-audio")}
-                className="flex items-center gap-2.5 px-3 py-2.5 text-[14px] font-bold rounded-lg transition-all duration-200 text-white hover:bg-white/5"
-              >
-                <div className="w-6 h-6 rounded bg-amber-400/10 flex items-center justify-center shrink-0">
-                  <Headphones className="w-3 h-3 text-amber-400" />
-                </div>
-                Music Audio
-              </button>
-              <button
-                type="button"
-                onClick={() => setLocation("/browse?section=music-videos")}
-                className="flex items-center gap-2.5 px-3 py-2.5 text-[14px] font-bold rounded-lg transition-all duration-200 text-white hover:bg-white/5"
-              >
-                <div className="w-6 h-6 rounded bg-amber-400/10 flex items-center justify-center shrink-0">
-                  <Video className="w-3 h-3 text-amber-400" />
-                </div>
-                Music Videos
-              </button>
-            </div>
             {navTabs.map(({ label, tab, icon }) => (
                   <button
                     key={tab}
@@ -1965,29 +1938,6 @@ export function PublicHeader({ activeTab, setActiveTab, onSignIn, onSignOut, use
                     )}
                   </button>
                 ))}
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <button className="relative flex items-center gap-1.5 px-3.5 py-2 text-[13.5px] font-bold rounded-lg transition-all duration-200 text-white hover:bg-white/10 outline-none">
-                      <Music className="w-3.5 h-3.5" />
-                      Music
-                      <ChevronDown className="w-3.5 h-3.5 opacity-50" />
-                    </button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start" className="bg-[#0a0a10] border border-zinc-800 text-white w-48 p-1.5">
-                    <DropdownMenuItem className="focus:bg-white/10 focus:text-white cursor-pointer py-2 px-3 flex items-center gap-2.5 rounded-md" onClick={() => setLocation("/browse?section=music-audio")}>
-                      <div className="w-7 h-7 rounded bg-amber-400/10 flex items-center justify-center shrink-0">
-                        <Headphones className="w-3.5 h-3.5 text-amber-400" />
-                      </div>
-                      <span className="font-bold text-[13px]">Music Audio</span>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem className="focus:bg-white/10 focus:text-white cursor-pointer py-2 px-3 flex items-center gap-2.5 rounded-md mt-1" onClick={() => setLocation("/browse?section=music-videos")}>
-                      <div className="w-7 h-7 rounded bg-amber-400/10 flex items-center justify-center shrink-0">
-                        <Video className="w-3.5 h-3.5 text-amber-400" />
-                      </div>
-                      <span className="font-bold text-[13px]">Music Videos</span>
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
               </nav>
             </div>
 
