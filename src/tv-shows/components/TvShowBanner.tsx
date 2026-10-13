@@ -21,7 +21,7 @@ export function TvShowBanner({ show, onWatchNow, onMoreInfo }: TvShowBannerProps
           className="w-full h-full object-cover object-top transition-transform duration-700 ease-out group-hover:scale-[1.02]"
           onError={(e) => {
             const el = e.target as HTMLImageElement;
-            el.src = "https://images.unsplash.com/photo-1509198397868-475647b2a1e5?w=1600&auto=format&fit=crop&q=85";
+            el.style.opacity = "0";
           }}
         />
 

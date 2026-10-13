@@ -19,6 +19,7 @@ import { EpisodeCard } from "../components/EpisodeCard";
 import { CastList } from "../components/CastList";
 import {
   useGetAppSeriesDetail,
+  useGetEpisodeList,
   useToggleWishlist,
   getImageUrl,
 } from "@/lib/api-client";
@@ -36,31 +37,70 @@ export default function TvShowDetailPage() {
   const [isLiked, setIsLiked] = useState<boolean>(false);
 
   const { data: serverShowData, isLoading, isFetching } = useGetAppSeriesDetail(id || "");
+  const {
+    data: fallbackEpisodesRes,
+    isLoading: isLoadingFallbackEpisodes,
+    isFetching: isFetchingFallbackEpisodes,
+  } = useGetEpisodeList(id ? { tvShowId: id, limit: 200 } : {});
   const toggleWishlistMutation = useToggleWishlist();
 
   // Retrieve TV Show details from server
   const show: TvShow | undefined = useMemo(() => {
     const raw = serverShowData?.data || serverShowData;
     if (raw && (raw._id || raw.id)) {
-      const episodesRaw: any[] = raw.episodes || [];
-      const seasonsRaw: any[] = raw.seasons || [];
+      const fallbackList: any[] = (fallbackEpisodesRes as any)?.data || (fallbackEpisodesRes as any)?.items || fallbackEpisodesRes || [];
+      const fallbackEpisodesRaw = Array.isArray(fallbackList) ? fallbackList : [];
+      const episodesRaw: any[] = (Array.isArray(raw.episodes) && raw.episodes.length > 0)
+        ? raw.episodes
+        : fallbackEpisodesRaw;
+      const seasonsRaw: any[] = Array.isArray(raw.seasons) ? raw.seasons : [];
 
       const seasonMap = new Map<number, Episode[]>();
-      episodesRaw.forEach((e) => {
-        const sNum = e.season || 1;
+
+      // Ingest seasonsRaw if nested episodes exist
+      seasonsRaw.forEach((s: any) => {
+        const sNum = Number(s.season ?? s.seasonNumber ?? 1);
         if (!seasonMap.has(sNum)) seasonMap.set(sNum, []);
-        seasonMap.get(sNum)!.push({
-          id: e._id || e.id,
-          season: sNum,
-          episodeNumber: e.episode ?? e.episodeNumber ?? 1,
-          title: e.title || `Episode ${e.episode || 1}`,
-          description: e.description || e.shortDescription || "",
-          duration: e.duration || 2700,
-          thumbnail: getImageUrl(e.thumbnail || e.poster || raw.backdrop || raw.poster),
-          isFree: e.isFree ?? !e.isLocked,
-          isLocked: e.isLocked ?? !e.isFree,
-          videoUrl: e.hlsUrl || e.videoUrl || "",
-        });
+        if (Array.isArray(s.episodes)) {
+          s.episodes.forEach((e: any) => {
+            seasonMap.get(sNum)!.push({
+              id: e._id || e.id,
+              season: sNum,
+              episodeNumber: Number(e.episode ?? e.episodeNumber ?? 1),
+              title: e.title || `Episode ${e.episode ?? e.episodeNumber ?? 1}`,
+              description: e.description || e.shortDescription || "",
+              duration: e.duration || 2700,
+              thumbnail: getImageUrl(e.thumbnail || e.poster || raw.backdrop || raw.poster),
+              isFree: e.isFree ?? !e.isLocked,
+              isLocked: e.isLocked ?? !e.isFree,
+              videoUrl: e.hlsUrl || e.videoUrl || "",
+            });
+          });
+        }
+      });
+
+      // Ingest episodesRaw (prevent duplicates)
+      episodesRaw.forEach((e: any) => {
+        const sNum = Number(e.season ?? 1);
+        if (!seasonMap.has(sNum)) seasonMap.set(sNum, []);
+        const list = seasonMap.get(sNum)!;
+        const eId = String(e._id || e.id);
+        const epNum = Number(e.episode ?? e.episodeNumber ?? 1);
+        const exists = list.some((x) => String(x.id) === eId || x.episodeNumber === epNum);
+        if (!exists) {
+          list.push({
+            id: e._id || e.id,
+            season: sNum,
+            episodeNumber: epNum,
+            title: e.title || `Episode ${epNum}`,
+            description: e.description || e.shortDescription || "",
+            duration: e.duration || 2700,
+            thumbnail: getImageUrl(e.thumbnail || e.poster || raw.backdrop || raw.poster),
+            isFree: e.isFree ?? !e.isLocked,
+            isLocked: e.isLocked ?? !e.isFree,
+            videoUrl: e.hlsUrl || e.videoUrl || "",
+          });
+        }
       });
 
       seasonMap.forEach((eps) => eps.sort((a, b) => a.episodeNumber - b.episodeNumber));
@@ -75,9 +115,9 @@ export default function TvShowDetailPage() {
             episodes: eps,
           }));
       } else if (seasonsRaw.length > 0) {
-        seasons = seasonsRaw.map((s) => ({
-          seasonNumber: s.season,
-          title: s.title || `Season ${s.season}`,
+        seasons = seasonsRaw.map((s: any) => ({
+          seasonNumber: Number(s.season ?? s.seasonNumber ?? 1),
+          title: s.title || `Season ${s.season ?? s.seasonNumber ?? 1}`,
           episodes: [],
         }));
       } else {
@@ -108,7 +148,7 @@ export default function TvShowDetailPage() {
       };
     }
     return undefined;
-  }, [serverShowData]);
+  }, [serverShowData, fallbackEpisodesRes]);
 
   // Scroll to top on mount
   useEffect(() => {
@@ -167,9 +207,13 @@ export default function TvShowDetailPage() {
     window.location.reload();
   };
 
-  if (isLoading || (!show && isFetching)) {
+  const isEpisodesLoading = Boolean(
+    isFetching || isFetchingFallbackEpisodes || isLoadingFallbackEpisodes
+  );
+
+  if (isLoading || (!show && (isFetching || isFetchingFallbackEpisodes))) {
     return (
-      <div className="min-h-screen bg-[#0c0c14] text-white flex flex-col justify-between">
+      <div className="min-h-screen bg-[#0c0c14] text-white flex flex-col justify-between selection:bg-amber-400/30">
         <PublicHeader
           activeTab={"tvshows" as any}
           setActiveTab={(tab: any) => {
@@ -179,17 +223,65 @@ export default function TvShowDetailPage() {
           }}
           onSignIn={() => setLocation("/login")}
         />
-        <div className="flex-1 flex flex-col items-center justify-center py-32 px-4 text-center">
-          <div className="relative mb-6">
-            <div className="w-16 h-16 rounded-2xl bg-amber-400/10 border border-amber-400/20 flex items-center justify-center shadow-lg shadow-amber-400/5">
-              <Tv className="w-8 h-8 text-amber-400 animate-pulse" />
+
+        {/* Cinematic Hero Skeleton */}
+        <section className="relative w-full overflow-hidden bg-zinc-950" style={{ minHeight: "520px", height: "70vh" }}>
+          <div className="absolute inset-0 bg-gradient-to-r from-zinc-900 via-zinc-900/60 to-zinc-950 animate-pulse" />
+          <div className="absolute inset-0 bg-gradient-to-r from-[#0c0c14] via-[#0c0c14]/80 to-transparent" />
+          <div className="absolute bottom-0 left-0 right-0 h-[65%] bg-gradient-to-t from-[#0c0c14] via-[#0c0c14]/60 to-transparent" />
+
+          <div className="absolute bottom-10 sm:bottom-14 left-4 sm:left-10 lg:left-14 right-4 sm:right-10 lg:right-14 max-w-3xl z-10 space-y-4">
+            <div className="flex items-center gap-2">
+              <div className="h-6 w-24 bg-amber-400/20 rounded-full animate-pulse" />
+              <div className="h-6 w-20 bg-white/10 rounded-full animate-pulse" />
             </div>
-            <Loader2 className="w-6 h-6 animate-spin text-amber-400 absolute -bottom-2 -right-2" />
+            <div className="h-10 sm:h-14 w-3/4 max-w-lg bg-white/15 rounded-2xl animate-pulse" />
+            <div className="flex items-center gap-3">
+              <div className="h-6 w-16 bg-amber-400/20 rounded-md animate-pulse" />
+              <div className="h-6 w-12 bg-white/10 rounded-md animate-pulse" />
+              <div className="h-6 w-28 bg-white/10 rounded-md animate-pulse" />
+            </div>
+            <div className="space-y-2 pt-2 max-w-xl">
+              <div className="h-4 w-full bg-white/10 rounded animate-pulse" />
+              <div className="h-4 w-5/6 bg-white/10 rounded animate-pulse" />
+              <div className="h-4 w-2/3 bg-white/10 rounded animate-pulse" />
+            </div>
+            <div className="flex items-center gap-4 pt-4">
+              <div className="h-12 w-40 bg-amber-400/30 rounded-2xl animate-pulse" />
+              <div className="h-12 w-32 bg-white/10 rounded-2xl animate-pulse" />
+              <div className="h-12 w-12 bg-white/10 rounded-2xl animate-pulse" />
+            </div>
           </div>
-          <h2 className="text-xl font-bold text-white mb-2">Loading series &amp; episodes…</h2>
-          <p className="text-white/50 text-xs max-w-xs">
-            Preparing video stream and episode details
-          </p>
+        </section>
+
+        {/* Episodes Grid Skeleton */}
+        <div className="px-4 sm:px-10 lg:px-14 py-10 max-w-7xl mx-auto w-full space-y-6">
+          <div className="flex items-center justify-between border-b border-white/5 pb-4">
+            <div className="space-y-2">
+              <div className="h-7 w-32 bg-white/15 rounded-lg animate-pulse" />
+              <div className="h-4 w-44 bg-white/10 rounded animate-pulse" />
+            </div>
+            <div className="flex gap-2">
+              <div className="h-9 w-24 bg-amber-400/20 rounded-xl animate-pulse" />
+              <div className="h-9 w-24 bg-white/10 rounded-xl animate-pulse" />
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {[1, 2, 3, 4].map((i) => (
+              <div key={i} className="flex flex-col sm:flex-row gap-3.5 sm:gap-4 p-3.5 rounded-2xl bg-zinc-900/40 border border-white/5 animate-pulse">
+                <div className="w-full sm:w-36 md:w-44 lg:w-48 aspect-video rounded-xl bg-zinc-800/80 shrink-0 flex items-center justify-center">
+                  <Tv className="w-7 h-7 text-amber-400/30 animate-pulse" />
+                </div>
+                <div className="flex-1 space-y-2.5 py-1">
+                  <div className="h-3.5 w-16 bg-white/15 rounded" />
+                  <div className="h-4 w-3/4 bg-white/20 rounded" />
+                  <div className="h-3 w-full bg-white/10 rounded" />
+                  <div className="h-3 w-2/3 bg-white/10 rounded" />
+                  <div className="h-4 w-28 bg-amber-400/20 rounded mt-3" />
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
         <PublicFooter />
       </div>
@@ -305,7 +397,7 @@ export default function TvShowDetailPage() {
           className="absolute inset-0 w-full h-full object-cover object-top"
           onError={(e) => {
             const el = e.target as HTMLImageElement;
-            el.src = "https://images.unsplash.com/photo-1509198397868-475647b2a1e5?w=1600&auto=format&fit=crop&q=85";
+            el.style.opacity = "0";
           }}
         />
 
@@ -469,10 +561,22 @@ export default function TvShowDetailPage() {
           </div>
 
           {/* Episode Cards Grid */}
-          {isFetching && episodes.length === 0 ? (
-            <div className="py-16 flex flex-col items-center justify-center gap-3 bg-zinc-900/30 rounded-2xl border border-white/5">
-              <Loader2 className="w-7 h-7 animate-spin text-amber-400" />
-              <p className="text-sm font-semibold text-white/70">Loading episodes…</p>
+          {isEpisodesLoading && episodes.length === 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {[1, 2, 3, 4].map((i) => (
+                <div key={i} className="flex flex-col sm:flex-row gap-3.5 sm:gap-4 p-3.5 rounded-2xl bg-zinc-900/40 border border-white/5 animate-pulse">
+                  <div className="w-full sm:w-36 md:w-44 lg:w-48 aspect-video rounded-xl bg-zinc-800/80 shrink-0 flex items-center justify-center">
+                    <Tv className="w-7 h-7 text-amber-400/30 animate-pulse" />
+                  </div>
+                  <div className="flex-1 space-y-2.5 py-1">
+                    <div className="h-3.5 w-16 bg-white/15 rounded" />
+                    <div className="h-4 w-3/4 bg-white/20 rounded" />
+                    <div className="h-3 w-full bg-white/10 rounded" />
+                    <div className="h-3 w-2/3 bg-white/10 rounded" />
+                    <div className="h-4 w-28 bg-amber-400/20 rounded mt-3" />
+                  </div>
+                </div>
+              ))}
             </div>
           ) : episodes.length === 0 ? (
             <div className="py-12 text-center text-white/50 text-sm bg-zinc-900/30 rounded-2xl border border-white/5">

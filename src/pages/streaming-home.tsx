@@ -1071,7 +1071,7 @@ function getSectionItems(section: any, movies: any[], homeData: any) {
   let sourceItems = movies;
   if (section.contentType === 'movie') {
     sourceItems = sourceItems.filter(i => i.contentType !== 'show' && i.contentType !== 'tvShow' && i._webKind !== 'show');
-  } else if (section.contentType === 'web') {
+  } else if (section.contentType === 'web' || section.contentType === 'tvShow' || section.contentType === 'show') {
     sourceItems = sourceItems.filter(i => i.contentType === 'show' || i.contentType === 'tvShow' || i._webKind === 'show');
   }
   
@@ -1091,12 +1091,17 @@ function getSectionItems(section: any, movies: any[], homeData: any) {
   }
 
   if (section.contentSelection === 'manual') {
-    filteredItems = sourceItems.filter(item => section.manualContentIds?.includes(item._id));
+    filteredItems = sourceItems.filter(item => {
+      const itId = String(item._id || item.id);
+      return section.manualContentIds?.some((mid: any) => String(mid) === itId);
+    });
   } else if (section.contentSelection === 'mixed') {
-    const manualItems = sourceItems.filter(item => section.manualContentIds?.includes(item._id));
-    // Combine manual items with filtered items, avoiding duplicates
-    const manualIds = new Set(manualItems.map(i => i._id));
-    filteredItems = [...manualItems, ...filteredItems.filter(i => !manualIds.has(i._id))];
+    const manualItems = sourceItems.filter(item => {
+      const itId = String(item._id || item.id);
+      return section.manualContentIds?.some((mid: any) => String(mid) === itId);
+    });
+    const manualIds = new Set(manualItems.map(i => String(i._id || i.id)));
+    filteredItems = [...manualItems, ...filteredItems.filter(i => !manualIds.has(String(i._id || i.id)))];
   }
 
   if (section.sortBy) {

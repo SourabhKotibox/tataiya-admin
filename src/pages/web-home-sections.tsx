@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import {
-  Plus, Trash2, Edit2, GripVertical, Check, Globe, EyeOff, LayoutGrid, List, Film, Layers, MonitorPlay, Save, X
+  Plus, Trash2, Edit2, GripVertical, Check, Globe, EyeOff, LayoutGrid, List, Film, Layers, MonitorPlay, Save, X, Tv
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
@@ -100,6 +100,15 @@ const SortableSection = ({ section, onToggle, onEdit, onDelete }: SortableSectio
           <div className="flex flex-col gap-1">
             <div className="flex items-center gap-2">
               <p className="text-sm font-bold text-foreground">{section.title}</p>
+              {section.layout === 'ad' ? (
+                <Badge variant="outline" className="text-[10px] py-0 border-purple-500/30 text-purple-400 bg-purple-500/10 font-bold">Ad Banner</Badge>
+              ) : section.contentType === 'movie' ? (
+                <Badge variant="outline" className="text-[10px] py-0 border-blue-500/30 text-blue-400 bg-blue-500/10 font-bold">Movies</Badge>
+              ) : (
+                <Badge variant="outline" className="text-[10px] py-0 border-amber-500/30 text-amber-400 bg-amber-500/10 font-bold flex items-center gap-1">
+                  <Tv className="w-3 h-3" /> TV Shows
+                </Badge>
+              )}
               {!section.isActive && (
                 <Badge variant="outline" className="text-[10px] py-0 border-border text-muted-foreground">Hidden</Badge>
               )}
@@ -156,7 +165,13 @@ export default function WebHomeSections() {
 
   // Only TV Shows — movies are no longer managed in the Web Layout Builder
   const { data: tvShowsRes } = useGetTVShows({ limit: 500 });
-  const tvShows = tvShowsRes?.data || [];
+  const tvShows: any[] = useMemo(() => {
+    const raw = tvShowsRes?.data || tvShowsRes;
+    if (Array.isArray(raw)) return raw;
+    if (Array.isArray(raw?.items)) return raw.items;
+    if (Array.isArray(tvShowsRes?.items)) return tvShowsRes.items;
+    return [];
+  }, [tvShowsRes]);
   const { data: adsRes } = useGetPublicAds({ placement: 'Home Page' });
 
   const [localSections, setLocalSections] = useState<any[]>([]);
@@ -174,6 +189,7 @@ export default function WebHomeSections() {
     key: '',
     title: '',
     category: '',
+    contentType: 'tvShow',
     layout: 'horizontal',
     itemType: 'poster',
     limit: 10,
@@ -228,6 +244,7 @@ export default function WebHomeSections() {
       key: `section-${Date.now()}`,
       title: '',
       category: '',
+      contentType: 'tvShow',
       layout: 'horizontal',
       itemType: 'poster',
       limit: 10,
@@ -270,6 +287,7 @@ export default function WebHomeSections() {
       key: section.key,
       title: section.title,
       category: section.category || section.title,
+      contentType: section.contentType || 'tvShow',
       layout: section.layout || 'horizontal',
       itemType: section.itemType || 'poster',
       limit: section.limit || 10,
@@ -292,7 +310,7 @@ export default function WebHomeSections() {
       key: formData.key || `section-${Date.now()}`,
       title: formData.title,
       category: formData.category || formData.title,
-      contentType: 'tvShow', // Web home sections only use TV Shows now
+      contentType: formData.contentType || 'tvShow', // Web home sections default to TV Shows
       layout: formData.layout,
       itemType: formData.itemType,
       limit: Number(formData.limit) || 10,
@@ -414,6 +432,22 @@ export default function WebHomeSections() {
                 className="bg-muted border-border"
               />
             </div>
+
+            {formData.layout !== 'ad' && (
+              <div className="grid gap-2">
+                <Label>Content Type <span className="text-amber-500 font-bold">*</span></Label>
+                <Select value={formData.contentType || 'tvShow'} onValueChange={(v) => setFormData({ ...formData, contentType: v })}>
+                  <SelectTrigger className="bg-muted border-border">
+                    <SelectValue placeholder="Select content type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="tvShow">TV Shows / Series (Default)</SelectItem>
+                    <SelectItem value="mixed">All Content (TV Shows & Movies)</SelectItem>
+                    <SelectItem value="movie">Movies Only</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2">
@@ -585,30 +619,44 @@ export default function WebHomeSections() {
                   <Label className="text-xs">Select Specific Items ({selectedItems.length} selected)</Label>
                   
                   <Select onValueChange={(v) => {
-                    if (v && !selectedItems.includes(v)) setSelectedItems([...selectedItems, v]);
+                    if (v && !selectedItems.some(id => String(id) === String(v))) {
+                      setSelectedItems([...selectedItems, v]);
+                    }
                   }}>
                     <SelectTrigger className="bg-muted border-border">
-                      <SelectValue placeholder="Click to add a title..." />
+                      <SelectValue placeholder="Click to add a TV series..." />
                     </SelectTrigger>
                     <SelectContent>
-                      {tvShows.map((item: any) => (
-                        <SelectItem key={item._id} value={item._id}>{item.title}</SelectItem>
-                      ))}
+                      {tvShows.map((item: any) => {
+                        const id = String(item._id || item.id);
+                        return (
+                          <SelectItem key={id} value={id}>
+                            <div className="flex items-center gap-2">
+                              <Tv className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                              <span>{item.title}</span>
+                            </div>
+                          </SelectItem>
+                        );
+                      })}
                     </SelectContent>
                   </Select>
 
                   {selectedItems.length > 0 && (
                     <div className="flex flex-col gap-2 mt-3 bg-muted/30 dark:bg-black/20 border border-border dark:border-white/5 p-2 rounded-md max-h-48 overflow-y-auto">
                       {selectedItems.map(id => {
-                        const matchedItem = tvShows.find((i: any) => i._id === id);
+                        const strId = String(id);
+                        const matchedItem = tvShows.find((i: any) => String(i._id || i.id) === strId);
                         return (
-                          <div key={id} className="flex items-center justify-between bg-muted/50 px-3 py-2 rounded-md text-sm border border-border/50">
-                            <span className="truncate pr-4">{matchedItem ? matchedItem.title : 'Unknown Title'}</span>
+                          <div key={strId} className="flex items-center justify-between bg-muted/50 px-3 py-2 rounded-md text-sm border border-border/50">
+                            <div className="flex items-center gap-2 truncate pr-4">
+                              <Tv className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                              <span className="truncate">{matchedItem ? matchedItem.title : `Show ID: ${strId.slice(-6)}`}</span>
+                            </div>
                             <Button 
                               variant="ghost" 
                               size="icon" 
                               className="h-6 w-6 rounded-md hover:bg-red-500/20 hover:text-red-500 text-white/75"
-                              onClick={() => setSelectedItems(selectedItems.filter(i => i !== id))}
+                              onClick={() => setSelectedItems(selectedItems.filter(i => String(i) !== strId))}
                             >
                               <Trash2 className="w-3 h-3" />
                             </Button>

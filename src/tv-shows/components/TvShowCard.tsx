@@ -10,6 +10,8 @@ interface TvShowCardProps {
 }
 
 export function TvShowCard({ show, onClick, onPlay, fullWidth = true }: TvShowCardProps) {
+  const [imgError, setImgError] = React.useState(false);
+
   const handlePlayClick = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (onPlay) {
@@ -29,15 +31,19 @@ export function TvShowCard({ show, onClick, onPlay, fullWidth = true }: TvShowCa
         className="relative overflow-hidden rounded-xl bg-zinc-900 border border-white/5 group-hover:border-amber-400/50 group-hover:ring-2 group-hover:ring-amber-400/30 transition-all duration-300 shadow-md group-hover:shadow-amber-500/10"
         style={{ aspectRatio: "2/3" }}
       >
-        <img
-          src={show.poster}
-          alt={show.title}
-          className="w-full h-full object-cover group-hover:scale-[1.04] transition-transform duration-500 ease-out"
-          onError={(e) => {
-            const el = e.target as HTMLImageElement;
-            el.src = "https://images.unsplash.com/photo-1574375927938-d5a98e8ffe85?w=600&auto=format&fit=crop&q=80";
-          }}
-        />
+        {show.poster && !imgError ? (
+          <img
+            src={show.poster}
+            alt={show.title}
+            className="w-full h-full object-cover group-hover:scale-[1.04] transition-transform duration-500 ease-out"
+            onError={() => setImgError(true)}
+          />
+        ) : (
+          <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-zinc-800 via-zinc-900 to-black p-4 text-center">
+            <Tv className="w-10 h-10 text-amber-400/40 mb-2" />
+            <span className="text-xs font-bold text-white/70 line-clamp-2">{show.title}</span>
+          </div>
+        )}
 
         {/* Gradient Overlay */}
         <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/20 to-transparent pointer-events-none" />

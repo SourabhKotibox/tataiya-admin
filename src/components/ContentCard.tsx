@@ -1,4 +1,5 @@
-import { Play, Star, Crown } from "lucide-react";
+import React, { useState } from "react";
+import { Play, Star, Crown, Tv, Film } from "lucide-react";
 import { getImageUrl } from "@/lib/api-client";
 
 // ─── Shared helpers ────────────────────────────────────────────────────────────
@@ -84,6 +85,21 @@ function BadgeTop({ item }: { item: any }) {
     );
   }
 
+  const isTv = Boolean(
+    item?.contentType === "tvShow" ||
+    item?.contentType === "show" ||
+    item?._webKind === "show" ||
+    item?.type === "tvShow" ||
+    item?.type === "show"
+  );
+  if (isTv) {
+    return (
+      <span className="flex items-center gap-1 px-1.5 py-0.5 bg-amber-500/90 text-black text-[9px] font-black rounded-md leading-none shadow">
+        <Tv className="w-2.5 h-2.5" /> SERIES
+      </span>
+    );
+  }
+
   return null;
 }
 
@@ -159,8 +175,17 @@ export function PortraitCard({
   hidePlayButton?: boolean;
   square?: boolean;
 }) {
+  const [imgError, setImgError] = useState(false);
   const imgSrc =
     getImageUrl(item.thumbnail || item.poster || item.posterImage || item.backdrop) || "";
+
+  const isTv = Boolean(
+    item?.contentType === "tvShow" ||
+    item?.contentType === "show" ||
+    item?._webKind === "show" ||
+    item?.type === "tvShow" ||
+    item?.type === "show"
+  );
 
   const year = item.year || item.releaseYear || "";
   const duration = formatCardDuration(item.duration);
@@ -176,16 +201,23 @@ export function PortraitCard({
         style={{ aspectRatio: "9/16" }}
       >
         {/* Poster image */}
-        <img
-          src={imgSrc}
-          alt={item.title || ""}
-          className="w-full h-full object-cover group-hover:scale-[1.03] transition-transform duration-500"
-          onError={(e) => {
-            const el = e.target as HTMLImageElement;
-            el.style.backgroundColor = "#111";
-            el.style.display = "none";
-          }}
-        />
+        {imgSrc && !imgError ? (
+          <img
+            src={imgSrc}
+            alt={item.title || ""}
+            className="w-full h-full object-cover group-hover:scale-[1.03] transition-transform duration-500"
+            onError={() => setImgError(true)}
+          />
+        ) : (
+          <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-zinc-800/90 via-zinc-900 to-black p-3 text-center">
+            {isTv ? (
+              <Tv className="w-8 h-8 text-amber-400/50 mb-2" />
+            ) : (
+              <Film className="w-8 h-8 text-white/30 mb-2" />
+            )}
+            <span className="text-[11px] font-bold text-white/70 line-clamp-2 px-1 leading-tight">{item.title}</span>
+          </div>
+        )}
 
         {/* Gradient overlay */}
         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/10 to-transparent pointer-events-none" />
@@ -250,8 +282,17 @@ export function LandscapeCard({
   size?: "sm" | "md" | "lg";
   fullWidth?: boolean;
 }) {
+  const [imgError, setImgError] = useState(false);
   const imgSrc =
     getImageUrl(item.backdrop || item.poster || item.posterImage || item.thumbnail) || "";
+
+  const isTv = Boolean(
+    item?.contentType === "tvShow" ||
+    item?.contentType === "show" ||
+    item?._webKind === "show" ||
+    item?.type === "tvShow" ||
+    item?.type === "show"
+  );
 
   const year = item.year || item.releaseYear || "";
   const duration = formatCardDuration(item.duration);
@@ -266,16 +307,23 @@ export function LandscapeCard({
         style={{ aspectRatio: "16/9" }}
       >
         {/* Backdrop image */}
-        <img
-          src={imgSrc}
-          alt=""
-          className="w-full h-full object-cover group-hover:scale-[1.03] transition-transform duration-500"
-          onError={(e) => {
-            const el = e.target as HTMLImageElement;
-            el.style.backgroundColor = "#111";
-            el.style.display = "none";
-          }}
-        />
+        {imgSrc && !imgError ? (
+          <img
+            src={imgSrc}
+            alt=""
+            className="w-full h-full object-cover group-hover:scale-[1.03] transition-transform duration-500"
+            onError={() => setImgError(true)}
+          />
+        ) : (
+          <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-zinc-800/90 via-zinc-900 to-black p-3 text-center">
+            {isTv ? (
+              <Tv className="w-8 h-8 text-amber-400/40 mb-1" />
+            ) : (
+              <Film className="w-8 h-8 text-white/20 mb-1" />
+            )}
+            <span className="text-xs font-bold text-white/70 line-clamp-1 px-1 leading-tight">{item.title}</span>
+          </div>
+        )}
 
         {/* Soft bottom shade for play control only */}
         <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent pointer-events-none" />

@@ -10,6 +10,7 @@ import { recordTvShowProgress, formatDuration } from "../data/tvShows";
 import { Episode } from "../types";
 import {
   useGetAppSeriesDetail,
+  useGetEpisodeList,
   useGetWatchData,
   getImageUrl,
 } from "@/lib/api-client";
@@ -46,6 +47,9 @@ export default function TvShowWatchPage() {
   );
 
   const { data: serverShowData, isLoading: showLoading } = useGetAppSeriesDetail(id || "");
+  const { data: fallbackEpisodesRes, isLoading: isLoadingFallbackEpisodes } = useGetEpisodeList(
+    id ? { tvShowId: id, limit: 200 } : {}
+  );
 
   const show = useMemo(() => {
     const raw = serverShowData?.data || serverShowData;
@@ -65,23 +69,63 @@ export default function TvShowWatchPage() {
   // Find all episodes across all seasons
   const allEpisodes = useMemo(() => {
     const raw = serverShowData?.data || serverShowData;
-    const rawList: any[] = raw?.episodes || [];
-    return rawList.map((e: any) => ({
-      id: e._id || e.id,
-      season: e.season || 1,
-      episodeNumber: e.episode ?? e.episodeNumber ?? 1,
-      title: e.title || `Episode ${e.episode || 1}`,
-      description: e.description || e.shortDescription || "",
-      duration: e.duration || 2700,
-      thumbnail: getImageUrl(e.thumbnail || e.poster || show?.backdrop || show?.poster),
-      isFree: e.isFree ?? !e.isLocked,
-      isLocked: e.isLocked ?? !e.isFree,
-      videoUrl: e.hlsUrl || e.videoUrl || "",
-    })).sort((a: any, b: any) => {
+    const fallbackList: any[] = (fallbackEpisodesRes as any)?.data || (fallbackEpisodesRes as any)?.items || fallbackEpisodesRes || [];
+    const fallbackEpisodesRaw = Array.isArray(fallbackList) ? fallbackList : [];
+    const rawList: any[] = (Array.isArray(raw?.episodes) && raw.episodes.length > 0)
+      ? raw.episodes
+      : fallbackEpisodesRaw;
+    const seasonsRaw: any[] = Array.isArray(raw?.seasons) ? raw.seasons : [];
+
+    const list: Episode[] = [];
+
+    // Ingest seasonsRaw if nested episodes exist
+    seasonsRaw.forEach((s: any) => {
+      const sNum = Number(s.season ?? s.seasonNumber ?? 1);
+      if (Array.isArray(s.episodes)) {
+        s.episodes.forEach((e: any) => {
+          list.push({
+            id: e._id || e.id,
+            season: sNum,
+            episodeNumber: Number(e.episode ?? e.episodeNumber ?? 1),
+            title: e.title || `Episode ${e.episode ?? e.episodeNumber ?? 1}`,
+            description: e.description || e.shortDescription || "",
+            duration: e.duration || 2700,
+            thumbnail: getImageUrl(e.thumbnail || e.poster || show?.backdrop || show?.poster),
+            isFree: e.isFree ?? !e.isLocked,
+            isLocked: e.isLocked ?? !e.isFree,
+            videoUrl: e.hlsUrl || e.videoUrl || "",
+          });
+        });
+      }
+    });
+
+    // Ingest rawList avoiding duplicates
+    rawList.forEach((e: any) => {
+      const sNum = Number(e.season || 1);
+      const eId = String(e._id || e.id);
+      const epNumber = Number(e.episode ?? e.episodeNumber ?? 1);
+      const exists = list.some((x) => String(x.id) === eId || (x.season === sNum && x.episodeNumber === epNumber));
+      if (!exists) {
+        list.push({
+          id: e._id || e.id,
+          season: sNum,
+          episodeNumber: epNumber,
+          title: e.title || `Episode ${epNumber}`,
+          description: e.description || e.shortDescription || "",
+          duration: e.duration || 2700,
+          thumbnail: getImageUrl(e.thumbnail || e.poster || show?.backdrop || show?.poster),
+          isFree: e.isFree ?? !e.isLocked,
+          isLocked: e.isLocked ?? !e.isFree,
+          videoUrl: e.hlsUrl || e.videoUrl || "",
+        });
+      }
+    });
+
+    return list.sort((a: any, b: any) => {
       if (a.season !== b.season) return a.season - b.season;
       return a.episodeNumber - b.episodeNumber;
     });
-  }, [serverShowData, show]);
+  }, [serverShowData, fallbackEpisodesRes, show]);
 
   // Find current episode (matching episodeNumber)
   const currentEpisode: Episode | undefined = useMemo(() => {
@@ -132,7 +176,7 @@ export default function TvShowWatchPage() {
     }
   }, [show, currentEpisode]);
 
-  if (showLoading || watchDataLoading) {
+  if (showLoading || watchDataLoading || (isLoadingFallbackEpisodes && allEpisodes.length === 0)) {
     return (
       <div className="min-h-screen bg-[#09090b] text-foreground flex flex-col items-center justify-center p-6 text-center">
         <PublicHeader
@@ -146,10 +190,13 @@ export default function TvShowWatchPage() {
           user={user}
         />
         <div className="flex flex-col items-center mt-20 gap-3">
-          <Loader2 className="w-10 h-10 animate-spin text-amber-400" />
-          <h2 className="text-xl font-bold mb-1">Loading Episode…</h2>
-          <p className="text-foreground/60 text-xs">
-            Preparing video stream and playback controls
+          <div className="w-16 h-16 rounded-2xl bg-amber-400/10 border border-amber-400/20 flex items-center justify-center shadow-lg shadow-amber-400/5 relative mb-2">
+            <Tv className="w-8 h-8 text-amber-400 animate-pulse" />
+            <Loader2 className="w-5 h-5 animate-spin text-amber-400 absolute -bottom-1 -right-1" />
+          </div>
+          <h2 className="text-xl font-bold mb-1 text-white">Loading Episode…</h2>
+          <p className="text-white/60 text-xs">
+            Preparing high-definition stream and playback controls
           </p>
         </div>
       </div>

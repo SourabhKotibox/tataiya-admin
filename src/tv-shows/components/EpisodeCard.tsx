@@ -1,5 +1,5 @@
-import React from "react";
-import { Play, Lock, Film, Clock } from "lucide-react";
+import React, { useState } from "react";
+import { Play, Lock, Film, Clock, Tv } from "lucide-react";
 import { Episode } from "../types";
 import { formatDuration } from "../data/tvShows";
 
@@ -16,6 +16,7 @@ export function EpisodeCard({
   onPlay,
   onLockedClick,
 }: EpisodeCardProps) {
+  const [imgError, setImgError] = useState(false);
   const isLocked = episode.isLocked && !episode.isFree && !isSubscribed;
 
   const handleClick = () => {
@@ -36,19 +37,18 @@ export function EpisodeCard({
         className="relative w-full sm:w-36 md:w-44 lg:w-48 flex-shrink-0 rounded-xl overflow-hidden bg-zinc-800 border border-white/5"
         style={{ aspectRatio: "16/9" }}
       >
-        {episode.thumbnail ? (
+        {episode.thumbnail && !imgError ? (
           <img
             src={episode.thumbnail}
             alt={episode.title}
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ease-out"
-            onError={(e) => {
-              const el = e.target as HTMLImageElement;
-              el.src = "https://images.unsplash.com/photo-1574375927938-d5a98e8ffe85?w=600&auto=format&fit=crop&q=80";
-            }}
+            onError={() => setImgError(true)}
           />
         ) : (
-          <div className="w-full h-full flex items-center justify-center bg-zinc-900">
-            <Film className="w-6 h-6 text-white/30" />
+          <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-zinc-800 via-zinc-900 to-black p-2 text-center relative overflow-hidden">
+            <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-amber-500/10 via-transparent to-transparent pointer-events-none" />
+            <Tv className="w-7 h-7 text-amber-400/50 mb-1" />
+            <span className="text-[10px] font-bold text-white/50 tracking-wider uppercase">EP {episode.episodeNumber}</span>
           </div>
         )}
 
