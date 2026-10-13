@@ -1198,47 +1198,6 @@ function HomeTab({ onPlay, onSubscribeClick, isSubscribed, user, onSignIn }: {
 
   return (
     <div className="pb-20 space-y-6 pt-6 sm:pt-8 relative z-10 bg-[#030306]">
-      {/* Featured TV Shows Showcase */}
-      {tvShowsList.length > 0 && (
-        <section className="px-3 sm:px-6 lg:px-8">
-          <SectionHeader
-            title="TV Shows"
-            icon={<Tv className="w-4 h-4 text-amber-400" />}
-            onSeeAll={() => setLocation("/tv-shows")}
-            count={tvShowsList.length}
-          />
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2.5 sm:gap-4 pt-2">
-            {tvShowsList.slice(0, 6).map((show: any) => {
-              const showId = show._id || show.id;
-              const posterUrl = getImageUrl(show.poster || show.thumbnail);
-              const genreName = Array.isArray(show.genres)
-                ? (typeof show.genres[0] === "string" ? show.genres[0] : show.genres[0]?.name || "Drama")
-                : (show.genre || "Drama");
-              return (
-                <div
-                  key={showId}
-                  onClick={() => setLocation(`/tv-shows/${showId}`)}
-                  className="group relative cursor-pointer rounded-xl overflow-hidden bg-zinc-900 border border-white/5 hover:border-amber-400/50 transition-all duration-300 hover:scale-[1.03] shadow-lg"
-                >
-                  <div className="aspect-[2/3] w-full overflow-hidden">
-                    <img
-                      src={posterUrl}
-                      alt={show.title || "TV Show"}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                      onError={(e) => { (e.target as HTMLImageElement).style.backgroundColor = "#111"; }}
-                    />
-                  </div>
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent pointer-events-none" />
-                  <div className="absolute bottom-0 left-0 right-0 p-2.5">
-                    <p className="text-white font-bold text-xs truncate leading-tight">{show.title}</p>
-                    <p className="text-amber-400 text-[10px] font-semibold mt-0.5">{genreName} • {show.year || 2026}</p>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </section>
-      )}
       {cw.length > 0 && (
         <section className="px-3 sm:px-6 lg:px-8">
           <SectionHeader title="Continue Watching" icon={<Clock className="w-4 h-4" />} />

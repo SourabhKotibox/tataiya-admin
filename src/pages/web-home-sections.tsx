@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   Plus, Trash2, Edit2, GripVertical, Check, Globe, EyeOff, LayoutGrid, List, Film, Layers, MonitorPlay, Save, X, Tv
 } from 'lucide-react';
@@ -177,11 +177,11 @@ export default function WebHomeSections() {
   const [localSections, setLocalSections] = useState<any[]>([]);
   const [selectedItems, setSelectedItems] = useState<string[]>([]);
 
-  useMemo(() => {
+  useEffect(() => {
     if (sectionsData?.data) {
       setLocalSections(sectionsData.data);
     }
-  }, [sectionsData]);
+  }, [sectionsData?.data]);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editingSection, setEditingSection] = useState<any>(null);

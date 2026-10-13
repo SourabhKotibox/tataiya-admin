@@ -150,7 +150,7 @@ const SortableSection = ({ section, onToggle, onEdit, onDelete }: SortableSectio
 export default function HomeSections() {
   const { toast } = useToast();
   
-  const { data: sectionsData, isLoading } = useGetSections({});
+  const { data: sectionsData, isLoading } = useGetSections({ platform: 'app' });
   const createMutation = useCreateSection();
   const updateMutation = useUpdateSection();
   const deleteMutation = useDeleteSection();
@@ -175,7 +175,7 @@ export default function HomeSections() {
 
   const handleSaveTabName = () => {
     if (!tabNameInput.trim()) return;
-    const newTabs = tabsConfig.map((t: any) => t.id === activeTab ? { ...t, name: tabNameInput } : t);
+    const newTabs = tabsConfig.map((t: any) => t.id === 'tvShow' ? { ...t, name: tabNameInput } : t);
     updateTabsMutation.mutate(newTabs, {
       onSuccess: () => {
         setIsEditingTabName(false);
@@ -252,6 +252,7 @@ export default function HomeSections() {
       key: `section-${Date.now()}`,
       title: '',
       category: '',
+      contentType: 'tvShow',
       layout: 'horizontal',
       itemType: 'poster',
       limit: 10,
@@ -317,6 +318,7 @@ export default function HomeSections() {
       title: formData.title,
       category: formData.category || formData.title,
       contentType: formData.contentType || 'tvShow',
+      platform: 'app',
       layout: formData.layout,
       itemType: formData.itemType,
       limit: Number(formData.limit) || 10,

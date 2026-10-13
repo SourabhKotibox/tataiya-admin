@@ -178,9 +178,9 @@ export function PortraitCard({
   aspectRatio?: "2/3" | "9/16" | "16/9" | string;
 }) {
   const [imgError, setImgError] = useState(false);
-  // For vertical portrait cards, ALWAYS prioritize vertical poster assets:
+  // Vertical cards use thumbnails first, with poster and landscape fallbacks.
   const imgSrc =
-    getImageUrl(item.posterImage || item.poster || item.thumbnail || item.backdrop) || "";
+    getImageUrl(item.thumbnail || item.posterImage || item.poster || item.backdrop || item.bannerImage) || "";
 
   const isTv = Boolean(
     item?.contentType === "tvShow" ||
@@ -286,9 +286,9 @@ export function LandscapeCard({
   fullWidth?: boolean;
 }) {
   const [imgError, setImgError] = useState(false);
-  // For horizontal landscape cards, ALWAYS prioritize horizontal backdrop/thumbnail:
+  // Horizontal cards prefer banner and poster artwork before thumbnail fallbacks.
   const imgSrc =
-    getImageUrl(item.backdrop || item.thumbnail || item.bannerImage || item.poster || item.posterImage) || "";
+    getImageUrl(item.bannerImage || item.backdrop || item.posterImage || item.poster || item.thumbnail) || "";
 
   const isTv = Boolean(
     item?.contentType === "tvShow" ||
