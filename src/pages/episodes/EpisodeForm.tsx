@@ -223,6 +223,7 @@ export default function EpisodeForm() {
       isLocked: !isFree,
       status,
       subtitleUrl: subtitleUrl.trim() || undefined,
+      trailerUrl: (trailerUrlType === "local" ? trailerFilePath : trailerUrl).trim() || undefined,
     };
 
     try {
@@ -732,7 +733,10 @@ export default function EpisodeForm() {
       <MediaPicker
         open={trailerPickerOpen}
         onClose={() => setTrailerPickerOpen(false)}
-        onSelect={(m) => setTrailerFilePath(m.filePath)}
+        onSelect={(m) => {
+          setTrailerFilePath(m.filePath || m.url || "");
+          setTrailerPickerOpen(false);
+        }}
         source="episodes"
         accept="video/*"
       />

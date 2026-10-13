@@ -54,8 +54,8 @@ export default function BannersPage() {
     
     if (typeFilter === "all") return true;
     if (typeFilter === "movie") return b.content?.contentType === "movie";
-    if (typeFilter === "tvshow") return b.content?.contentType === "series";
-    if (typeFilter === "drama") return b.content?.contentType === "drama";
+    if (typeFilter === "tvshow") return b.content?.contentType === "series" || b.content?.contentType === "tvShow";
+    if (typeFilter === "drama") return b.content?.contentType === "drama" || b.content?.contentType === "short-drama";
     if (typeFilter === "promotional") return !b.content;
     return true;
   });

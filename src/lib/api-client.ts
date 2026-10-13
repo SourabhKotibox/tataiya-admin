@@ -631,10 +631,12 @@ export const bulkDeleteBanners = async (ids) => {
 
 export const createBannerFromContent = async (data: {
   contentId: string;
-  contentSource: "movie" | "content";
+  contentSource: "movie" | "tvShow" | string;
   title?: string;
   subtitle?: string;
   description?: string;
+  imageUrl?: string;
+  thumbnail?: string;
   ctaText?: string;
   ctaLink?: string;
   position?: number;

@@ -195,6 +195,7 @@ export default function BannerForm() {
       await createMutation.mutateAsync({
         contentId: selectedContent.id,
         contentSource: cfg.apiSource,
+        imageUrl: thumbnailOverride || selectedContent.thumbnail || undefined,
         ...publishing,
       });
       toast({ title: "Banner created successfully!" });

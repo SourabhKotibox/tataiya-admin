@@ -253,7 +253,7 @@ export default function TvShowForm() {
       poster: resolvedPoster || undefined,
       bannerImage: resolvedBanner || undefined,
       backdrop: resolvedBanner || undefined,
-      trailerUrl: trailerUrlType === "local" ? trailerFilePath : trailerUrl,
+      trailerUrl: (trailerUrlType === "local" ? trailerFilePath : trailerUrl).trim() || "",
       genres: resolvedGenres,
       languages: [resolvedLanguage],
       year: parseInt(year.trim(), 10) || new Date().getFullYear(),
@@ -401,6 +401,63 @@ export default function TvShowForm() {
                   )}
                 </SelectContent>
               </Select>
+            </div>
+          </div>
+
+          {/* Section: Trailer */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+            <div>
+              <Label className="text-xs font-bold mb-1.5 block">Trailer URL Type</Label>
+              <Select value={trailerUrlType} onValueChange={setTrailerUrlType}>
+                <SelectTrigger className="h-10 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="url">External URL</SelectItem>
+                  <SelectItem value="local">Local (Media Library)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              {trailerUrlType === "local" ? (
+                <>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <Label className="text-xs font-bold block">Trailer Video</Label>
+                    {trailerFilePath && (
+                      <button
+                        type="button"
+                        onClick={() => setTrailerFilePath("")}
+                        className="text-[11px] text-destructive hover:underline cursor-pointer"
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                  <div
+                    onClick={() => setTrailerPickerOpen(true)}
+                    className="border-2 border-dashed border-border rounded-lg h-10 flex items-center justify-center cursor-pointer hover:border-primary/40 bg-muted/20 transition-colors overflow-hidden w-full px-3"
+                  >
+                    {trailerFilePath ? (
+                      <span className="text-xs text-foreground truncate block w-full text-center" title={trailerFilePath}>
+                        {trailerFilePath}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">Click to select from media library</span>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <Label className="text-xs font-bold mb-1.5 block">Trailer URL</Label>
+                  <Input
+                    placeholder="https://..."
+                    value={trailerUrl}
+                    onChange={(e) => setTrailerUrl(e.target.value)}
+                    className="h-10 text-xs"
+                  />
+                </>
+              )}
             </div>
           </div>
 
@@ -600,7 +657,10 @@ export default function TvShowForm() {
       <MediaPicker
         open={trailerPickerOpen}
         onClose={() => setTrailerPickerOpen(false)}
-        onSelect={(m) => setTrailerFilePath(m.filePath)}
+        onSelect={(m) => {
+          setTrailerFilePath(m.filePath || m.url || "");
+          setTrailerPickerOpen(false);
+        }}
         source="tv-shows"
         accept="video/*"
       />
