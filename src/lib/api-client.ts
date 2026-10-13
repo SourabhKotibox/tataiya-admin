@@ -2244,10 +2244,12 @@ export const useGetMovies = (options?: {
   featured?: string;
   trending?: string;
   year?: string;
+  enabled?: boolean;
 }) => {
   return useQuery({
     queryKey: ['movies', options],
     queryFn: () => getMovies(options),
+    enabled: options?.enabled ?? true,
   });
 };
 
@@ -4183,10 +4185,12 @@ export const useGetTVShows = (options?: {
   trending?: string;
   year?: string;
   contentType?: string;
+  enabled?: boolean;
 }) => {
   return useQuery({
     queryKey: ['tv-shows', options],
     queryFn: () => getTVShows(options),
+    enabled: options?.enabled ?? true,
   });
 };
 

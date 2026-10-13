@@ -1,15 +1,15 @@
 import { useState, useCallback } from "react";
 import {
   Flame, Sparkles, TrendingUp, Star, Search,
-  ChevronLeft, ChevronRight, Loader2, Film, CheckCircle2, XCircle,
+  ChevronLeft, ChevronRight, Loader2, Film, Tv, CheckCircle2, XCircle,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
-  useGetMovies, useUpdateMovie, getImageUrl,
+  useGetMovies, useUpdateMovie, useGetTVShows, useUpdateTVShow, getImageUrl,
 } from "@/lib/api-client";
 
 const PAGE_SIZE = 20;
-type Tab = "movies";
+type Tab = "tvShows" | "movies";
 type FlagKey = "isNewContent" | "trending" | "featured";
 
 const FLAGS: { key: FlagKey; label: string; icon: typeof Sparkles }[] = [
@@ -28,7 +28,7 @@ const STATUS_STYLES: Record<string, string> = {
 
 export default function NewHotManagement() {
   const { toast } = useToast();
-  const [activeTab, setActiveTab] = useState<Tab>("movies");
+  const [activeTab, setActiveTab] = useState<Tab>("tvShows");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
 
@@ -37,12 +37,25 @@ export default function NewHotManagement() {
   const [saving, setSaving] = useState<Record<string, boolean>>({});
 
   const updateMovie = useUpdateMovie();
+  const updateTVShow = useUpdateTVShow();
 
-  const moviesQuery = useGetMovies({ page, limit: PAGE_SIZE, search: search || undefined });
+  const moviesQuery = useGetMovies({
+    page,
+    limit: PAGE_SIZE,
+    search: search || undefined,
+    enabled: activeTab === "movies",
+  });
 
-  const rawData = moviesQuery.data;
+  const tvShowsQuery = useGetTVShows({
+    page,
+    limit: PAGE_SIZE,
+    search: search || undefined,
+    enabled: activeTab === "tvShows",
+  });
 
-  const isLoading = moviesQuery.isLoading;
+  const currentQuery = activeTab === "tvShows" ? tvShowsQuery : moviesQuery;
+  const rawData = currentQuery.data;
+  const isLoading = currentQuery.isLoading;
 
   const items: any[] =
     Array.isArray(rawData?.data?.items) ? rawData.data.items  :
@@ -78,7 +91,11 @@ export default function NewHotManagement() {
     setSaving((prev) => ({ ...prev, [k]: true }));
 
     try {
-      await updateMovie.mutateAsync({ id, data: { [field]: newValue } });
+      if (activeTab === "tvShows") {
+        await updateTVShow.mutateAsync({ id, data: { [field]: newValue } });
+      } else {
+        await updateMovie.mutateAsync({ id, data: { [field]: newValue } });
+      }
       const label = FLAGS.find((f) => f.key === field)?.label ?? field;
       toast({
         title: newValue ? `Added to ${label}` : `Removed from ${label}`,
@@ -95,15 +112,18 @@ export default function NewHotManagement() {
       setSaving((prev) => ({ ...prev, [k]: false }));
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, saving, optimistic]);
+  }, [activeTab, saving, optimistic, updateTVShow, updateMovie]);
 
   const newCount      = items.filter((i) => getFlag(i, "isNewContent")).length;
   const trendingCount = items.filter((i) => getFlag(i, "trending")).length;
   const featuredCount = items.filter((i) => getFlag(i, "featured")).length;
 
-  const tabs: { id: Tab; label: string }[] = [
-    { id: "movies",   label: "Movies" },
+  const tabs: { id: Tab; label: string; icon: typeof Tv }[] = [
+    { id: "tvShows", label: "TV Shows", icon: Tv },
+    { id: "movies",  label: "Movies",   icon: Film },
   ];
+
+  const EmptyIcon = activeTab === "tvShows" ? Tv : Film;
 
   return (
     <div className="space-y-6">
@@ -142,19 +162,23 @@ export default function NewHotManagement() {
       <div className="flex flex-col sm:flex-row sm:items-center gap-3">
         {/* Tab switcher */}
         <div className="flex gap-1 bg-muted/80 dark:bg-zinc-950 border border-border dark:border-zinc-900 rounded-xl p-1 w-fit">
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => handleTabChange(tab.id)}
-              className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${
-                activeTab === tab.id
-                  ? "bg-primary text-white shadow-sm shadow-primary/30"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
+          {tabs.map((tab) => {
+            const TabIcon = tab.icon;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => handleTabChange(tab.id)}
+                className={`flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-lg transition-all ${
+                  activeTab === tab.id
+                    ? "bg-primary text-white shadow-sm shadow-primary/30"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <TabIcon className="h-3.5 w-3.5" />
+                {tab.label}
+              </button>
+            );
+          })}
         </div>
 
         {/* Search */}
@@ -164,7 +188,7 @@ export default function NewHotManagement() {
             type="text"
             value={search}
             onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-            placeholder="Search movies…"
+            placeholder={`Search ${activeTab === "tvShows" ? "TV shows" : "movies"}…`}
             className="w-full rounded-xl border border-border bg-card dark:border-zinc-900 dark:bg-zinc-950 pl-9 pr-4 py-2.5 text-xs font-medium text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/40 transition-all"
           />
         </div>
@@ -192,9 +216,9 @@ export default function NewHotManagement() {
         ) : items.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-24 gap-3">
             <div className="w-16 h-16 rounded-2xl bg-muted border border-border dark:bg-zinc-900 dark:border-zinc-800 flex items-center justify-center">
-              <Film className="h-8 w-8 text-muted-foreground opacity-60 dark:text-muted-foreground" />
+              <EmptyIcon className="h-8 w-8 text-muted-foreground opacity-60 dark:text-muted-foreground" />
             </div>
-            <p className="text-sm font-semibold text-foreground">No content found</p>
+            <p className="text-sm font-semibold text-foreground">No {activeTab === "tvShows" ? "TV shows" : "movies"} found</p>
             {search && <p className="text-xs text-muted-foreground">Try a different search term</p>}
           </div>
         ) : (
@@ -224,7 +248,7 @@ export default function NewHotManagement() {
                         />
                       ) : (
                         <div className="h-full w-full flex items-center justify-center">
-                          <Film className="h-4 w-4 text-muted-foreground opacity-60" />
+                          <EmptyIcon className="h-4 w-4 text-muted-foreground opacity-60" />
                         </div>
                       )}
                     </div>
