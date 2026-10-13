@@ -84,6 +84,7 @@ export default function EpisodesList() {
         videoUrl: e.videoUrl || e.hlsUrl || "",
         isFree: e.isFree ?? !e.isLocked,
         status: e.status || "published",
+        processingStatus: e.processingStatus || "ready",
         releaseDate: e.releaseDate || e.createdAt || "2026-01-01",
         createdAt: e.createdAt || "2026-01-01",
         showTitle: (typeof e.tvShowId === "object" ? e.tvShowId?.title : null) || matchingShow?.title || "TV Show",

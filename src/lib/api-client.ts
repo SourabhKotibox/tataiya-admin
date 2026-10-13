@@ -1515,7 +1515,7 @@ export const uploadMediaFiles = async (
     return 'application/octet-stream';
   };
 
-  const DIRECT_S3_THRESHOLD = 2 * 1024 * 1024; // 2MB
+  const DIRECT_S3_THRESHOLD = 2 * 1024 * 1024; // 2MB; videos always use direct storage.
   const uploaded: any[] = [];
   const totalBytes = optimizedFiles.reduce((s, f) => s + f.size, 0) || 1;
   let completedBytes = 0;
@@ -1544,7 +1544,7 @@ export const uploadMediaFiles = async (
       const xhr = new XMLHttpRequest();
       xhr.open('PUT', data.uploadUrl);
       xhr.setRequestHeader('Content-Type', contentType);
-      Object.entries(data.headers || {}).forEach(([name, value]) => xhr.setRequestHeader(name, value));
+      Object.entries(data.headers || {}).forEach(([name, value]) => xhr.setRequestHeader(name, String(value)));
       xhr.timeout = 0;
       xhr.upload.addEventListener('progress', (event) => {
         if (!event.lengthComputable) return;
@@ -1573,22 +1573,25 @@ export const uploadMediaFiles = async (
     return { data, contentType };
   };
 
-  // Prefer direct storage uploads, falling back to the streaming API upload on transfer errors.
-  const smallFiles: File[] = [];
+  // Prefer direct storage uploads. Videos must not bounce through the API unless
+  // the caller is explicitly using the older multipart route elsewhere.
+  const multipartFiles: File[] = [];
   for (const file of optimizedFiles) {
-    if (file.size >= DIRECT_S3_THRESHOLD) {
+    const isVideoFile = file.type.startsWith('video/') || /\.(mp4|webm|mov|mkv|avi|flv|m4v|mpeg|mpg)$/i.test(file.name);
+    const shouldUseDirectStorage = isVideoFile || file.size >= DIRECT_S3_THRESHOLD;
+    if (shouldUseDirectStorage) {
       let directUpload: Awaited<ReturnType<typeof uploadOneDirectS3>>;
       try {
         directUpload = await uploadOneDirectS3(file);
       } catch (err) {
-        if (source !== 'episodes' && file.size >= 20 * 1024 * 1024) {
+        if (isVideoFile || file.size >= 20 * 1024 * 1024) {
           throw new Error(
             (err as Error)?.message ||
-              'Direct S3 upload failed for this large file. Check S3 bucket CORS allows PUT from https://tataiya.in, then retry.'
+              'Direct storage upload failed. Check Spaces CORS allows PUT from https://tataiya.in, then retry.'
           );
         }
         console.warn('Direct storage upload failed, falling back to the streaming API upload:', err);
-        smallFiles.push(file);
+        multipartFiles.push(file);
         continue;
       }
 
@@ -1608,31 +1611,30 @@ export const uploadMediaFiles = async (
           }),
         });
         if (!confirmed?.data) {
-          throw new Error('Storage upload succeeded, but the server did not register the video.');
+          throw new Error('Storage upload succeeded, but the server did not register the file.');
         }
         uploaded.push(confirmed.data);
         completedBytes += file.size;
         reportOverall(0, 0);
       } catch (err) {
-        if (source === 'episodes') throw err;
-        if (file.size >= 20 * 1024 * 1024) {
+        if (isVideoFile || file.size >= 20 * 1024 * 1024) {
           throw new Error(
             (err as Error)?.message ||
-              'Direct S3 upload failed for this large file. Check S3 bucket CORS allows PUT from https://tataiya.in, then retry.'
+              'Direct storage registration failed. Check Spaces credentials/CORS and retry.'
           );
         }
         console.warn('Direct storage registration failed, queueing for multipart:', err);
-        smallFiles.push(file);
+        multipartFiles.push(file);
       }
     } else {
-      smallFiles.push(file);
+      multipartFiles.push(file);
     }
   }
 
-  if (smallFiles.length > 0) {
+  if (multipartFiles.length > 0) {
     const formData = new FormData();
     formData.append('source', source || 'media-library');
-    smallFiles.forEach((f) => formData.append('file', f));
+    multipartFiles.forEach((f) => formData.append('file', f));
     const result = await api(`/media/folders/${folderId}/files`, {
       method: 'POST',
       body: formData,

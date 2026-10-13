@@ -44,6 +44,8 @@ export default function TvShowsList() {
       shortDescription: s.shortDescription || s.description || "",
       fullDescription: s.description || s.shortDescription || "",
       poster: getImageUrl(s.poster || s.thumbnail || s.bannerImage),
+      posterImage: getImageUrl(s.posterImage || s.poster || s.thumbnail || s.bannerImage),
+      thumbnail: getImageUrl(s.thumbnail || s.poster || s.bannerImage),
       backdrop: getImageUrl(s.bannerImage || s.backdrop || s.poster),
       genres: Array.isArray(s.genres)
         ? s.genres.map((g: any) => (typeof g === "string" ? g : g?.name || "")).filter(Boolean)

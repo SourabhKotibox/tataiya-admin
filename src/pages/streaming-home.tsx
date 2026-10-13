@@ -51,7 +51,7 @@ interface ContentItem {
   planRequired?: string;
 }
 
-type Tab = "home" | "tvshows" | "new";
+type Tab = "home" | "movies" | "tvshows" | "new";
 
 const PLAN_LEVEL: Record<string, number> = { free: 0, basic: 1, standard: 2, premium: 3 };
 
