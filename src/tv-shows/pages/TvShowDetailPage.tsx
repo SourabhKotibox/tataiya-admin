@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import { useParams, useLocation } from "wouter";
 import {
   Play, Star, ChevronLeft, Crown, Tv, Plus, Check, Heart, Share2,
-  Calendar, Globe, Clock, Film, Lock, Sparkles, CheckCircle2
+  Calendar, Globe, Clock, Film, Lock, Sparkles, CheckCircle2, Loader2
 } from "lucide-react";
 import { PublicHeader, PublicFooter } from "@/pages/streaming-home";
 import SubscriptionPlansModal from "@/components/SubscriptionPlansModal";
@@ -35,7 +35,7 @@ export default function TvShowDetailPage() {
   const [inWatchlist, setInWatchlist] = useState<boolean>(false);
   const [isLiked, setIsLiked] = useState<boolean>(false);
 
-  const { data: serverShowData } = useGetAppSeriesDetail(id || "");
+  const { data: serverShowData, isLoading, isFetching } = useGetAppSeriesDetail(id || "");
   const toggleWishlistMutation = useToggleWishlist();
 
   // Retrieve TV Show details from server
@@ -166,6 +166,35 @@ export default function TvShowDetailPage() {
     setUser(null);
     window.location.reload();
   };
+
+  if (isLoading || (!show && isFetching)) {
+    return (
+      <div className="min-h-screen bg-[#0c0c14] text-white flex flex-col justify-between">
+        <PublicHeader
+          activeTab={"tvshows" as any}
+          setActiveTab={(tab: any) => {
+            if (tab === "home") setLocation("/");
+            else if (tab === "movies") setLocation("/browse?type=movie");
+            else setLocation("/tv-shows");
+          }}
+          onSignIn={() => setLocation("/login")}
+        />
+        <div className="flex-1 flex flex-col items-center justify-center py-32 px-4 text-center">
+          <div className="relative mb-6">
+            <div className="w-16 h-16 rounded-2xl bg-amber-400/10 border border-amber-400/20 flex items-center justify-center shadow-lg shadow-amber-400/5">
+              <Tv className="w-8 h-8 text-amber-400 animate-pulse" />
+            </div>
+            <Loader2 className="w-6 h-6 animate-spin text-amber-400 absolute -bottom-2 -right-2" />
+          </div>
+          <h2 className="text-xl font-bold text-white mb-2">Loading series &amp; episodes…</h2>
+          <p className="text-white/50 text-xs max-w-xs">
+            Preparing video stream and episode details
+          </p>
+        </div>
+        <PublicFooter />
+      </div>
+    );
+  }
 
   if (!show) {
     return (
@@ -440,7 +469,12 @@ export default function TvShowDetailPage() {
           </div>
 
           {/* Episode Cards Grid */}
-          {episodes.length === 0 ? (
+          {isFetching && episodes.length === 0 ? (
+            <div className="py-16 flex flex-col items-center justify-center gap-3 bg-zinc-900/30 rounded-2xl border border-white/5">
+              <Loader2 className="w-7 h-7 animate-spin text-amber-400" />
+              <p className="text-sm font-semibold text-white/70">Loading episodes…</p>
+            </div>
+          ) : episodes.length === 0 ? (
             <div className="py-12 text-center text-white/50 text-sm bg-zinc-900/30 rounded-2xl border border-white/5">
               No episodes available for this season yet.
             </div>

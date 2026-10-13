@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useParams, useLocation } from "wouter";
 import {
   ChevronLeft, Play, Lock, AlertCircle, Crown,
-  SkipForward, List, Film, CheckCircle2, Tv
+  SkipForward, List, Film, CheckCircle2, Tv, Loader2
 } from "lucide-react";
 import VideoPlayer from "@/components/VideoPlayer";
 import SubscriptionPlansModal from "@/components/SubscriptionPlansModal";
@@ -45,7 +45,7 @@ export default function TvShowWatchPage() {
     user && (user.subscription === true || (user.subscriptionStatus === "active" && user.subscriptionPlan !== "free"))
   );
 
-  const { data: serverShowData } = useGetAppSeriesDetail(id || "");
+  const { data: serverShowData, isLoading: showLoading } = useGetAppSeriesDetail(id || "");
 
   const show = useMemo(() => {
     const raw = serverShowData?.data || serverShowData;
@@ -131,6 +131,30 @@ export default function TvShowWatchPage() {
       });
     }
   }, [show, currentEpisode]);
+
+  if (showLoading || watchDataLoading) {
+    return (
+      <div className="min-h-screen bg-[#09090b] text-foreground flex flex-col items-center justify-center p-6 text-center">
+        <PublicHeader
+          activeTab="tv-shows"
+          setActiveTab={(tab) => {
+            if (tab === "home") setLocation("/");
+            else setLocation(`/browse/${tab}`);
+          }}
+          onSignIn={() => setLocation("/login")}
+          onSignOut={handleSignOut}
+          user={user}
+        />
+        <div className="flex flex-col items-center mt-20 gap-3">
+          <Loader2 className="w-10 h-10 animate-spin text-amber-400" />
+          <h2 className="text-xl font-bold mb-1">Loading Episode…</h2>
+          <p className="text-foreground/60 text-xs">
+            Preparing video stream and playback controls
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   if (!show || !currentEpisode) {
     return (
