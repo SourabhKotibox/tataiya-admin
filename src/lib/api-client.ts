@@ -1544,6 +1544,7 @@ export const uploadMediaFiles = async (
       const xhr = new XMLHttpRequest();
       xhr.open('PUT', data.uploadUrl);
       xhr.setRequestHeader('Content-Type', contentType);
+      Object.entries(data.headers || {}).forEach(([name, value]) => xhr.setRequestHeader(name, value));
       xhr.timeout = 0;
       xhr.upload.addEventListener('progress', (event) => {
         if (!event.lengthComputable) return;

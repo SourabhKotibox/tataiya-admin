@@ -78,6 +78,9 @@ export default function VideoPlayer({
 
   const [showResumePrompt, setShowResumePrompt] = useState(false);
   const [resumeTime, setResumeTime] = useState(0);
+  const [resumeActionPending, setResumeActionPending] = useState(false);
+  const resumeCheckedForRef = useRef<string | null>(null);
+  const resumeActionHandledRef = useRef(false);
 
   const { settings } = useSettings();
   const { data: adsData, isSuccess: isAdsSuccess } = useGetPublicAds({ placement: 'Player' });
@@ -111,9 +114,17 @@ export default function VideoPlayer({
     }
   }, []);
 
+  useEffect(() => {
+    resumeCheckedForRef.current = null;
+    resumeActionHandledRef.current = false;
+    setShowResumePrompt(false);
+    setResumeActionPending(false);
+  }, [contentId]);
+
   // Initialize: check resume and pre-roll ad eligibility
   useEffect(() => {
-    if (contentId) {
+    if (contentId && resumeCheckedForRef.current !== contentId) {
+      resumeCheckedForRef.current = contentId;
       try {
         const saved = localStorage.getItem(PROGRESS_KEY(contentId));
         if (saved) {
@@ -140,12 +151,20 @@ export default function VideoPlayer({
   }, [contentId, isAdsSuccess, hasApplicableAd, adFinished]);
 
   const handleResume = (resume: boolean) => {
+    if (resumeActionHandledRef.current) return;
+    resumeActionHandledRef.current = true;
+    setResumeActionPending(true);
     setShowResumePrompt(false);
     const v = videoRef.current;
     if (v && resume) {
       v.currentTime = resumeTime;
       setCurrentTime(resumeTime);
       setProgress(duration ? (resumeTime / duration) * 100 : 0);
+    } else {
+      if (contentId) localStorage.removeItem(PROGRESS_KEY(contentId));
+      if (v) v.currentTime = 0;
+      setCurrentTime(0);
+      setProgress(0);
     }
     if (hasApplicableAd && !adFinished) {
       setShowPreroll(true);
@@ -399,24 +418,44 @@ export default function VideoPlayer({
 
         {/* Resume Prompt */}
         {showResumePrompt && (
-          <div className="absolute inset-0 z-[350] bg-black/80 flex items-center justify-center">
-            <div className="bg-zinc-900 border border-zinc-700 rounded-2xl p-6 max-w-sm mx-4 text-center">
-              <p className="text-foreground font-bold text-lg mb-1">Resume Watching?</p>
-              <p className="text-foreground/70 text-sm mb-5">
-                You left off at {formatTime(resumeTime)}. Continue from there?
-              </p>
-              <div className="flex gap-3">
+          <div className="absolute inset-0 z-[350] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm" role="presentation">
+            <div
+              className="w-full max-w-md rounded-xl border border-white/10 bg-zinc-950 p-5 text-left shadow-2xl sm:p-6"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="resume-prompt-title"
+              aria-describedby="resume-prompt-description"
+            >
+              <div className="mb-5 flex items-start gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/15 text-primary">
+                  <Play className="h-5 w-5 fill-current" />
+                </div>
+                <div>
+                  <h2 id="resume-prompt-title" className="text-lg font-bold text-white">Resume Watching?</h2>
+                  <p id="resume-prompt-description" className="mt-1 text-sm text-white/65">
+                    You stopped at <span className="font-semibold text-white">{formatTime(resumeTime)}</span>.
+                  </p>
+                </div>
+              </div>
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                 <button
-                  onClick={() => handleResume(true)}
-                  className="flex-1 py-2.5 bg-primary hover:bg-primary/90 text-white font-bold rounded-xl text-sm transition-all"
+                  type="button"
+                  disabled={resumeActionPending}
+                  onClick={() => handleResume(false)}
+                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/5 px-4 text-sm font-semibold text-white/85 transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  Resume
+                  <RotateCcw className="h-4 w-4" />
+                  Start Over
                 </button>
                 <button
-                  onClick={() => handleResume(false)}
-                  className="flex-1 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-foreground font-bold rounded-xl text-sm transition-all"
+                  type="button"
+                  autoFocus
+                  disabled={resumeActionPending}
+                  onClick={() => handleResume(true)}
+                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-primary px-5 text-sm font-bold text-white transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  Start Over
+                  <Play className="h-4 w-4 fill-current" />
+                  Resume
                 </button>
               </div>
             </div>

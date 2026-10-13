@@ -141,13 +141,23 @@ function canPlayMovie(item: any, user: any): boolean {
   return getLvl(userPlanKey) >= getLvl(reqKey);
 }
 
-function resolveBannerVideo(item: any): { src: string; isTrailer: boolean; clipSeconds: number | null } {
+function resolveBannerVideo(item: any): { src: string; isTrailer: boolean; clipSeconds: number | null; embedSrc?: string } {
   const usable = (raw?: string | null) => {
     if (!raw || String(raw).startsWith("blob:")) return "";
     return getImageUrl(raw) || "";
   };
   const trailer = usable(item?.trailerUrl) || usable(item?.trailer) || usable(item?.trailer_url);
-  if (trailer) return { src: trailer, isTrailer: true, clipSeconds: null };
+  if (trailer) {
+    const youtubeId = trailer.match(/(?:youtu\.be\/|youtube(?:-nocookie)?\.com\/(?:embed\/|shorts\/|v\/|watch\?.*v=))([\w-]{11})/)?.[1];
+    return {
+      src: trailer,
+      isTrailer: true,
+      clipSeconds: null,
+      embedSrc: youtubeId
+        ? `https://www.youtube-nocookie.com/embed/${youtubeId}?autoplay=1&mute=1&controls=0&loop=1&playlist=${youtubeId}&playsinline=1&rel=0`
+        : undefined,
+    };
+  }
   const movie = usable(item?.hlsUrl) || usable(item?.videoUrl) || usable(item?.sourceVideoUrl);
   if (movie) return { src: movie, isTrailer: false, clipSeconds: 300 };
   return { src: "", isTrailer: false, clipSeconds: null };
@@ -344,6 +354,7 @@ function Hero({ activeTab, onPlay, onSubscribeClick, isSubscribed }: { activeTab
   const [isPaused, setIsPaused] = useState(false);
   const [muted, setMuted] = useState(true);
   const [videoReady, setVideoReady] = useState(false);
+  const [videoFallback, setVideoFallback] = useState<{ itemId: string; src: string } | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const hlsRef = useRef<Hls | null>(null);
 
@@ -359,17 +370,46 @@ function Hero({ activeTab, onPlay, onSubscribeClick, isSubscribed }: { activeTab
   }, [current]);
 
   const item = heroContent[current];
-  const bannerVideo = item ? resolveBannerVideo(item) : { src: "", isTrailer: false, clipSeconds: null as number | null };
+  const itemId = String(item?.id || item?._id || current);
+  const baseBannerVideo = item ? resolveBannerVideo(item) : { src: "", isTrailer: false, clipSeconds: null as number | null };
+  const hasFallback = videoFallback?.itemId === itemId;
+  const bannerVideo = hasFallback
+    ? { ...baseBannerVideo, src: videoFallback.src, isTrailer: false, clipSeconds: 300, embedSrc: undefined }
+    : baseBannerVideo;
 
   // Load trailer or first-5-minutes movie clip
   useEffect(() => {
     const v = videoRef.current;
+    if (bannerVideo.embedSrc) {
+      setVideoReady(true);
+      return;
+    }
     if (!v || !bannerVideo.src) {
       setVideoReady(false);
       return;
     }
 
     let destroyed = false;
+    const showVideo = () => {
+      if (!destroyed) setVideoReady(true);
+    };
+    const showPoster = () => {
+      if (!destroyed) setVideoReady(false);
+    };
+    const handleMediaError = () => {
+      showPoster();
+      if (!bannerVideo.isTrailer || !item) return;
+      const fallback = [item.hlsUrl, item.videoUrl, item.sourceVideoUrl]
+        .filter(Boolean)
+        .map((source: string) => getImageUrl(source))
+        .find((source: string) => source && source !== bannerVideo.src);
+      if (fallback) setVideoFallback({ itemId, src: fallback });
+    };
+    v.addEventListener("playing", showVideo);
+    v.addEventListener("waiting", showPoster);
+    v.addEventListener("stalled", showPoster);
+    v.addEventListener("error", handleMediaError);
+
     if (hlsRef.current) {
       hlsRef.current.destroy();
       hlsRef.current = null;
@@ -406,11 +446,11 @@ function Hero({ activeTab, onPlay, onSubscribeClick, isSubscribed }: { activeTab
       hls.attachMedia(v);
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
         if (destroyed) return;
-        setVideoReady(true);
         playSafe();
       });
       hls.on(Hls.Events.ERROR, (_event, data) => {
         if (data.fatal) {
+          showPoster();
           switch (data.type) {
             case Hls.ErrorTypes.NETWORK_ERROR:
               hls.startLoad();
@@ -428,23 +468,19 @@ function Hero({ activeTab, onPlay, onSubscribeClick, isSubscribed }: { activeTab
       v.src = bannerVideo.src;
       const onReady = () => {
         if (destroyed) return;
-        setVideoReady(true);
         playSafe();
       };
       v.addEventListener("canplay", onReady, { once: true });
       v.addEventListener("loadeddata", onReady, { once: true });
-      v.addEventListener("playing", () => { if (!destroyed) setVideoReady(true); }, { once: true });
       v.load();
     } else {
       v.src = bannerVideo.src;
       const onReady = () => {
         if (destroyed) return;
-        setVideoReady(true);
         playSafe();
       };
       v.addEventListener("canplay", onReady, { once: true });
       v.addEventListener("loadeddata", onReady, { once: true });
-      v.addEventListener("playing", () => { if (!destroyed) setVideoReady(true); }, { once: true });
       if (v.readyState >= 2) {
         onReady();
       } else {
@@ -454,12 +490,16 @@ function Hero({ activeTab, onPlay, onSubscribeClick, isSubscribed }: { activeTab
 
     return () => {
       destroyed = true;
+      v.removeEventListener("playing", showVideo);
+      v.removeEventListener("waiting", showPoster);
+      v.removeEventListener("stalled", showPoster);
+      v.removeEventListener("error", handleMediaError);
       if (hlsRef.current) {
         hlsRef.current.destroy();
         hlsRef.current = null;
       }
     };
-  }, [bannerVideo.src, current]);
+  }, [bannerVideo.src, current, itemId]);
 
   useEffect(() => {
     if (videoRef.current) videoRef.current.muted = muted;
@@ -537,15 +577,26 @@ function Hero({ activeTab, onPlay, onSubscribeClick, isSubscribed }: { activeTab
       </div>
 
       <div className={`absolute inset-0 transition-opacity duration-700 ${fading ? "opacity-0" : videoReady ? "opacity-100" : "opacity-0"}`}>
-        <video
-          ref={videoRef}
-          className="absolute inset-0 w-full h-full object-cover object-[center_30%] sm:object-center [filter:brightness(1.06)_contrast(1.03)_saturate(1.04)]"
-          playsInline
-          muted
-          autoPlay
-          loop={bannerVideo.isTrailer}
-          poster={getImageUrl(item.backdrop || item.poster) || undefined}
-        />
+        {bannerVideo.embedSrc ? (
+          <iframe
+            key={bannerVideo.embedSrc}
+            src={bannerVideo.embedSrc}
+            title={`${item.title || "Banner"} trailer`}
+            className="absolute inset-0 h-full w-full border-0 pointer-events-none"
+            allow="autoplay; encrypted-media; picture-in-picture"
+            allowFullScreen
+          />
+        ) : (
+          <video
+            ref={videoRef}
+            className="absolute inset-0 w-full h-full object-cover object-[center_30%] sm:object-center [filter:brightness(1.06)_contrast(1.03)_saturate(1.04)]"
+            playsInline
+            muted
+            autoPlay
+            loop={bannerVideo.isTrailer}
+            poster={getImageUrl(item.backdrop || item.poster) || undefined}
+          />
+        )}
       </div>
 
       {/* Left text readable + soft blend into page — keep image full width */}
