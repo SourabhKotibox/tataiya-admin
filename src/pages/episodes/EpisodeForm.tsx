@@ -78,7 +78,7 @@ export default function EpisodeForm() {
   const [videoFilePath, setVideoFilePath] = useState("");
   const [videoPickerOpen, setVideoPickerOpen] = useState(false);
   const [videoUploadPending, setVideoUploadPending] = useState(false);
-  const [durationMinutes, setDurationMinutes] = useState<number>(45);
+  const [durationMinutes, setDurationMinutes] = useState<number | "">("");
   const [releaseDate, setReleaseDate] = useState(new Date().toISOString().split("T")[0]);
   const [isFree, setIsFree] = useState(true);
   const [status, setStatus] = useState<"published" | "draft">("published");
@@ -162,7 +162,7 @@ export default function EpisodeForm() {
         } else {
           setVideoUploadType("url");
         }
-        setDurationMinutes(Math.round((existing.duration || 2700) / 60));
+        setDurationMinutes(existing.duration > 0 ? Math.round(existing.duration / 60) : "");
         setReleaseDate(existing.releaseDate ? existing.releaseDate.split("T")[0] : new Date().toISOString().split("T")[0]);
         setIsFree(existing.isFree ?? !existing.isLocked);
         setStatus(existing.status || "published");
@@ -217,7 +217,7 @@ export default function EpisodeForm() {
       hlsUrl: resolvedVideoUrl && isHlsPlaylist ? resolvedVideoUrl : undefined,
       videoUploadType,
       videoFilePath: videoFilePath.trim() || undefined,
-      duration: (durationMinutes || 45) * 60,
+      duration: Number(durationMinutes) > 0 ? Number(durationMinutes) * 60 : 0,
       releaseDate: releaseDate || undefined,
       isFree,
       isLocked: !isFree,
@@ -613,10 +613,9 @@ export default function EpisodeForm() {
               <Label className="text-xs font-bold mb-1.5 block">Duration (Minutes)</Label>
               <Input
                 type="number"
-                min={1}
+                min={0}
                 value={durationMinutes}
-                onChange={(e) => setDurationMinutes(parseInt(e.target.value) || 45)}
-                placeholder="45"
+                onChange={(e) => setDurationMinutes(e.target.value === "" ? "" : Number(e.target.value))}
                 className="h-10 text-xs"
               />
             </div>
@@ -723,7 +722,7 @@ export default function EpisodeForm() {
           setVideoUploadType("local");
           setVideoFilePath(chosenUrl);
           setVideoUrl(chosenUrl);
-          if (media.duration && (!durationMinutes || durationMinutes === 45)) {
+          if (media.duration > 0) {
             setDurationMinutes(Math.round(media.duration / 60));
           }
         }}

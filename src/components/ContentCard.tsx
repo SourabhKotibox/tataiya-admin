@@ -178,9 +178,21 @@ export function PortraitCard({
   aspectRatio?: "2/3" | "9/16" | "16/9" | string;
 }) {
   const [imgError, setImgError] = useState(false);
-  // Vertical cards use thumbnails first, with poster and landscape fallbacks.
-  const imgSrc =
-    getImageUrl(item.thumbnail || item.posterImage || item.poster || item.backdrop || item.bannerImage) || "";
+  const imageCandidates = [...new Set(
+    [item.posterImage, item.poster, item.thumbnail]
+      .filter(Boolean)
+      .map((image) => getImageUrl(image))
+      .filter(Boolean)
+  )];
+  const [imageCandidateIndex, setImageCandidateIndex] = useState(0);
+  const imgSrc = imageCandidates[imageCandidateIndex] || "";
+  const advanceImageCandidate = () => {
+    if (imageCandidateIndex < imageCandidates.length - 1) {
+      setImageCandidateIndex(imageCandidateIndex + 1);
+    } else {
+      setImgError(true);
+    }
+  };
 
   const isTv = Boolean(
     item?.contentType === "tvShow" ||
@@ -209,7 +221,11 @@ export function PortraitCard({
             src={imgSrc}
             alt={item.title || ""}
             className="w-full h-full object-cover group-hover:scale-[1.03] transition-transform duration-500"
-            onError={() => setImgError(true)}
+            onLoad={(event) => {
+              const image = event.currentTarget;
+              if (image.naturalWidth > image.naturalHeight) advanceImageCandidate();
+            }}
+            onError={advanceImageCandidate}
           />
         ) : (
           <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-zinc-800/90 via-zinc-900 to-black p-3 text-center">
