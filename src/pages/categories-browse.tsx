@@ -45,6 +45,7 @@ export default function CategoriesBrowsePage() {
   const isNew = searchParams.has("new");
   const isTopRated = searchParams.has("top-rated");
   const isAction = searchParams.has("action");
+  const sectionId = searchParams.get("section");
   const genreParam = searchParams.get("genre");
 
   const initialQ = searchParams.get("q") || "";
@@ -111,6 +112,7 @@ export default function CategoriesBrowsePage() {
   }, [searchString, (params as any)?.tab]);
 
   const getHeading = () => {
+    if (sectionId) return browseData?.sectionTitle || "Browse";
     if (isTrending) return "Trending Now";
     if (isNew) return "New Releases";
     if (isTopRated) return "Top Rated Movies";
@@ -133,7 +135,10 @@ export default function CategoriesBrowsePage() {
     clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
       setDebouncedQ(val);
-      setLocation(`/browse?q=${encodeURIComponent(val)}`, { replace: true });
+      const params = new URLSearchParams();
+      if (sectionId) params.set("section", sectionId);
+      if (val) params.set("q", val);
+      setLocation(`/browse?${params.toString()}`, { replace: true });
     }, 350);
   };
 
@@ -146,7 +151,7 @@ export default function CategoriesBrowsePage() {
     page,
     search: debouncedQ || undefined,
     limit: 24,
-    section: isTrending ? "trending" : isNew ? "new" : isTopRated ? "top-rated" : undefined,
+    section: sectionId || (isTrending ? "trending" : isNew ? "new" : isTopRated ? "top-rated" : undefined),
   };
 
   const { data: browseData, isLoading, isFetching } = useGetWebBrowse(browseOptions);
@@ -155,7 +160,8 @@ export default function CategoriesBrowsePage() {
 
   const handlePlay = (item: any) => {
     const id = item.id || item._id;
-    setLocation(`/movie/${id}`);
+    const isShow = item.contentType === "tvShow" || item.type === "show";
+    setLocation(isShow ? `/tv-shows/${id}` : `/movie/${id}`);
   };
 
   const handleSignOut = async () => {
@@ -203,7 +209,7 @@ export default function CategoriesBrowsePage() {
         </div>
 
         {/* Content Type Tabs */}
-        <div className="px-4 sm:px-8 lg:px-14 mb-5">
+        {!sectionId && <div className="px-4 sm:px-8 lg:px-14 mb-5">
           <div className="flex items-center gap-2 flex-wrap">
             {contentTypes.map(({ key, label, icon }) => (
               <button
@@ -234,10 +240,10 @@ export default function CategoriesBrowsePage() {
               </div>
             )}
           </div>
-        </div>
+        </div>}
 
         {/* Genre Filter (hide during search) */}
-        {!debouncedQ && (
+        {!sectionId && !debouncedQ && (
           <div
             className="flex gap-2 overflow-x-auto px-4 sm:px-8 lg:px-14 pb-2 mb-6"
             style={{ scrollbarWidth: "none" } as React.CSSProperties}

@@ -1275,9 +1275,12 @@ function HomeTab({ onPlay, onSubscribeClick, isSubscribed, user, onSignIn }: {
           if (section.layout === 'grid') {
             const isLandscape = section.itemType === 'landscape';
             const isDrama = section.itemType === 'drama';
+            const onSeeAll = section.showViewAll === false
+              ? undefined
+              : () => setLocation(`/browse?section=${encodeURIComponent(section._id || section.id || section.key)}`);
             rowContent = (
               <div className="mb-6">
-                <SectionHeader title={section.title} onSeeAll={() => setLocation(`/browse?section=${section._id}`)} count={items.length} />
+                <SectionHeader title={section.title} onSeeAll={onSeeAll} count={items.length} />
                 <div className={`px-3 sm:px-6 lg:px-8 grid ${isLandscape ? 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3' : 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2.5 sm:gap-3.5'} pt-2`}>
                   {items.map((item: any) => (
                     <Fragment key={item.id || item._id}>
@@ -1293,10 +1296,13 @@ function HomeTab({ onPlay, onSubscribeClick, isSubscribed, user, onSignIn }: {
             );
           } else {
             const isPortrait = section.itemType === 'portrait' || section.itemType === 'drama' || section.itemType === 'poster';
+            const onSeeAll = section.showViewAll === false
+              ? undefined
+              : () => setLocation(`/browse?section=${encodeURIComponent(section._id || section.id || section.key)}`);
             if (isPortrait) {
-              rowContent = <ContentRow title={section.title} items={items} onPlay={onPlay} onSeeAll={() => setLocation(`/browse?section=${section._id}`)} />;
+              rowContent = <ContentRow title={section.title} items={items} onPlay={onPlay} onSeeAll={onSeeAll} />;
             } else {
-              rowContent = <FeaturedRow title={section.title} items={items} onPlay={onPlay} onSeeAll={() => setLocation(`/browse?section=${section._id}`)} />;
+              rowContent = <FeaturedRow title={section.title} items={items} onPlay={onPlay} onSeeAll={onSeeAll} />;
             }
           }
           
