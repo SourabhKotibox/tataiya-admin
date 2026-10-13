@@ -146,7 +146,7 @@ function resolveBannerVideo(item: any): { src: string; isTrailer: boolean; clipS
     if (!raw || String(raw).startsWith("blob:")) return "";
     return getImageUrl(raw) || "";
   };
-  const trailer = usable(item?.trailerUrl);
+  const trailer = usable(item?.trailerUrl) || usable(item?.trailer) || usable(item?.trailer_url);
   if (trailer) return { src: trailer, isTrailer: true, clipSeconds: null };
   const movie = usable(item?.hlsUrl) || usable(item?.videoUrl) || usable(item?.sourceVideoUrl);
   if (movie) return { src: movie, isTrailer: false, clipSeconds: 300 };
@@ -279,21 +279,14 @@ function FeaturedRow({ title, icon, items, onPlay, size = "md", onSeeAll }: {
   return (
     <div className="mb-6">
       <SectionHeader title={title} icon={icon} onSeeAll={onSeeAll} count={items.length} />
-      {/* Mobile grid: 3 columns */}
-      <div className="md:hidden px-3 sm:px-6 grid grid-cols-3 gap-1">
-        {items.map((item) => (
-          <PortraitCard key={item.id || item._id} item={item} onClick={() => onPlay(item)} fullWidth hidePlayButton />
-        ))}
-      </div>
-      {/* Desktop horizontal scroll */}
-      <div className="hidden md:block relative group/row">
+      <div className="relative group/row">
         <button onClick={() => scroll("left", 1200)} className="hidden lg:flex absolute left-2 top-1/2 -translate-y-1/2 z-10 w-9 h-9 items-center justify-center rounded-full bg-black/80 border border-zinc-700/60 text-white opacity-0 group-hover/row:opacity-100 hover:bg-amber-400 hover:border-amber-400 transition-all shadow-xl">
           <ChevronLeft className="w-4 h-4" />
         </button>
         <button onClick={() => scroll("right", 1200)} className="hidden lg:flex absolute right-2 top-1/2 -translate-y-1/2 z-10 w-9 h-9 items-center justify-center rounded-full bg-black/80 border border-zinc-700/60 text-white opacity-0 group-hover/row:opacity-100 hover:bg-amber-400 hover:border-amber-400 transition-all shadow-xl">
           <ChevronRight className="w-4 h-4" />
         </button>
-        <div ref={rowRef} className="flex gap-4 overflow-x-auto px-3 sm:px-6 lg:px-8 pb-2" style={{ scrollbarWidth: "none", msOverflowStyle: "none" } as React.CSSProperties}>
+        <div ref={rowRef} className="flex gap-3 sm:gap-4 overflow-x-auto px-3 sm:px-6 lg:px-8 pb-2" style={{ scrollbarWidth: "none", msOverflowStyle: "none" } as React.CSSProperties}>
           {items.map((item) => (
             <FeaturedCard key={item.id || item._id} item={item} onPlay={onPlay} size={size} />
           ))}
@@ -382,15 +375,32 @@ function Hero({ activeTab, onPlay, onSubscribeClick, isSubscribed }: { activeTab
       hlsRef.current = null;
     }
 
+    // Seek to 5 min into the video (for non-trailer previews so users see an exciting scene)
+    const seekToMidpoint = () => {
+      if (!bannerVideo.isTrailer && bannerVideo.clipSeconds && v.duration > 300) {
+        v.currentTime = 300;
+      }
+    };
+
     const playSafe = () => {
       if (destroyed) return;
+      seekToMidpoint();
       v.muted = muted;
-      v.play().catch(() => {});
+      v.defaultMuted = muted;
+      const prom = v.play();
+      if (prom !== undefined) {
+        prom.catch(() => {
+          if (!v.muted) {
+            v.muted = true;
+            v.play().catch(() => {});
+          }
+        });
+      }
     };
 
     const isM3u8 = bannerVideo.src.includes(".m3u8");
     if (isM3u8 && Hls.isSupported()) {
-      const hls = new Hls({ enableWorker: true, maxBufferLength: 30 });
+      const hls = new Hls({ enableWorker: true, maxBufferLength: 30, lowLatencyMode: true });
       hlsRef.current = hls;
       hls.loadSource(bannerVideo.src);
       hls.attachMedia(v);
@@ -399,16 +409,47 @@ function Hero({ activeTab, onPlay, onSubscribeClick, isSubscribed }: { activeTab
         setVideoReady(true);
         playSafe();
       });
+      hls.on(Hls.Events.ERROR, (_event, data) => {
+        if (data.fatal) {
+          switch (data.type) {
+            case Hls.ErrorTypes.NETWORK_ERROR:
+              hls.startLoad();
+              break;
+            case Hls.ErrorTypes.MEDIA_ERROR:
+              hls.recoverMediaError();
+              break;
+            default:
+              hls.destroy();
+              break;
+          }
+        }
+      });
+    } else if (isM3u8 && v.canPlayType("application/vnd.apple.mpegurl")) {
+      v.src = bannerVideo.src;
+      const onReady = () => {
+        if (destroyed) return;
+        setVideoReady(true);
+        playSafe();
+      };
+      v.addEventListener("canplay", onReady, { once: true });
+      v.addEventListener("loadeddata", onReady, { once: true });
+      v.addEventListener("playing", () => { if (!destroyed) setVideoReady(true); }, { once: true });
+      v.load();
     } else {
       v.src = bannerVideo.src;
       const onReady = () => {
         if (destroyed) return;
         setVideoReady(true);
         playSafe();
-        v.removeEventListener("loadeddata", onReady);
       };
-      v.addEventListener("loadeddata", onReady);
-      v.load();
+      v.addEventListener("canplay", onReady, { once: true });
+      v.addEventListener("loadeddata", onReady, { once: true });
+      v.addEventListener("playing", () => { if (!destroyed) setVideoReady(true); }, { once: true });
+      if (v.readyState >= 2) {
+        onReady();
+      } else {
+        v.load();
+      }
     }
 
     return () => {
@@ -500,8 +541,9 @@ function Hero({ activeTab, onPlay, onSubscribeClick, isSubscribed }: { activeTab
           ref={videoRef}
           className="absolute inset-0 w-full h-full object-cover object-[center_30%] sm:object-center [filter:brightness(1.06)_contrast(1.03)_saturate(1.04)]"
           playsInline
-          muted={muted}
+          muted
           autoPlay
+          loop={bannerVideo.isTrailer}
           poster={getImageUrl(item.backdrop || item.poster) || undefined}
         />
       </div>
@@ -1114,6 +1156,15 @@ function getSectionItems(section: any, movies: any[], homeData: any) {
     });
   }
 
+  // Deduplicate items by ID
+  const seenIds = new Set<string>();
+  filteredItems = filteredItems.filter((it: any) => {
+    const itId = String(it._id || it.id);
+    if (!itId || seenIds.has(itId)) return false;
+    seenIds.add(itId);
+    return true;
+  });
+
   if (section.limit) {
     filteredItems = filteredItems.slice(0, section.limit);
   }
@@ -1202,12 +1253,12 @@ function HomeTab({ onPlay, onSubscribeClick, isSubscribed, user, onSignIn }: {
               {cw.map((item: any) => (
                 <div
                   key={item.id}
-                  className="group relative flex-shrink-0 w-[160px] sm:w-[180px] md:w-[200px] cursor-pointer"
+                  className="group relative flex-shrink-0 w-[220px] sm:w-[260px] md:w-[280px] cursor-pointer"
                   onClick={() => onPlay(item)}
                 >
-                  <div className="relative rounded-xl overflow-hidden bg-zinc-900 shadow-lg" style={{ aspectRatio: "9/16" }}>
+                  <div className="relative rounded-xl overflow-hidden bg-zinc-900 shadow-lg" style={{ aspectRatio: "16/9" }}>
                     <img
-                      src={getImageUrl(item.thumbnail || item.backdrop || item.poster || item.posterImage) || ""}
+                      src={getImageUrl(item.backdrop || item.thumbnail || item.poster || item.posterImage) || ""}
                       alt={item.title || ""}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                       onError={(e) => { (e.target as HTMLImageElement).style.backgroundColor = "#111"; }}
@@ -1263,20 +1314,31 @@ function HomeTab({ onPlay, onSubscribeClick, isSubscribed, user, onSignIn }: {
           if (items.length === 0) return null;
 
           if (section.layout === 'grid') {
+            const isLandscape = section.itemType === 'landscape';
+            const isDrama = section.itemType === 'drama';
             rowContent = (
               <div className="mb-6">
                 <SectionHeader title={section.title} onSeeAll={() => setLocation(`/browse?section=${section._id}`)} count={items.length} />
-                <div className="px-3 sm:px-6 lg:px-8 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 gap-1 sm:gap-2 md:gap-3 pt-2">
+                <div className={`px-3 sm:px-6 lg:px-8 grid ${isLandscape ? 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3' : 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2.5 sm:gap-3.5'} pt-2`}>
                   {items.map((item: any) => (
                     <Fragment key={item.id || item._id}>
-                      <PortraitCard item={item} onClick={() => onPlay(item)} fullWidth hidePlayButton />
+                      {isLandscape ? (
+                        <LandscapeCard item={item} onClick={() => onPlay(item)} fullWidth />
+                      ) : (
+                        <PortraitCard item={item} onClick={() => onPlay(item)} fullWidth hidePlayButton aspectRatio={isDrama ? "9/16" : "2/3"} />
+                      )}
                     </Fragment>
                   ))}
                 </div>
               </div>
             );
           } else {
-            rowContent = <FeaturedRow title={section.title} items={items} onPlay={onPlay} onSeeAll={() => setLocation(`/browse?section=${section._id}`)} />;
+            const isPortrait = section.itemType === 'portrait' || section.itemType === 'drama' || section.itemType === 'poster';
+            if (isPortrait) {
+              rowContent = <ContentRow title={section.title} items={items} onPlay={onPlay} onSeeAll={() => setLocation(`/browse?section=${section._id}`)} />;
+            } else {
+              rowContent = <FeaturedRow title={section.title} items={items} onPlay={onPlay} onSeeAll={() => setLocation(`/browse?section=${section._id}`)} />;
+            }
           }
           
           return (

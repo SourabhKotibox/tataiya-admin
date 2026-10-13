@@ -1,9 +1,12 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useParams, useLocation } from "wouter";
 import {
   Play, Star, ChevronLeft, Crown, Tv, Plus, Check, Heart, Share2,
-  Calendar, Globe, Clock, Film, Lock, Sparkles, CheckCircle2, Loader2
+  Calendar, Globe, Clock, Film, Lock, Sparkles, CheckCircle2, Loader2,
+  Volume2, VolumeX, X
 } from "lucide-react";
+import Hls from "hls.js";
+import VideoPlayer from "@/components/VideoPlayer";
 import { PublicHeader, PublicFooter } from "@/pages/streaming-home";
 import SubscriptionPlansModal from "@/components/SubscriptionPlansModal";
 import { useToast } from "@/hooks/use-toast";
@@ -32,6 +35,11 @@ export default function TvShowDetailPage() {
 
   const [selectedSeason, setSelectedSeason] = useState<number>(1);
   const [plansModalOpen, setPlansModalOpen] = useState<boolean>(false);
+  const [trailerModalOpen, setTrailerModalOpen] = useState<boolean>(false);
+  const [trailerMuted, setTrailerMuted] = useState<boolean>(true);
+  const [heroVideoReady, setHeroVideoReady] = useState<boolean>(false);
+  const trailerVideoRef = useRef<HTMLVideoElement>(null);
+  const trailerHlsRef = useRef<Hls | null>(null);
   const [user, setUser] = useState<any>(null);
   const [inWatchlist, setInWatchlist] = useState<boolean>(false);
   const [isLiked, setIsLiked] = useState<boolean>(false);
@@ -55,6 +63,10 @@ export default function TvShowDetailPage() {
         : fallbackEpisodesRaw;
       const seasonsRaw: any[] = Array.isArray(raw.seasons) ? raw.seasons : [];
 
+      const rawTrailer = raw.trailerUrl || raw.trailer || raw.trailer_url;
+      const firstEpTrailer = episodesRaw[0]?.trailerUrl || episodesRaw[0]?.trailer;
+      const resolvedTrailer = rawTrailer ? getImageUrl(rawTrailer) : (firstEpTrailer ? getImageUrl(firstEpTrailer) : "");
+
       const seasonMap = new Map<number, Episode[]>();
 
       // Ingest seasonsRaw if nested episodes exist
@@ -69,11 +81,12 @@ export default function TvShowDetailPage() {
               episodeNumber: Number(e.episode ?? e.episodeNumber ?? 1),
               title: e.title || `Episode ${e.episode ?? e.episodeNumber ?? 1}`,
               description: e.description || e.shortDescription || "",
-              duration: e.duration || 2700,
+              duration: e.duration || 0,
               thumbnail: getImageUrl(e.thumbnail || e.poster || raw.backdrop || raw.poster),
               isFree: e.isFree ?? !e.isLocked,
               isLocked: e.isLocked ?? !e.isFree,
               videoUrl: e.hlsUrl || e.videoUrl || "",
+              trailerUrl: e.trailerUrl ? getImageUrl(e.trailerUrl) : (e.trailer ? getImageUrl(e.trailer) : ""),
             });
           });
         }
@@ -94,11 +107,12 @@ export default function TvShowDetailPage() {
             episodeNumber: epNum,
             title: e.title || `Episode ${epNum}`,
             description: e.description || e.shortDescription || "",
-            duration: e.duration || 2700,
+            duration: e.duration || 0,
             thumbnail: getImageUrl(e.thumbnail || e.poster || raw.backdrop || raw.poster),
             isFree: e.isFree ?? !e.isLocked,
             isLocked: e.isLocked ?? !e.isFree,
             videoUrl: e.hlsUrl || e.videoUrl || "",
+            trailerUrl: e.trailerUrl ? getImageUrl(e.trailerUrl) : (e.trailer ? getImageUrl(e.trailer) : ""),
           });
         }
       });
@@ -128,8 +142,9 @@ export default function TvShowDetailPage() {
         id: raw._id || raw.id,
         title: raw.title || "Untitled",
         description: raw.description || raw.overview || "",
-        poster: getImageUrl(raw.poster || raw.thumbnail),
+        poster: getImageUrl(raw.posterImage || raw.poster || raw.thumbnail),
         backdrop: getImageUrl(raw.backdrop || raw.bannerImage || raw.banner || raw.posterImage || raw.poster),
+        trailerUrl: resolvedTrailer,
         imdbRating: raw.imdbRating ? String(raw.imdbRating) : (raw.rating ? String(raw.rating) : "8.5"),
         ageRating: raw.ageRating || raw.maturityRating || "16+",
         year: raw.releaseDate ? String(new Date(raw.releaseDate).getFullYear()) : String(raw.year || 2026),
@@ -149,6 +164,98 @@ export default function TvShowDetailPage() {
     }
     return undefined;
   }, [serverShowData, fallbackEpisodesRes]);
+
+  // Derived trailer source
+  const showTrailerSrc = useMemo(() => {
+    if (!show) return "";
+    if (show.trailerUrl) return show.trailerUrl;
+    const ep1 = show.seasons?.[0]?.episodes?.[0];
+    if (ep1?.trailerUrl) return ep1.trailerUrl;
+    return "";
+  }, [show]);
+
+  // Background trailer video playback in hero backdrop
+  useEffect(() => {
+    const v = trailerVideoRef.current;
+    if (!v || !showTrailerSrc) {
+      setHeroVideoReady(false);
+      return;
+    }
+
+    let destroyed = false;
+    if (trailerHlsRef.current) {
+      trailerHlsRef.current.destroy();
+      trailerHlsRef.current = null;
+    }
+
+    const playSafe = () => {
+      if (destroyed) return;
+      v.muted = trailerMuted;
+      v.defaultMuted = trailerMuted;
+      v.play().catch(() => {
+        if (!v.muted) {
+          v.muted = true;
+          v.play().catch(() => {});
+        }
+      });
+    };
+
+    const isM3u8 = showTrailerSrc.includes(".m3u8");
+    if (isM3u8 && Hls.isSupported()) {
+      const hls = new Hls({ enableWorker: true, maxBufferLength: 30, lowLatencyMode: true });
+      trailerHlsRef.current = hls;
+      hls.loadSource(showTrailerSrc);
+      hls.attachMedia(v);
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        if (destroyed) return;
+        setHeroVideoReady(true);
+        playSafe();
+      });
+      hls.on(Hls.Events.ERROR, (_event, data) => {
+        if (data.fatal && data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+          hls.startLoad();
+        }
+      });
+    } else if (isM3u8 && v.canPlayType("application/vnd.apple.mpegurl")) {
+      v.src = showTrailerSrc;
+      const onReady = () => {
+        if (destroyed) return;
+        setHeroVideoReady(true);
+        playSafe();
+      };
+      v.addEventListener("canplay", onReady, { once: true });
+      v.addEventListener("loadeddata", onReady, { once: true });
+      v.load();
+    } else {
+      v.src = showTrailerSrc;
+      const onReady = () => {
+        if (destroyed) return;
+        setHeroVideoReady(true);
+        playSafe();
+      };
+      v.addEventListener("canplay", onReady, { once: true });
+      v.addEventListener("loadeddata", onReady, { once: true });
+      if (v.readyState >= 2) {
+        onReady();
+      } else {
+        v.load();
+      }
+    }
+
+    return () => {
+      destroyed = true;
+      if (trailerHlsRef.current) {
+        trailerHlsRef.current.destroy();
+        trailerHlsRef.current = null;
+      }
+    };
+  }, [showTrailerSrc]);
+
+  useEffect(() => {
+    if (trailerVideoRef.current) {
+      trailerVideoRef.current.muted = trailerMuted;
+    }
+  }, [trailerMuted]);
 
   // Scroll to top on mount
   useEffect(() => {
@@ -401,6 +508,21 @@ export default function TvShowDetailPage() {
           }}
         />
 
+        {/* Video Trailer Preview in Backdrop */}
+        {showTrailerSrc && (
+          <div className={`absolute inset-0 transition-opacity duration-700 ${heroVideoReady ? "opacity-100" : "opacity-0"}`}>
+            <video
+              ref={trailerVideoRef}
+              className="absolute inset-0 w-full h-full object-cover object-top"
+              playsInline
+              muted
+              autoPlay
+              loop
+              poster={show.backdrop || show.poster}
+            />
+          </div>
+        )}
+
         {/* Cinematic Multi-layered Gradients */}
         <div className="absolute inset-0 bg-gradient-to-r from-[#0c0c14] via-[#0c0c14]/85 md:via-[#0c0c14]/70 to-transparent" />
         <div className="absolute bottom-0 left-0 right-0 h-[65%] bg-gradient-to-t from-[#0c0c14] via-[#0c0c14]/60 to-transparent" />
@@ -413,6 +535,17 @@ export default function TvShowDetailPage() {
         >
           <ChevronLeft className="w-4 h-4" /> Back to TV Shows
         </button>
+
+        {/* Mute / Unmute Trailer button */}
+        {showTrailerSrc && heroVideoReady && (
+          <button
+            onClick={() => setTrailerMuted((m) => !m)}
+            className="absolute top-20 sm:top-24 right-4 sm:right-10 lg:right-14 z-20 w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-black/60 hover:bg-amber-400 hover:text-black border border-white/20 text-white flex items-center justify-center transition-all cursor-pointer shadow-lg active:scale-95"
+            aria-label={trailerMuted ? "Unmute Trailer" : "Mute Trailer"}
+          >
+            {trailerMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+          </button>
+        )}
 
         {/* Hero Metadata & Action Panel */}
         <div className="absolute bottom-6 sm:bottom-10 left-0 px-4 sm:px-10 lg:px-14 max-w-3xl z-10">
@@ -482,13 +615,25 @@ export default function TvShowDetailPage() {
                   } else {
                     handlePlayEpisode(firstEpisode);
                   }
+                } else if (showTrailerSrc) {
+                  setTrailerModalOpen(true);
                 }
               }}
               className="flex items-center gap-2.5 px-7 sm:px-8 py-3.5 bg-amber-400 hover:bg-amber-300 text-black font-extrabold rounded-xl text-sm tracking-wide transition-all active:scale-95 shadow-xl shadow-amber-500/25 hover:-translate-y-0.5 cursor-pointer"
             >
               <Play className="w-4 h-4 fill-black" />
-              {isSubscribed ? "Watch Now" : firstEpisode?.isFree ? "Watch Free (EP 1)" : "Watch Now"}
+              {isSubscribed ? "Watch Now" : firstEpisode?.isFree ? "Watch Free (EP 1)" : firstEpisode ? "Watch Now" : "Play Trailer"}
             </button>
+
+            {/* Watch Trailer Button */}
+            {showTrailerSrc && (
+              <button
+                onClick={() => setTrailerModalOpen(true)}
+                className="flex items-center gap-2 px-6 py-3.5 bg-white/10 hover:bg-white/20 backdrop-blur-md text-white font-bold rounded-xl text-sm border border-white/15 transition-all active:scale-95 hover:-translate-y-0.5 cursor-pointer shadow-lg"
+              >
+                <Film className="w-4 h-4 text-amber-400" /> Watch Trailer
+              </button>
+            )}
 
             {/* Subscribe Button */}
             {!isSubscribed && (
@@ -668,6 +813,35 @@ export default function TvShowDetailPage() {
           } catch {}
         }}
       />
+
+      {/* Trailer Modal Dialog */}
+      {trailerModalOpen && showTrailerSrc && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4 sm:p-6 backdrop-blur-md animate-in fade-in duration-200">
+          <div className="relative w-full max-w-4xl bg-black rounded-2xl overflow-hidden shadow-2xl border border-zinc-800">
+            <div className="flex items-center justify-between px-4 py-3 bg-zinc-900 border-b border-zinc-800">
+              <div className="flex items-center gap-2">
+                <Film className="w-4 h-4 text-amber-400" />
+                <span className="text-sm font-bold text-white">Official Trailer • {show.title}</span>
+              </div>
+              <button
+                onClick={() => setTrailerModalOpen(false)}
+                className="p-1 rounded-lg text-white/70 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+                aria-label="Close Trailer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="relative w-full aspect-video bg-black">
+              <VideoPlayer
+                src={showTrailerSrc}
+                poster={show.backdrop || show.poster}
+                title={`${show.title} - Official Trailer`}
+                onClose={() => setTrailerModalOpen(false)}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

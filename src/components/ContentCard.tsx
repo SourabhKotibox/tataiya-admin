@@ -167,6 +167,7 @@ export function PortraitCard({
   fullWidth = false,
   hidePlayButton = false,
   square = false,
+  aspectRatio = "2/3",
 }: {
   item: any;
   onClick: () => void;
@@ -174,10 +175,12 @@ export function PortraitCard({
   fullWidth?: boolean;
   hidePlayButton?: boolean;
   square?: boolean;
+  aspectRatio?: "2/3" | "9/16" | "16/9" | string;
 }) {
   const [imgError, setImgError] = useState(false);
+  // For vertical portrait cards, ALWAYS prioritize vertical poster assets:
   const imgSrc =
-    getImageUrl(item.thumbnail || item.poster || item.posterImage || item.backdrop) || "";
+    getImageUrl(item.posterImage || item.poster || item.thumbnail || item.backdrop) || "";
 
   const isTv = Boolean(
     item?.contentType === "tvShow" ||
@@ -198,7 +201,7 @@ export function PortraitCard({
       {/* Image container */}
       <div
         className={`relative overflow-hidden bg-zinc-900 group-hover:ring-1 group-hover:ring-amber-400/60 transition-all duration-300 ${square ? "rounded-none" : "rounded-xl sm:rounded-2xl"}`}
-        style={{ aspectRatio: "9/16" }}
+        style={{ aspectRatio }}
       >
         {/* Poster image */}
         {imgSrc && !imgError ? (
@@ -283,8 +286,9 @@ export function LandscapeCard({
   fullWidth?: boolean;
 }) {
   const [imgError, setImgError] = useState(false);
+  // For horizontal landscape cards, ALWAYS prioritize horizontal backdrop/thumbnail:
   const imgSrc =
-    getImageUrl(item.backdrop || item.poster || item.posterImage || item.thumbnail) || "";
+    getImageUrl(item.backdrop || item.thumbnail || item.bannerImage || item.poster || item.posterImage) || "";
 
   const isTv = Boolean(
     item?.contentType === "tvShow" ||

@@ -70,6 +70,12 @@ export default function VideoPlayer({
     setCurrentSrc(src);
   }, [src]);
 
+  const ytEmbed = useMemo(() => {
+    if (!currentSrc) return null;
+    const match = currentSrc.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/);
+    return match ? `https://www.youtube-nocookie.com/embed/${match[1]}?autoplay=1&rel=0` : null;
+  }, [currentSrc]);
+
   const [showResumePrompt, setShowResumePrompt] = useState(false);
   const [resumeTime, setResumeTime] = useState(0);
 
@@ -165,7 +171,7 @@ export default function VideoPlayer({
   // HLS / MP4 setup
   useEffect(() => {
     const v = videoRef.current;
-    if (!v || !currentSrc) return;
+    if (!v || !currentSrc || ytEmbed) return;
 
     let hls: Hls | null = null;
     const isM3u8 = currentSrc.includes('.m3u8');
@@ -318,6 +324,29 @@ export default function VideoPlayer({
 
   const allQualities = videoQualities?.length ? videoQualities : [{ label: 'Auto', src }];
   const currentQualityLabel = allQualities.find(q => q.src === currentSrc)?.label || 'Auto';
+
+  if (ytEmbed) {
+    return (
+      <div ref={containerRef} className="relative bg-black overflow-hidden shadow-2xl w-full h-full flex items-center justify-center">
+        {onClose && (
+          <button
+            onClick={onClose}
+            className="absolute top-4 right-4 z-50 p-2 rounded-full bg-black/60 hover:bg-black/90 text-white transition-all cursor-pointer"
+            aria-label="Close"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        )}
+        <iframe
+          src={ytEmbed}
+          title={title || "Video Player"}
+          className="w-full h-full border-0"
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+          allowFullScreen
+        />
+      </div>
+    );
+  }
 
   return (
     <div

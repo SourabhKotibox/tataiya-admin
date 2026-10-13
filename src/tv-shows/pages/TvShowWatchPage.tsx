@@ -24,6 +24,7 @@ export default function TvShowWatchPage() {
   const [location, setLocation] = useLocation();
 
   const [plansModalOpen, setPlansModalOpen] = useState(false);
+  const [viewingTrailer, setViewingTrailer] = useState(false);
   const [user, setUser] = useState<any>(null);
 
   // Load user
@@ -60,6 +61,7 @@ export default function TvShowWatchPage() {
         description: raw.description || "",
         poster: getImageUrl(raw.poster || raw.thumbnail),
         backdrop: getImageUrl(raw.backdrop || raw.bannerImage || raw.banner || raw.posterImage || raw.poster),
+        trailerUrl: raw.trailerUrl ? getImageUrl(raw.trailerUrl) : (raw.trailer ? getImageUrl(raw.trailer) : ""),
         seasons: raw.seasons || [],
       };
     }
@@ -89,11 +91,12 @@ export default function TvShowWatchPage() {
             episodeNumber: Number(e.episode ?? e.episodeNumber ?? 1),
             title: e.title || `Episode ${e.episode ?? e.episodeNumber ?? 1}`,
             description: e.description || e.shortDescription || "",
-            duration: e.duration || 2700,
+            duration: e.duration || 0,
             thumbnail: getImageUrl(e.thumbnail || e.poster || show?.backdrop || show?.poster),
             isFree: e.isFree ?? !e.isLocked,
             isLocked: e.isLocked ?? !e.isFree,
             videoUrl: e.hlsUrl || e.videoUrl || "",
+            trailerUrl: e.trailerUrl ? getImageUrl(e.trailerUrl) : (e.trailer ? getImageUrl(e.trailer) : ""),
           });
         });
       }
@@ -112,11 +115,12 @@ export default function TvShowWatchPage() {
           episodeNumber: epNumber,
           title: e.title || `Episode ${epNumber}`,
           description: e.description || e.shortDescription || "",
-          duration: e.duration || 2700,
+          duration: e.duration || 0,
           thumbnail: getImageUrl(e.thumbnail || e.poster || show?.backdrop || show?.poster),
           isFree: e.isFree ?? !e.isLocked,
           isLocked: e.isLocked ?? !e.isFree,
           videoUrl: e.hlsUrl || e.videoUrl || "",
+          trailerUrl: e.trailerUrl ? getImageUrl(e.trailerUrl) : (e.trailer ? getImageUrl(e.trailer) : ""),
         });
       }
     });
@@ -159,7 +163,13 @@ export default function TvShowWatchPage() {
     isBackendLocked && !isSubscribed
   );
 
-  const videoStreamSrc = hlsUrl || "";
+  const trailerSrc =
+    (watchVideo?.trailerUrl ? getImageUrl(watchVideo.trailerUrl) : "") ||
+    (currentEpisode?.trailerUrl ? getImageUrl(currentEpisode.trailerUrl) : "") ||
+    ((show as any)?.trailerUrl ? getImageUrl((show as any).trailerUrl) : "");
+
+  const resolvedStream = hlsUrl || watchVideo?.videoUrl || watchVideo?.sourceVideoUrl || currentEpisode?.videoUrl || "";
+  const videoStreamSrc = viewingTrailer ? (trailerSrc || resolvedStream) : (resolvedStream || trailerSrc);
 
   // Record continue watching entry on episode change
   useEffect(() => {
@@ -257,32 +267,53 @@ export default function TvShowWatchPage() {
       <main className="pt-[68px] pb-16 bg-[#09090b] text-foreground">
         <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8">
           
-          {/* Back button row */}
-          <div className="pt-4 pb-4">
+          {/* Back button and Trailer toggle row */}
+          <div className="pt-4 pb-4 flex items-center justify-between gap-4 flex-wrap">
             <button
               onClick={() => setLocation(`/tv-shows/${show.id}`)}
               className="flex items-center gap-1.5 text-foreground/80 hover:text-foreground text-sm font-semibold transition-colors cursor-pointer"
             >
               <ChevronLeft className="w-4 h-4" /> Back to Show Details
             </button>
+            {trailerSrc && (
+              <button
+                onClick={() => setViewingTrailer(!viewingTrailer)}
+                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all border cursor-pointer ${
+                  viewingTrailer
+                    ? "bg-amber-400 text-black border-amber-400 shadow-md"
+                    : "bg-white/10 text-white hover:bg-white/20 border-white/15"
+                }`}
+              >
+                <Film className="w-3.5 h-3.5" />
+                {viewingTrailer ? "Switch to Episode" : "Watch Trailer"}
+              </button>
+            )}
           </div>
 
           {/* Player Container */}
           <div className="relative bg-black shadow-2xl rounded-xl sm:rounded-2xl border border-zinc-900 mb-6 w-full min-h-[200px] sm:min-h-0 overflow-visible" style={{ aspectRatio: "16 / 9" }}>
-            {isLocked ? (
+            {isLocked && !viewingTrailer ? (
               <div className="absolute inset-0 z-[45] flex flex-col items-center justify-center bg-black/90 px-6 text-center gap-3 rounded-xl sm:rounded-2xl">
                 <Crown className="w-10 h-10 text-amber-400 animate-bounce" />
                 <h3 className="text-white text-lg font-bold">Premium Episode</h3>
                 <p className="text-white/70 text-xs max-w-sm">
                   This episode is reserved for Premium subscribers. Subscribe today to stream all episodes without ads.
                 </p>
-                <div className="flex items-center gap-3 mt-2">
+                <div className="flex items-center gap-3 mt-2 flex-wrap justify-center">
                   <button
                     onClick={() => setPlansModalOpen(true)}
-                    className="px-6 py-2.5 bg-amber-400 hover:bg-amber-300 text-black font-bold rounded-xl text-xs sm:text-sm transition-all shadow-lg shadow-amber-900/20"
+                    className="px-6 py-2.5 bg-amber-400 hover:bg-amber-300 text-black font-bold rounded-xl text-xs sm:text-sm transition-all shadow-lg shadow-amber-900/20 cursor-pointer"
                   >
                     Unlock Subscription
                   </button>
+                  {trailerSrc && (
+                    <button
+                      onClick={() => setViewingTrailer(true)}
+                      className="flex items-center gap-1.5 px-5 py-2.5 bg-white/10 hover:bg-white/20 text-white font-bold rounded-xl text-xs sm:text-sm transition-all border border-white/20 cursor-pointer"
+                    >
+                      <Film className="w-4 h-4 text-amber-400" /> Watch Trailer
+                    </button>
+                  )}
                 </div>
               </div>
             ) : videoStreamSrc ? (
@@ -290,8 +321,8 @@ export default function TvShowWatchPage() {
                 <VideoPlayer
                   src={videoStreamSrc}
                   poster={currentEpisode.thumbnail || show.backdrop}
-                  title={`${show.title} - S${currentEpisode.season}:E${currentEpisode.episodeNumber}`}
-                  subtitle={currentEpisode.title}
+                  title={viewingTrailer ? `${show.title} - Official Trailer` : `${show.title} - S${currentEpisode.season}:E${currentEpisode.episodeNumber}`}
+                  subtitle={viewingTrailer ? "Trailer" : currentEpisode.title}
                   contentId={`tvshow-${show.id}-s${currentEpisode.season}-e${currentEpisode.episodeNumber}`}
                   onClose={() => setLocation(`/tv-shows/${show.id}`)}
                 />

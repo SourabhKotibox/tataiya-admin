@@ -16,6 +16,7 @@ export interface Episode {
   isFree: boolean;
   isLocked: boolean;
   videoUrl: string;
+  trailerUrl?: string;
   planRequired?: "free" | "basic" | "standard" | "premium" | "vip";
 }
 
@@ -32,6 +33,7 @@ export interface TvShow {
   description: string;
   poster: string;
   backdrop: string;
+  trailerUrl?: string;
   imdbRating: string;
   ageRating: string;
   year: string;
