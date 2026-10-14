@@ -4563,7 +4563,12 @@ export const useEpisodeProcessingStatus = (id: string, enabled = true) => {
 };
 
 export const useReprocessEpisodeHls = () => {
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: reprocessEpisodeHls,
+    onSuccess: (_data, id) => {
+      queryClient.invalidateQueries({ queryKey: ['episode-list'] });
+      queryClient.invalidateQueries({ queryKey: ['episodeProcessingStatus', id] });
+    },
   });
 };
