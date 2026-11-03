@@ -8,6 +8,7 @@ import {
   openRazorpayCheckout,
 } from "@/lib/api-client";
 import { useSettings } from "@/contexts/SettingsContext";
+import { formatPlanPeriod } from "@/lib/planPeriod";
 import {
   Crown, Check, ArrowLeft, Sparkles, Shield, Zap, Users, Download,
   Star, Lock, ChevronRight, Loader2, X, Wifi, Tv2, Smartphone, Globe
@@ -306,6 +307,8 @@ export default function MembershipPage() {
                   const isPopular = (plan.name || "").toLowerCase() === "standard";
                   const hasDiscount = plan.discount > 0 && !isPopular;
                   const features = getPlanFeatures(plan);
+                  const period = formatPlanPeriod(plan);
+                  const planAmount = Number(plan.totalPrice ?? plan.price);
 
                   return (
                     <div
@@ -361,15 +364,15 @@ export default function MembershipPage() {
                               <span className="text-2xl font-black text-foreground tracking-tight">
                                 {isFree ? "Free" : formatPrice(plan.totalPrice)}
                               </span>
-                              {!isFree && plan.durationLabel && (
+                              {!isFree && (
                                 <span className="text-muted-foreground text-xs font-semibold">
-                                  / {plan.durationLabel}
+                                  / {period.priceSuffix}
                                 </span>
                               )}
                             </div>
-                            {!isFree && plan.durationValue > 1 && (
+                            {!isFree && period.count > 1 && Number.isFinite(planAmount) && (
                               <p className="text-muted-foreground/60 text-[11px] font-semibold mt-0.5">
-                                ≈ {formatPrice(plan.totalPrice / plan.durationValue)} per {plan.duration}
+                                ≈ {formatPrice(planAmount / period.count)} per {period.perUnit}
                               </p>
                             )}
                           </div>
@@ -422,7 +425,7 @@ export default function MembershipPage() {
                           </span>
                         )}
                       </div>
-                      <p className="text-muted-foreground text-xs">{selectedPlan.durationValue} {selectedPlan.duration} access</p>
+                      <p className="text-muted-foreground text-xs">{formatPlanPeriod(selectedPlan).validFor} access</p>
                     </div>
                     <span className="font-black text-lg text-foreground">
                       {(selectedPlan.name || "").toLowerCase() === "free" ? "Free" : formatPrice(selectedPlan.totalPrice)}
