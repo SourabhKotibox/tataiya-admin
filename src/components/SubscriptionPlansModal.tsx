@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { X, Crown, Check, Loader2, Sparkles, Flame, Play } from "lucide-react";
 import { useSettings } from "@/contexts/SettingsContext";
 import { useGetWebSubscriptionPlans, useGetAppProfile, useCreateSubscriptionRazorpayOrder, useVerifySubscriptionRazorpayPayment } from "@/lib/api-client";
+import { formatPlanPeriod } from "@/lib/planPeriod";
 import { useToast } from "@/hooks/use-toast";
 
 export const normalizePlanKey = (name?: string) => {
@@ -288,6 +289,7 @@ export default function SubscriptionPlansModal({ isOpen, onClose, onSubscribed, 
                 const isReqMatch = reqKey !== "free" && planKey === reqKey;
                 const isPopular = isReqMatch || plan.isPopular || (reqKey === "free" && planKey === "standard");
                 const isActive = isPlanActive(plan, effectiveUser);
+                const period = formatPlanPeriod(plan);
 
                 return (
                   <div
@@ -339,7 +341,7 @@ export default function SubscriptionPlansModal({ isOpen, onClose, onSubscribed, 
                       {/* Plan Price */}
                       <div className="flex items-baseline gap-1 mt-1 mb-2">
                         <span className="text-3xl font-black text-foreground">{settings?.currencyPosition === 'before' ? (settings?.currencySymbol || '₹') + (plan.totalPrice ?? plan.price) : (plan.totalPrice ?? plan.price) + ' ' + (settings?.currencySymbol || '₹')}</span>
-                        <span className="text-sm font-medium text-foreground/70">/ {plan.duration || 'month'}</span>
+                        <span className="text-sm font-medium text-foreground/70">/ {period.priceSuffix}</span>
                       </div>
 
                       {/* Plan Features */}
@@ -356,7 +358,7 @@ export default function SubscriptionPlansModal({ isOpen, onClose, onSubscribed, 
                         )}
                         <li className="flex items-center gap-2.5 text-xs text-zinc-350">
                           <Check className="w-4 h-4 text-primary flex-shrink-0" />
-                          <span>Valid for <strong className="text-foreground font-semibold">{plan.durationValue} {plan.duration}</strong></span>
+                          <span>Valid for <strong className="text-foreground font-semibold">{period.validFor}</strong></span>
                         </li>
                         {plan.discount > 0 && (
                           <li className="flex items-center gap-2.5 text-xs text-zinc-350">
